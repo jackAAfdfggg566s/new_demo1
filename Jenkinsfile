@@ -29,7 +29,7 @@ pipeline {
             steps {
                 checkout([
                     $class: 'GitSCM', 
-                    branches: [[name: '*/']], 
+                    branches: [[name: '*/main']], 
                     userRemoteConfigs: [[url: 'https://github.com/jackAAfdfggg566s/new_demo1.git']]
                 ])
             }
