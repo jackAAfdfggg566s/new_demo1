@@ -51,7 +51,7 @@ pipeline {
             }
         }
 
-        stage('Build Deploy Code') {
+        stage('Build Deploy Code to UAT ') {
             when {
                 branch 'developer'
             }
@@ -62,6 +62,20 @@ pipeline {
 
                 sh """
                 echo "Deploying Code"
+                """
+            }
+        }
+        stage('Build Deploy Code to prod') {
+            when {
+                branch 'main'
+            }
+            steps {
+                sh """
+                echo "Building Artifact to main"
+                """
+
+                sh """
+                echo "Deploying to main"
                 """
             }
         }
