@@ -1,0 +1,27 @@
+要停止在 Windows IntelliJ IDE 中运行的 Glating 程序，你可以使用以下 Shell 脚本。在 Windows 中，可以通过 WSL（Windows Subsystem for Linux）或 Git Bash 来运行 Shell 脚本。以下是一个示例脚本，假设 Glating 程序的进程名为 glating：
+
+bash
+复制代码
+#!/bin/bash
+
+# 查找 Glating 程序的进程 ID
+pid=$(pgrep glating)
+
+if [ -n "$pid" ]; then
+  # 停止 Glating 程序
+  kill $pid
+  echo "Glating 程序已停止，进程 ID: $pid"
+else
+  echo "未找到 Glating 程序正在运行。"
+fi
+使用步骤：
+将上述代码保存为 stop_glating.sh。
+在 WSL 或 Git Bash 中，给脚本添加可执行权限：
+bash
+复制代码
+chmod +x stop_glating.sh
+运行脚本：
+bash
+复制代码
+./stop_glating.sh
+请根据你的具体情况调整进程名和其他细节。
