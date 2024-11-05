@@ -1,0 +1,47 @@
+是的，您理解得对。如果您要模拟 EKS pod 与 外部 Kafka 之间的网络故障，这种故障通常涉及到 Ingress 网络流量的阻塞。在 AWS FIS 中，网络故障注入通常是针对进站（Ingress）流量和出站（Egress）流量进行控制的。
+
+详细解释
+Ingress 网络流量：指外部流量（比如来自 Kafka 服务的流量）进入 EKS pod。 如果 Kafka 服务器是外部的（例如运行在 AWS MSK 或其他服务上），那么 EKS pod 对 Kafka 的连接就是 Ingress 流量。
+
+Egress 网络流量：指 EKS pod 向外部服务（如 Kafka）发送的流量。在这个场景中，如果您希望模拟 Kafka 服务连接故障，通常会模拟 Egress 流量的阻塞，即模拟 pod 连接到 Kafka 服务的出站流量的故障。
+
+在 FIS 中模拟网络故障时：
+如果是 Ingress 网络故障，您可以模拟阻止外部 Kafka 服务的流量进入到 EKS pod，通常适用于故障注入在 Kafka 作为客户端的情形（比如 Kafka 发送数据给 pod）。
+
+如果是 Egress 网络故障，则是模拟从 EKS pod 向 Kafka 服务发起的连接故障，适用于 Kafka 客户端与外部 Kafka 服务的连接问题。
+
+模拟 EKS pod 与外部 Kafka 的网络故障（Ingress）
+对于 EKS pod 与 Kafka 之间的连接故障（假设 Kafka 使用 9092 端口），通常会采用 Egress 故障注入。举个例子：
+
+如果 Kafka 在外部，您的 pod 发起连接，模拟 Egress 网络故障是更合适的。
+如果您想模拟 Kafka 服务无法连接到 EKS pod，则模拟 Ingress 网络故障。
+因此，取决于您的具体需求：
+
+Ingress：阻塞外部 Kafka 流量进入 EKS pod。
+Egress：阻塞 pod 向外部 Kafka 发起的连接。
+在 AWS FIS 中配置故障注入时，Egress 流量的故障模拟配置示例如下：
+json
+复制代码
+{
+  "targets": {
+    "eksPod": {
+      "resourceType": "aws:eks:pod",
+      "selectionMode": "ALL",
+      "resourceTags": {}
+    }
+  },
+  "actions": {
+    "network-fault": {
+      "actionId": "aws:network:disconnect",
+      "parameters": {
+        "port": "9092",  // Kafka 的端口
+        "durationSeconds": 60  // 故障持续时间
+      },
+      "targets": {
+        "eksPod": "eksPod"
+      }
+    }
+  }
+}
+总结
+如果要模拟 EKS pod 连接 外部 Kafka 的网络故障，这通常涉及到 Egress 流量的阻塞，即阻止 pod 向 Kafka 发起连接。
