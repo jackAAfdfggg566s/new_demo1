@@ -1,0 +1,65 @@
+要查看特定子网（Subnet）中有哪些资源，通常有以下几种方法，取决于你想要查找的资源类型。例如，你可以查看 EC2 实例、RDS 实例、EFS 挂载目标、Elastic Load Balancer (ELB)、Lambda 函数等资源。以下是常见方法：
+
+方法 1: 通过 AWS 管理控制台查看子网中的资源
+登录到 AWS 管理控制台。
+
+在 VPC 控制台 中查看子网信息：
+
+在控制台顶部导航栏中选择 VPC。
+在左侧导航栏中选择 子网（Subnets）。
+选择你感兴趣的子网，查看该子网的详细信息（如 CIDR 块、可用区等）。
+然而，这仅显示子网的基本信息，不会直接列出所有资源。要查看子网中的具体资源，需要根据不同资源类型进行查找。
+
+方法 2: 通过 EC2 控制台 查看子网中的 EC2 实例
+登录到 EC2 控制台。
+在左侧导航栏中，选择 实例（Instances）。
+使用 过滤器，选择 子网 ID，并输入你想要查询的子网 ID。这样你可以看到属于该子网的所有 EC2 实例。
+方法 3: 通过 AWS CLI 列出子网中的资源
+你可以通过 AWS CLI 列出在特定子网中的资源。以下是一些常用命令。
+
+1. 列出 EC2 实例
+使用以下命令列出指定子网中的 EC2 实例：
+
+bash
+复制代码
+aws ec2 describe-instances --filters Name=subnet-id,Values=<subnet-id>
+替换 <subnet-id> 为你要查询的子网 ID。
+
+2. 列出 RDS 实例
+使用以下命令列出在指定子网中运行的 RDS 实例：
+
+bash
+复制代码
+aws rds describe-db-instances --query "DBInstances[?DBSubnetGroup.Subnets[?SubnetIdentifier=='<subnet-id>']].DBInstanceIdentifier"
+替换 <subnet-id> 为你要查询的子网 ID。
+
+3. 列出 ELB（负载均衡器）
+使用以下命令列出指定子网中的 ELB 实例：
+
+bash
+复制代码
+aws elb describe-load-balancers --query "LoadBalancerDescriptions[?AvailabilityZones[?ZoneName=='<subnet-availability-zone>']].LoadBalancerName"
+替换 <subnet-availability-zone> 为子网所在的可用区名称（例如 us-west-2a）。
+
+4. 列出 EFS 挂载目标
+使用以下命令列出在特定子网中的 EFS 挂载目标：
+
+bash
+复制代码
+aws efs describe-mount-targets --file-system-id <file-system-id> --query "MountTargets[?SubnetId=='<subnet-id>']"
+方法 4: 通过 AWS Config 查看资源
+AWS Config 是一种可以帮助你跟踪资源配置和状态变化的服务。你可以使用 AWS Config 跟踪和查看所有资源在子网中的配置。
+
+登录到 AWS Config 控制台。
+在左侧导航栏中选择 资源类型。
+使用 过滤器 选择 子网，查看所有与特定子网相关的资源。
+方法 5: 使用 CloudFormation 或 Terraform（如果有使用基础设施即代码）
+如果你使用 CloudFormation 或 Terraform 来管理基础设施，你可以查看模板，了解哪些资源是通过它们部署到指定子网中的。
+
+方法 6: 查看 Lambda 函数 是否在子网中
+如果你的 Lambda 函数与 VPC 关联并运行在特定子网中，你可以在 Lambda 控制台 中查看。
+
+登录到 Lambda 控制台。
+查看每个函数的 VPC 配置，确认它们是否与特定子网关联。
+总结
+通过 AWS 管理控制台或 AWS CLI，你可以查看子网中包含的不同资源。对于每种资源类型（例如 EC2、RDS、EFS、ELB 等），你需要使用相应的控制台或 CLI 命令来查找与特定子网相关的资源。如果你希望实时跟踪和查看整个子网中的所有资源，AWS Config 是一个非常有用的工具。
