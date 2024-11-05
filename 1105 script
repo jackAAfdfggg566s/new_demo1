@@ -1,0 +1,59 @@
+要在 PowerShell 中退出一个正在运行的 Java 程序，并通过命令行重新启动它，可以分为两个步骤：
+
+查找并终止正在运行的 Java 程序
+使用 PowerShell 找到 Java 进程并结束它。你可以通过 Get-Process 命令来查找 Java 进程，并使用 Stop-Process 来终止它。
+
+重新启动 Java 程序
+使用 PowerShell 来重新启动 Java 程序。
+
+1. 查找并终止 Java 程序
+首先，使用 Get-Process 查找 Java 进程，并通过 Stop-Process 停止它。
+
+powershell
+复制代码
+# 查找 Java 进程
+$javaProcesses = Get-Process -Name java -ErrorAction SilentlyContinue
+
+# 如果找到进程，结束它
+if ($javaProcesses) {
+    $javaProcesses | ForEach-Object { Stop-Process -Id $_.Id }
+    Write-Host "Java 程序已停止"
+} else {
+    Write-Host "没有找到运行中的 Java 程序"
+}
+2. 重新启动 Java 程序
+在 PowerShell 脚本中，使用 Start-Process 来启动 Java 程序。假设 Java 程序是通过 .jar 文件运行的。
+
+powershell
+复制代码
+# 指定 Java 程序的路径
+$javaPath = "C:\path\to\java.exe"  # Java 可执行文件路径
+$jarFile = "C:\path\to\your_program.jar"  # Java 程序的 JAR 文件路径
+
+# 重新启动 Java 程序
+Start-Process -FilePath $javaPath -ArgumentList "-jar", $jarFile
+
+Write-Host "Java 程序已重新启动"
+整合脚本
+将两部分脚本整合起来，便于一次性执行：
+
+powershell
+复制代码
+# 结束正在运行的 Java 程序
+$javaProcesses = Get-Process -Name java -ErrorAction SilentlyContinue
+if ($javaProcesses) {
+    $javaProcesses | ForEach-Object { Stop-Process -Id $_.Id }
+    Write-Host "Java 程序已停止"
+} else {
+    Write-Host "没有找到运行中的 Java 程序"
+}
+
+# 重新启动 Java 程序
+$javaPath = "C:\path\to\java.exe"  # Java 可执行文件路径
+$jarFile = "C:\path\to\your_program.jar"  # Java 程序的 JAR 文件路径
+Start-Process -FilePath $javaPath -ArgumentList "-jar", $jarFile
+
+Write-Host "Java 程序已重新启动"
+注意事项
+替换 $javaPath 和 $jarFile 为实际的 Java 可执行文件和 JAR 文件路径。
+如果你的 Java 程序是通过其他方式启动（如命令行参数、classpath 配置等），需要调整 Start-Process 的 ArgumentList 部分。
