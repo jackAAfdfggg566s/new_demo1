@@ -1,0 +1,45 @@
+要在 AWS CloudWatch Logs Insights 中根据 EKS pod 内存使用情况（例如 avg pod memory usage）进行性能分析，并按 pod name 分组显示结果，您可以利用 CloudWatch Logs Insights 查询语言的聚合功能。通过查询 container insights 收集的日志数据，您可以计算 pod 的平均内存使用情况，并按 pod name 分组显示。
+
+前提条件：
+确保您已启用了 EKS Container Insights，它会自动收集每个 pod 的性能数据，包括内存和 CPU 使用情况。
+数据通常会存储在 AWS/ContainerInsights 日志组下。
+示例查询：
+假设您已经配置了容器洞察（Container Insights）并将其日志发送到 CloudWatch Logs，以下是如何按 pod name 显示 平均内存使用情况 的查询示例。
+
+1. 查询示例：
+sql
+复制代码
+fields @timestamp, kubernetes.pod_name, kubernetes.namespace_name, metrics.memoryUtilization
+| stats avg(metrics.memoryUtilization) as avgMemoryUsage by kubernetes.pod_name
+| sort avgMemoryUsage desc
+解释：
+fields：选择您要显示的字段。我们选择 @timestamp（时间戳），kubernetes.pod_name（pod 名称），kubernetes.namespace_name（namespace 名称）和 metrics.memoryUtilization（内存利用率，假设它是 memoryUtilization）。
+
+stats avg(metrics.memoryUtilization) as avgMemoryUsage by kubernetes.pod_name：
+
+avg(metrics.memoryUtilization)：计算每个 pod 的内存利用率的平均值。
+by kubernetes.pod_name：按 pod name 分组。
+sort avgMemoryUsage desc：按 平均内存使用情况 排序，降序显示内存使用最多的 pod。
+
+2. 查询详细解读：
+metrics.memoryUtilization：这是 EKS Container Insights 中每个容器或 pod 的内存使用率，通常以百分比表示。
+
+kubernetes.pod_name：表示 pod 的名称。查询将会按照每个 pod 分组，并显示每个 pod 的 平均内存使用情况。
+
+进一步细化：
+如果您希望查询特定时间段的数据，可以使用 filter 来限制时间范围。例如，查询过去 1 小时的数据：
+sql
+复制代码
+fields @timestamp, kubernetes.pod_name, metrics.memoryUtilization
+| filter @timestamp > ago(1h)
+| stats avg(metrics.memoryUtilization) as avgMemoryUsage by kubernetes.pod_name
+| sort avgMemoryUsage desc
+如果您只对某个特定 namespace 中的 pod 感兴趣，可以加上 namespace_name 过滤条件：
+sql
+复制代码
+fields @timestamp, kubernetes.pod_name, kubernetes.namespace_name, metrics.memoryUtilization
+| filter kubernetes.namespace_name = 'default'
+| stats avg(metrics.memoryUtilization) as avgMemoryUsage by kubernetes.pod_name
+| sort avgMemoryUsage desc
+结论：
+通过使用 CloudWatch Logs Insights，您可以轻松地根据 EKS pod 的 内存使用情况进行分析，并按 pod name 分组显示结果。上述查询示例提供了一个基础框架，您可以根据需要调整字段、时间范围和过滤条件。
