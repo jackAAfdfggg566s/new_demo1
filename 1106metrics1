@@ -1,0 +1,70 @@
+要在 AWS CloudWatch Logs Insights 中根据 EKS pod 内存使用情况 进行查询，并且 每个 pod 显示一条独立的曲线（而不是汇总），你可以使用 bin() 函数进行时间分组，avg() 聚合每个 pod 的内存使用情况，然后 按 pod_name 分组。这种方式会为每个 pod 显示一条独立的时间序列曲线。
+
+目标：
+按 pod name 进行分组。
+显示每个 pod 的 平均内存使用情况（不是汇总所有 pod 的数据，而是每个 pod 都有独立的时间序列曲线）。
+使用 CloudWatch Logs Insights 查询展示。
+1. CloudWatch Logs Insights 查询语句：
+假设你的日志组包含 EKS 的容器性能数据，并且已经启用了 EKS Container Insights，你可以使用以下查询：
+
+sql
+复制代码
+fields @timestamp, kubernetes.pod_name, metrics.memoryUtilization
+| stats avg(metrics.memoryUtilization) as avgMemoryUsage by kubernetes.pod_name, bin(@timestamp, 5m)
+| sort @timestamp asc
+解析：
+fields @timestamp, kubernetes.pod_name, metrics.memoryUtilization：
+
+选择需要显示的字段：时间戳（@timestamp）、Pod 名称（kubernetes.pod_name）、以及内存使用率（metrics.memoryUtilization）。
+stats avg(metrics.memoryUtilization) as avgMemoryUsage by kubernetes.pod_name, bin(@timestamp, 5m)：
+
+使用 stats 函数来计算每个 pod 的 内存使用率 的 平均值（avg(metrics.memoryUtilization)）。
+by kubernetes.pod_name：按 pod name 分组，确保每个 pod 都会有一条单独的曲线。
+bin(@timestamp, 5m)：按 5 分钟的时间窗口对数据进行分组，使数据按时间序列显示。
+sort @timestamp asc：
+
+按时间戳升序排列结果，确保图表的时间轴是正确的。
+2. 在 CloudWatch Dashboard 中显示每个 Pod 的曲线：
+要在 CloudWatch Dashboard 中显示这个查询的结果，并且每个 pod 显示一条独立的曲线，您需要创建一个新的 CloudWatch Dashboard，并将这个查询结果以 时间序列 的形式呈现出来。
+
+示例 CloudWatch Dashboard JSON 配置：
+json
+复制代码
+{
+  "DashboardName": "EKS-Pod-Memory-Usage-TimeSeries",
+  "Widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 12,
+      "properties": {
+        "query": "fields @timestamp, kubernetes.pod_name, metrics.memoryUtilization\n| stats avg(metrics.memoryUtilization) as avgMemoryUsage by kubernetes.pod_name, bin(@timestamp, 5m)\n| sort @timestamp asc",
+        "region": "us-west-2", 
+        "view": "timeSeries",
+        "stacked": false,
+        "title": "Pod Memory Usage - Average",
+        "logGroupNames": [
+          "/aws/containerinsights/YourClusterName/performance"
+        ],
+        "stat": "Average",
+        "period": 300,
+        "yAxis": {
+          "left": {
+            "label": "Memory Usage (%)"
+          }
+        }
+      }
+    }
+  ]
+}
+配置解释：
+DashboardName: 设置 CloudWatch Dashboard 的名称，这里为 EKS-Pod-Memory-Usage-TimeSeries。
+
+Widgets: 这是您要显示在 Dashboard 上的小部件（Widgets）。每个 Widget 都可以是一个图表、日志查询等。
+
+这里使用 log 类型的小部件，表示显示从 Logs Insights 查询的结果。
+query: 这个字段包含实际执行的 Logs Insights 查询。查询会按 pod name 分组并显示每个 pod 的 平均内存使用情况。
+
+查询语句与前面提到的一致，查询每个 pod
