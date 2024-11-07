@@ -1,0 +1,86 @@
+如果你想在 CloudWatch Logs Insights 中对 Amazon EKS Pod 的内存使用情况 进行查询，并按 Pod 名称 和 时间区间 分组，同时以 折线图 的形式展示结果，下面是详细的步骤和示例。
+
+关键概念
+bin() 函数：这个函数用于将数据按固定的时间间隔分组，例如：按 1 分钟、5 分钟、或 1 小时进行分组。
+stats 函数：用于进行数据聚合（例如计算平均值、最大值、最小值等）。
+示例：按时间区间查询每个 Pod 的内存使用情况
+假设你的日志中记录了每个 Pod 的内存使用数据，并且你希望按时间区间（例如 1 分钟）和 Pod 名称进行分组，查询每个 Pod 在不同时间段的平均内存使用情况。
+
+1. 基本查询结构
+以下是一个示例查询，查询每个 Pod 的内存使用情况，按时间段（例如：1 分钟）进行分组：
+
+sql
+复制代码
+fields @timestamp, pod_name, memory_usage
+| filter pod_name != "" and memory_usage != ""
+| stats avg(memory_usage) by pod_name, bin(@timestamp, 1m)
+| sort @timestamp desc
+解释：
+fields @timestamp, pod_name, memory_usage：选择日志中的时间戳、Pod 名称和内存使用量字段。
+filter pod_name != "" and memory_usage != ""：过滤掉没有 Pod 名称或内存使用数据的日志条目。
+stats avg(memory_usage) by pod_name, bin(@timestamp, 1m)：按 Pod 名称和时间区间（1 分钟）对内存使用量求平均值。
+sort @timestamp desc：按时间戳降序排序结果。
+2. 可视化数据
+执行上述查询后，你可以在 CloudWatch Logs Insights 中进行以下操作，以将数据可视化为 折线图：
+
+选择 "Visualization"（可视化）标签：在查询结果上方选择 可视化 标签。
+选择 "Line" 图表类型：从图表类型的下拉菜单中选择 Line（折线图）。
+配置 X 和 Y 轴：
+X 轴：通常是 时间（即时间戳，基于 bin() 函数进行分组）。
+Y 轴：是 内存使用量（由 avg(memory_usage) 计算得出）。
+Series：会按 Pod 名称 分组，因此每个 Pod 都会有一条独立的线。
+3. 调整查询中的时间区间
+你可以根据需要调整 bin() 函数的时间区间，以便在不同的粒度下查看数据。常见的时间区间如下：
+
+1 分钟：bin(@timestamp, 1m)
+5 分钟：bin(@timestamp, 5m)
+15 分钟：bin(@timestamp, 15m)
+1 小时：bin(@timestamp, 1h)
+其他聚合函数
+除了计算 平均值，你还可以使用其他聚合函数来查看不同的内存统计数据，比如 最大值、最小值、总和 等。例如：
+
+查询每个 Pod 最大内存使用量：
+sql
+复制代码
+fields @timestamp, pod_name, memory_usage
+| filter pod_name != "" and memory_usage != ""
+| stats max(memory_usage) by pod_name, bin(@timestamp, 1m)
+| sort @timestamp desc
+4. 使用更复杂的日志格式解析
+如果你的日志是 JSON 格式 或其他结构化格式，你可能需要使用 parse 函数来提取必要的字段。例如，如果日志格式如下：
+
+json
+复制代码
+{
+  "pod_name": "my-app-pod-1",
+  "memory_usage": 500000000,  // 内存使用，单位字节
+  "timestamp": "2024-11-07T12:00:00Z"
+}
+你可以使用如下查询：
+
+sql
+复制代码
+fields @timestamp, pod_name, memory_usage
+| filter pod_name != "" and memory_usage != ""
+| stats avg(memory_usage) by pod_name, bin(@timestamp, 1m)
+| sort @timestamp desc
+5. 调整时间范围
+确保 CloudWatch Logs Insights 中选择的 时间范围 足够广泛，以捕获你感兴趣的数据。如果你选择的时间范围太小，可能导致查询没有返回数据。你可以在 CloudWatch Logs Insights 中调整时间范围，例如：
+
+最近 1 小时：查看最近一个小时的内存使用情况。
+最近 24 小时：查看过去 24 小时的数据。
+6. 将查询结果添加到 CloudWatch Dashboard（可选）
+如果你想长期监控这些数据并跟踪内存使用情况，可以将查询结果保存为 CloudWatch Dashboard 的一部分：
+
+执行查询后，点击 Actions（操作）按钮。
+选择 Add to Dashboard（添加到仪表板）。
+选择现有的仪表板或创建一个新的仪表板。
+配置图表并保存。
+总结
+使用 CloudWatch Logs Insights 进行 EKS Pod 内存使用情况查询并可视化结果时，主要步骤是：
+
+使用 bin() 函数将数据按时间分组。
+使用 stats 函数进行聚合，如计算 平均值、最大值 等。
+在查询结果上选择 折线图 进行可视化。
+调整 bin() 的时间粒度，以适应不同的分析需求。
+确保日志格式正确，并根据具体的日志结构调整查询，能够帮助你更好地监控 EKS 集群中各个 Pod 的内存使用情况。
