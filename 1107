@@ -1,0 +1,93 @@
+To query Amazon EKS pod memory usage using CloudWatch Logs Insights and display the results as a line graph grouped by pod name, follow these steps:
+
+Assumptions:
+The memory usage data is available in CloudWatch Logs for your EKS Pods.
+The logs contain information such as pod name and memory usage (either in bytes or another unit).
+You want to visualize memory usage over time and group the data by pod name.
+Step-by-Step Instructions
+1. Ensure EKS Logs are Sent to CloudWatch Logs
+Ensure that EKS is set up to send logs related to your pods, including memory usage metrics. If you're using CloudWatch Agent, Fluentd, or other log collectors, verify that the logs are being sent to CloudWatch Logs. These logs should contain memory usage information in a structured format, like JSON or plain text.
+
+2. Format Your Query for CloudWatch Logs Insights
+In CloudWatch Logs Insights, you can write queries to extract memory usage and group by pod name.
+
+Here's a sample query to group memory usage by pod name:
+
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /memory/
+| parse @message "Pod: * MemoryUsage: *" as pod_name, memory_usage
+| stats avg(memory_usage) by pod_name, bin(@timestamp, 1m)
+| sort @timestamp desc
+Explanation:
+fields @timestamp, @message: Select the timestamp and the message field from your logs.
+filter @message like /memory/: Filter logs that contain the term "memory" (adjust this if your log format is different).
+parse @message "Pod: * MemoryUsage: *" as pod_name, memory_usage: Parse the pod name and memory usage from the log message. You need to adjust this line according to the structure of your logs. This assumes the logs have a format like Pod: <pod_name> MemoryUsage: <memory_value>.
+stats avg(memory_usage) by pod_name, bin(@timestamp, 1m): Calculate the average memory usage grouped by pod_name and bucketed by a 1-minute interval.
+sort @timestamp desc: Sort the results by timestamp in descending order.
+3. Adjust the Query Based on Your Log Format
+The key part of the query is the parse statement. Depending on your log structure, you may need to adjust this to correctly extract memory usage and pod name.
+
+For example:
+
+If your logs are JSON-formatted:
+
+sql
+复制代码
+fields @timestamp, pod_name, memory_usage
+| filter pod_name != "" and memory_usage != ""
+| stats avg(memory_usage) by pod_name, bin(@timestamp, 5m)
+| sort @timestamp desc
+If your logs are plain text, adjust the parse statement to match the format of your logs. For example:
+
+sql
+复制代码
+parse @message "* PodName=* MemoryUsage=* " as pod_name, memory_usage
+Make sure your logs are structured properly to allow CloudWatch Logs Insights to parse and query the correct fields (such as memory usage and pod name).
+
+4. Visualizing the Data in a Line Graph
+Once the query is run in CloudWatch Logs Insights, you can visualize the results as a line graph:
+
+Run the query: Execute your query in CloudWatch Logs Insights.
+Select the "Visualization" tab: After running the query, go to the Visualization tab (located on the right-hand side).
+Select "Line" graph: From the dropdown, select Line for the graph type.
+Configure the X and Y axes:
+The X-axis will typically represent time (i.e., @timestamp).
+The Y-axis will represent memory usage (i.e., avg(memory_usage)).
+The series can be based on pod_name so that each pod has a separate line.
+5. Customize and Save the Dashboard (Optional)
+You can also add this query to a CloudWatch Dashboard if you want to track memory usage trends for your EKS pods over time.
+
+Click on Actions in the query result screen.
+Select Add to Dashboard.
+Choose the desired Dashboard or create a new one.
+Configure the visualization to display as a line graph, then save the panel.
+6. Troubleshooting
+If your query is returning no data or the graph is not showing any lines:
+
+Check your log data: Ensure that logs are being correctly sent to CloudWatch Logs. If you're using a logging agent like Fluentd or CloudWatch Agent, verify that they are configured properly.
+Check the log format: If the logs are not formatted as expected, update the parse statement in the query to match your log structure.
+Adjust the time range: Make sure your query time range (top right corner) includes the period when the logs were generated.
+Example Query for JSON Logs
+If your logs are in JSON format like the following:
+
+json
+复制代码
+{
+  "pod_name": "my-app-pod-1",
+  "memory_usage": 500000000,  // memory in bytes
+  "timestamp": "2024-11-07T12:00:00Z"
+}
+You could use this query:
+
+sql
+复制代码
+fields @timestamp, pod_name, memory_usage
+| filter pod_name != "" and memory_usage != ""
+| stats avg(memory_usage) by pod_name, bin(@timestamp, 1m)
+| sort @timestamp desc
+This query will average the memory usage over 1-minute bins, and the results will be grouped by pod_name, allowing you to visualize memory usage per pod in a line graph.
+
+Conclusion
+By following these steps, you can query memory usage for your EKS pods using CloudWatch Logs Insights, group the data by pod name, and display the results as a line graph to track memory usage trends over time. Make sure to adjust the query according to your specific log format and structure to ensure accurate results.
