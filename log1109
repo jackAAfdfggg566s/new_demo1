@@ -1,0 +1,50 @@
+在 Amazon EKS (Elastic Kubernetes Service) 中，你可以通过 CloudWatch Logs 或 kubectl 查看日志文件，并按错误类型进行统计。假设你希望根据日志错误类型进行统计，可以按照以下步骤进行操作：
+
+1. 获取日志
+EKS 使用 CloudWatch Logs 来存储集群日志。你可以从 EKS 集群的日志流中获取错误信息。首先，确认你的 EKS 集群已经配置了日志记录，特别是控制平面日志。
+
+如果你已经设置好了 CloudWatch Logs，接下来可以从 AWS 管理控制台、CloudWatch 控制台，或者使用 AWS CLI 获取日志数据。
+
+bash
+复制代码
+aws logs filter-log-events --log-group-name "/aws/eks/cluster-name/cluster-control-plane" --filter-pattern "ERROR"
+2. 分析日志中的错误类型
+假设日志中的错误信息是结构化的或者包含某些特定的错误代码或关键字（如 ERROR、Exception、Failed 等）。你可以用正则表达式或者 grep 命令对日志进行过滤和分类。举例来说，使用 grep 命令来查找不同类型的错误。
+
+bash
+复制代码
+# 过滤包含"ERROR"的日志行
+grep "ERROR" your-log-file.log
+或者根据错误类型进行分类：
+
+bash
+复制代码
+# 统计特定错误类型的出现次数
+grep -o "TimeoutError" your-log-file.log | wc -l
+grep -o "ResourceNotFound" your-log-file.log | wc -l
+3. 使用 CloudWatch Logs Insights
+CloudWatch Logs Insights 是一个强大的日志分析工具，可以直接查询、分析并生成统计结果。你可以通过 CloudWatch Logs Insights 查询错误类型并进行统计。下面是一个示例查询：
+
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /ERROR/ 
+| stats count(*) by @message
+| sort count(*) desc
+这个查询将过滤所有包含 ERROR 的日志条目，并按错误消息类型进行统计。
+
+4. 获取统计结果
+根据错误的日志信息，你可以按错误类型分组并统计每个错误的出现次数。这可以通过 stats 操作实现，类似上面的 CloudWatch Logs Insights 查询。
+
+示例：
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /ERROR/
+| stats count(*) by errorType = substr(@message, 0, 20)  // 根据日志消息内容提取错误类型
+| sort count(*) desc
+5. 自动化
+如果你希望自动化这一过程，可以将日志分析和错误统计脚本集成到 CI/CD 流水线中，或者利用 CloudWatch Alarms 来监控和自动通知错误。
+
+总结
+通过上述方法，你可以按错误类型统计 Amazon EKS 中的日志，并获得相关的错误数量。最有效的方法是结合 CloudWatch Logs Insights 来进行强大的查询和分析。
