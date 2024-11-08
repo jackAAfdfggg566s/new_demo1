@@ -1,0 +1,70 @@
+要按照日志中的错误类型进行过滤，并根据 message 字段归类错误类型后进行计数，你可以利用 AWS CloudWatch Logs Insights 提供的强大功能来精确地查询和统计 EKS 中的日志数据。这将帮助你快速了解日志中的错误情况，识别不同错误类型的出现频率。下面是如何实现这一目标的详细步骤。
+
+步骤 1：获取和浏览日志
+首先，确保你已经将 EKS 集群的日志输出到 CloudWatch Logs。如果你尚未配置，可以通过 EKS 控制台或 AWS CLI 启用日志记录。特别是，控制平面日志（如 API 服务器日志、调度程序日志等）通常存储在 CloudWatch Logs 中。
+
+在 CloudWatch 控制台中，你可以浏览集群的日志组，选择相关日志流以查看具体的日志条目。如果你更喜欢命令行操作，可以使用 AWS CLI 获取日志：
+
+bash
+复制代码
+aws logs filter-log-events --log-group-name "/aws/eks/cluster-name/cluster-control-plane" --filter-pattern "ERROR"
+步骤 2：使用 CloudWatch Logs Insights 进行查询
+CloudWatch Logs Insights 是一个强大的查询引擎，可以帮助你从大量日志中提取有用信息。在这个场景中，我们的目标是过滤出包含错误的日志条目，并根据错误类型（例如 message 字段中的某些内容）进行分类统计。
+
+进入 CloudWatch 控制台，选择“Logs Insights”选项。在查询框中，你可以写出类似以下的查询：
+
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /ERROR/
+| stats count(*) by errorType = substr(@message, 0, 50)
+| sort count(*) desc
+解释：
+fields @timestamp, @message：选择你关心的字段。这里选择了 @timestamp 和 @message，前者显示日志时间戳，后者显示日志的详细内容。
+filter @message like /ERROR/：使用 filter 命令筛选出日志中包含 ERROR 的消息。这一步确保我们只关注错误日志，忽略正常的日志条目。
+stats count(*) by errorType = substr(@message, 0, 50)：使用 stats 聚合命令，根据 message 字段的前 50 个字符来创建一个错误类型分类（errorType）。这里的 substr(@message, 0, 50) 是取出日志消息的前 50 个字符来识别错误类型，这可以根据实际情况调整，例如，你可能只关心特定的错误代码或关键字。
+sort count(*) desc：按照错误类型的出现次数降序排列结果，以便快速查看最常见的错误类型。
+这个查询会返回每个错误类型的出现次数，帮助你快速了解错误的分布情况。
+
+步骤 3：优化错误类型的分类
+有时错误类型的归类可能不止于 substr(@message, 0, 50)。你可以根据日志的结构或错误消息的特定模式来提取更有意义的分类。比如，如果日志中的错误类型包含特定的标记或者错误代码，你可以使用正则表达式或其他字符串函数来提取。
+
+示例 1：基于特定错误代码归类
+假设你的日志消息中包含错误代码，如 TimeoutError 或 ResourceNotFound，你可以使用正则表达式来分类错误：
+
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /ERROR/
+| stats count(*) by errorType = case(
+    @message like /TimeoutError/, 'TimeoutError',
+    @message like /ResourceNotFound/, 'ResourceNotFound',
+    'Other'
+)
+| sort count(*) desc
+在这个查询中，我们使用了 case 表达式，它根据日志消息是否匹配特定的错误代码来归类错误。如果日志消息中包含 TimeoutError，则错误类型为 TimeoutError，如果包含 ResourceNotFound，则错误类型为 ResourceNotFound，否则归类为 Other。
+
+示例 2：按错误类型进行精细化分类
+有时候，错误信息可能没有直接的错误代码，而是一些描述性文本。在这种情况下，你可以根据错误消息的某些关键词进行分类：
+
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /ERROR/
+| stats count(*) by errorType = case(
+    @message like /connection/, 'ConnectionError',
+    @message like /timeout/, 'TimeoutError',
+    @message like /not found/, 'ResourceNotFound',
+    'UnknownError'
+)
+| sort count(*) desc
+这个查询会根据错误消息中包含的不同关键词（如 connection、timeout、not found）来归类错误类型，并统计每种类型的出现次数。
+
+步骤 4：查看和分析结果
+执行查询后，CloudWatch Logs Insights 会展示一个表格，列出每种错误类型及其出现的次数。通过查看这些结果，你可以识别出最常见的错误类型，进一步分析导致这些错误的原因，并采取相应的措施来解决问题。
+
+步骤 5：保存查询和设置报警
+如果你发现某些错误类型频繁出现，并且需要实时监控这些错误，你可以将查询保存为一个 CloudWatch Insights 查询，并将其设置为报警条件。例如，当某个错误类型的数量超过预设的阈值时，可以通过 SNS 发送通知，提醒你及时处理问题。
+
+总结
+通过 CloudWatch Logs Insights，你可以轻松地从 EKS 的日志中筛选出错误信息，并根据错误类型进行分类统计。这不仅有助于快速发现集群中的常见问题，还能够为你提供有针对性的错误分析，以便更好地排查和解决问题。无论是通过正则表达式、字符串函数，还是更细致的条件判断，你都可以根据自己的需要灵活地定制查询，帮助你更高效地管理 EKS 集群和日志分析工作。
