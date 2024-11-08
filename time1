@@ -1,0 +1,94 @@
+在 AWS CloudWatch Logs Insights 中，stat 和 bin 函数是两个常用的查询函数，用于对日志数据进行聚合和时间分组。它们的结合可以帮助你高效地分析和理解日志中的时间序列数据，下面是它们的详细解析和使用方法。
+
+1. stat 函数
+stat 是 聚合函数，用于对日志数据执行聚合操作。它允许你对日志数据中的字段进行统计分析，比如计算总数、平均值、最小值、最大值、总和等。
+
+常用的 stat 聚合类型：
+count()：计算符合条件的日志条目数。
+sum()：计算指定字段值的总和。
+avg()：计算指定字段值的平均值。
+min() 和 max()：计算指定字段的最小值和最大值。
+示例：
+统计日志条目的数量
+
+sql
+复制代码
+stats count() as totalLogs
+这条查询返回当前日志组中所有日志条目的数量，并将结果命名为 totalLogs。
+
+计算某个字段的平均值 假设每条日志都有一个 response_time 字段表示响应时间，你可以计算响应时间的平均值：
+
+sql
+复制代码
+stats avg(response_time) as avgResponseTime
+这将计算 response_time 字段的平均值，并命名为 avgResponseTime。
+
+按某字段分组统计 如果你想按 status_code 字段统计每个状态码的日志条数：
+
+sql
+复制代码
+stats count() by status_code
+这会返回每个 status_code 的日志条目数量。
+
+2. bin() 函数
+bin 函数用于 时间分桶（bucketizing），即将日志数据按指定的时间间隔进行分组，适用于处理时间序列数据。bin() 主要用于将时间戳（@timestamp）字段按一定时间间隔进行分组，从而创建时间序列。
+
+bin() 函数的作用是将指定时间范围内的日志条目按照时间间隔（例如每 1 分钟、每 5 分钟、每小时等）进行聚合。
+语法：
+sql
+复制代码
+bin(time_field, time_interval)
+time_field：你要基于哪个字段进行分组，通常是 @timestamp。
+time_interval：你想要的时间分组大小（例如：1m 表示每 1 分钟，1h 表示每 1 小时，5m 表示每 5 分钟等）。
+示例：
+按每小时分组日志 这条查询会把日志按照每小时（1h）进行分组：
+
+sql
+复制代码
+stats count() by bin(@timestamp, 1h)
+这将返回每个小时内的日志条目数，@timestamp 是日志的时间戳字段，bin(@timestamp, 1h) 把数据按小时分组。
+
+按每 5 分钟分组 如果你希望按每 5 分钟的时间间隔分组，可以使用：
+
+sql
+复制代码
+stats count() by bin(@timestamp, 5m)
+这将返回每 5 分钟内的日志条目数。
+
+3. stat 和 bin() 结合使用
+当你希望按时间窗口对日志进行聚合时，stat 和 bin() 可以结合使用。bin() 先将日志数据按时间分组，接着 stat 函数对每个时间窗口的数据进行聚合分析。
+
+示例：按 1 小时时间段统计日志条目数量
+sql
+复制代码
+stats count() as errorCount by bin(@timestamp, 1h)
+这条查询会计算每小时内日志中匹配条件的条目数量。bin(@timestamp, 1h) 将数据按每小时分组，count() 聚合每个小时内的日志条目数。
+示例：按时间段计算平均响应时间
+假设你的日志数据包含 response_time 字段，且你希望查看每小时的平均响应时间：
+
+sql
+复制代码
+stats avg(response_time) as avgResponseTime by bin(@timestamp, 1h)
+这会按小时将日志数据分组（bin(@timestamp, 1h)），然后计算每小时的响应时间平均值。
+示例：按 5 分钟时间窗口计算错误率
+假设你正在监控日志中的错误信息，并且想要统计每 5 分钟的错误计数，可以使用以下查询：
+
+sql
+复制代码
+stats count() as errorCount by bin(@timestamp, 5m)
+这条查询将数据按每 5 分钟分组，count() 统计每 5 分钟内的错误日志条目。
+4. 结合其他过滤条件使用 bin() 和 stat()
+你还可以在 bin() 和 stat() 函数的基础上添加过滤条件，例如过滤出包含特定关键字的日志条目。
+
+示例：查询每小时的错误数量（只统计包含 "ERROR" 的日志）
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /ERROR/
+| stats count() as errorCount by bin(@timestamp, 1h)
+这个查询会过滤出包含 "ERROR" 的日志，然后按小时分组并统计每小时的错误数量。
+小结
+stat 函数：用于对日志数据进行聚合分析，如统计计数、计算平均值、最小值、最大值等。
+bin 函数：将日志数据按时间间隔分组，适用于时间序列数据的分析。常见的时间间隔有 1m、5m、1h、1d 等。
+stat 和 bin 结合使用：通常用于按时间间隔聚合日志数据，进行时序分析，比如每小时的错误统计、响应时间计算等。
+通过合理使用 stat 和 bin()，你可以高效地在 CloudWatch Logs Insights 中进行日志的时间序列分析，帮助你识别系统中的趋势、异常和性能瓶颈。
