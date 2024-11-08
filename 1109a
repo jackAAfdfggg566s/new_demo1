@@ -1,0 +1,56 @@
+如果你不知道日志中具体的错误类型，但希望根据 message 内容的不同自动分类并统计其出现次数，可以通过 CloudWatch Logs Insights 提供的 正则表达式 和 parse 函数来提取信息并统计每种类型的出现次数。
+
+自动按内容分类并统计
+你可以使用 parse 和 stats count(*) by 来自动归类日志消息内容，并统计每种分类的出现次数。以下是两种常见的方式来实现：
+
+1. 使用 parse 提取日志内容并自动分类
+如果日志消息中有某些特定的模式（例如，错误信息后面有具体的描述），你可以使用 parse 提取这些内容并统计。
+
+查询示例：
+假设日志消息的内容包括类似 ERROR: <error_type> 或 Exception: <error_detail> 这样的结构，下面是如何进行查询的示例：
+
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /ERROR|Exception/   // 过滤包含 ERROR 或 Exception 的日志行
+| parse @message "*: *" as errorType, errorDetail  // 提取错误类型和详细信息（假设日志有这种结构）
+| stats count(*) by errorType   // 根据 errorType 分类并统计数量
+| sort count(*) desc
+解释：
+filter @message like /ERROR|Exception/：过滤包含 ERROR 或 Exception 的日志行。你可以根据日志中常见的关键词来过滤相关日志。
+parse @message "*: *" as errorType, errorDetail：这行假设日志消息的格式类似于 "ERROR: TimeoutError" 或 "Exception: ResourceNotFound"。parse 会提取 : 后面的部分作为 errorType，并将 errorDetail 作为错误的详细信息。如果你的日志格式不同，parse 语句可以根据实际格式进行调整。
+stats count(*) by errorType：根据 errorType 进行分组统计每种类型的出现次数。
+sort count(*) desc：按统计结果降序排列。
+2. 使用 parse 和正则表达式提取动态内容
+如果错误类型或错误信息格式不固定，可以通过正则表达式在 parse 语句中提取动态内容。例如，你可以用正则表达式来提取错误消息的关键部分（如错误代码、异常类型等），然后按提取出来的部分进行分类统计。
+
+查询示例：
+假设错误信息的模式较为复杂，但你仍然希望自动分类并计数：
+
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /ERROR|Exception|Failed/   // 过滤包含 ERROR、Exception 或 Failed 的日志
+| parse @message /(?:ERROR|Exception|Failed):? (\w+|\S+|\w+\s\S+)/ as errorType  // 使用正则表达式提取错误类型
+| stats count(*) by errorType   // 按 errorType 分类并统计数量
+| sort count(*) desc
+解释：
+filter @message like /ERROR|Exception|Failed/：过滤包含 ERROR、Exception 或 Failed 的日志条目。你可以根据具体的日志内容，修改这个过滤条件来捕捉相关的错误日志。
+parse @message /(?:ERROR|Exception|Failed):? (\w+|\S+|\w+\s\S+)/ as errorType：这是一个正则表达式，匹配日志中的错误类型。它会尝试从包含 ERROR、Exception 或 Failed 的日志中提取出后续的错误类型或错误描述（如 TimeoutError、ResourceNotFound 等）。(?:...) 是非捕获组，(\w+|\S+|\w+\s\S+) 匹配错误类型，支持单词、非空白字符，或者带空格的错误类型。
+stats count(*) by errorType：按 errorType 统计每种类型的出现次数。
+sort count(*) desc：按错误类型的出现次数降序排序。
+3. 自动分类多种不同类型
+如果日志中的错误类型更加复杂，你可以使用多个 parse 或 case 语句结合使用，以便自动分类。
+
+查询示例：
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /ERROR|Exception|Failed/
+| parse @message /(?:ERROR|Exception): (\S+)/ as errorType   // 提取可能的错误类型
+| stats count(*) by errorType
+| sort count(*) desc
+解释：
+parse @message /(?:ERROR|Exception): (\S+)/ as errorType：这行代码使用正则表达式从日志中提取可能的错误类型。它匹配所有以 ERROR: 或 Exception: 开头并跟随一个非空白字符（如 TimeoutError、NotFoundError 等）的日志条目。
+总结
+通过 CloudWatch Logs Insights 的 parse 和正则表达式功能，你可以灵活地提取日志内容中的错误类型，并进行自动分类和统计，无论你知道错误的具体类型与否。这使得你能够自动地分析日志中的错误，并快速了解不同错误类型的分布和频率。
