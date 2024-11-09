@@ -1,0 +1,52 @@
+如果你希望过滤日志中包含特定格式的行，例如 xxx时间|Error|type，并且只选择那些包含 "Error" 的日志，可以使用 AWS CloudWatch Logs Insights 的 filter 命令来实现。
+
+假设日志格式是固定的，并且你希望过滤出包含 "Error" 的日志行，可以按以下步骤进行：
+
+1. 过滤包含 "Error" 的日志行
+首先，你可以使用 filter 语句来匹配包含 "Error" 的日志消息。假设你的日志格式是 xxx时间|Error|type，我们可以用 filter 来筛选出包含 "Error" 的日志。
+
+查询示例：
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /Error/
+| sort @timestamp desc
+解释：
+filter @message like /Error/：过滤出所有包含 "Error" 的日志行。like 是用来匹配模式的操作符，这里是匹配所有包含 "Error" 的日志消息。
+sort @timestamp desc：按时间戳降序排序，确保最新的日志显示在前面。
+2. 过滤特定格式的日志（例如：xxx时间|Error|type）
+如果你有更严格的日志格式，日志中的格式为 xxx时间|Error|type，你可以通过正则表达式来过滤这个格式的日志。假设你希望检查中间部分是 Error，那么可以通过 parse 和 filter 来进一步精确过滤。
+
+查询示例：
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /.*\|Error\|.*/
+| sort @timestamp desc
+解释：
+filter @message like /.*\|Error\|.*/：这里使用了正则表达式 .*\|Error\|.* 来匹配包含 |Error| 的日志行。具体解释：
+.* 匹配任意字符零次或多次。
+\| 匹配管道符号（|），因为管道符在正则表达式中是特殊字符，所以需要转义。
+Error 是你要匹配的文本。
+.* 在 Error 后匹配任意字符零次或多次。
+sort @timestamp desc：按时间戳降序排序。
+3. 更复杂的过滤：提取格式并筛选
+如果日志消息中的格式更复杂，并且你希望解析出日志中的具体字段（例如时间、错误类型等），你可以使用 parse 来提取字段，然后使用 filter 或 stats 进行进一步处理。
+
+假设日志格式为 时间|Error|错误类型，例如 2024-11-08T12:00:00|Error|TimeoutError，你可以使用 parse 提取这些字段：
+
+查询示例：
+sql
+复制代码
+fields @timestamp, @message
+| parse @message "*|Error|*" as errorType
+| filter errorType != ""
+| stats count(*) by errorType
+| sort count(*) desc
+解释：
+parse @message "*|Error|*" as errorType：将日志消息按照 |Error| 进行拆分，并提取出错误类型部分（假设错误类型是 Error 后面的字段）。
+filter errorType != ""：确保 errorType 字段不为空。
+stats count(*) by errorType：统计每种错误类型的出现次数。
+sort count(*) desc：按错误类型的出现次数降序排序。
+总结
+通过使用 filter 和 parse 配合正则表达式，你可以精确地过滤出符合特定格式的日志条目，并根据需要进一步分类和统计。这种方式非常适合对日志内容有一定模式要求的场景。如果你有更复杂的日志格式或需求，可以根据实际情况调整正则表达式和解析逻辑。
