@@ -1,0 +1,93 @@
+在 AWS CloudWatch Logs Insights 中，使用 parse 命令可以从日志消息 (@message) 中提取特定的数据字段，帮助你对日志进行更精细的分析。parse 用于基于日志格式提取内容并将其赋值给新的字段，然后你可以对这些字段进行聚合、分组或过滤。
+
+基本语法
+parse 命令的基本语法如下：
+
+sql
+复制代码
+parse <field> "<pattern>" as <new_field1>, <new_field2>, ...
+<field>: 你希望解析的日志字段，通常是 @message，也可以是其他日志字段。
+<pattern>: 用于提取数据的模式，通常使用正则表达式或类似 * 的通配符。
+<new_field1>, <new_field2>, ...: 用于存储提取的内容的新字段名。
+常见的 parse 使用场景
+1. 简单的模式匹配
+假设你的日志条目包含类似 "ERROR: Timeout occurred at <timestamp>" 的消息格式，你可以使用 parse 来提取 "Timeout" 这一错误类型。
+
+sql
+复制代码
+fields @timestamp, @message
+| parse @message "ERROR: * occurred at *" as errorType, timestamp
+| stats count(*) by errorType
+parse @message "ERROR: * occurred at *" as errorType, timestamp: 这个查询会将日志中的 "ERROR: Timeout occurred at 2024-11-08T12:00:00" 解析成 errorType 为 "Timeout"，timestamp 为 "2024-11-08T12:00:00"。
+stats count(*) by errorType: 按 errorType 字段进行分组，并统计每个错误类型的出现次数。
+2. 提取 JSON 数据
+如果你的日志包含结构化的 JSON 格式数据，可以使用 parse 来提取特定的字段。例如，日志消息是一个 JSON 对象，内容像这样：
+
+json
+复制代码
+{"level": "ERROR", "message": "Timeout", "details": {"requestId": "1234", "errorCode": "504"}}
+你可以使用 parse 来提取 JSON 字段：
+
+sql
+复制代码
+fields @timestamp, @message
+| parse @message '"level": "*", "message": "*", "details": {"requestId": "*", "errorCode": "*"}' as logLevel, errorMessage, requestId, errorCode
+| stats count(*) by logLevel, errorCode
+parse @message '"level": "*", "message": "*", "details": {"requestId": "*", "errorCode": "*"}' as logLevel, errorMessage, requestId, errorCode: 提取日志中的 level、message、requestId 和 errorCode 字段。
+stats count(*) by logLevel, errorCode: 按日志的 logLevel 和 errorCode 字段进行分组，并统计它们的出现次数。
+3. 提取带有可变字段的日志
+如果日志的内容包含变化的部分，可以使用通配符（*）来匹配所有内容。例如，日志条目格式为 "User <userId> failed login attempt with error <errorMessage>"，你可以提取 userId 和 errorMessage：
+
+sql
+复制代码
+fields @timestamp, @message
+| parse @message "User * failed login attempt with error *" as userId, errorMessage
+| stats count(*) by userId, errorMessage
+parse @message "User * failed login attempt with error *" as userId, errorMessage: 提取日志中 "User 1234 failed login attempt with error InvalidPassword" 的 userId 和 errorMessage。
+stats count(*) by userId, errorMessage: 按 userId 和 errorMessage 进行分组统计。
+4. 匹配和提取复杂的模式
+如果你希望匹配日志中的更复杂结构，可以使用正则表达式。例如，日志格式为 "ERROR [2024-11-08 12:00:00] Timeout for request <requestId>"，你可以提取 timestamp 和 requestId：
+
+sql
+复制代码
+fields @timestamp, @message
+| parse @message "ERROR [*] Timeout for request *" as timestamp, requestId
+| stats count(*) by requestId
+parse @message "ERROR [*] Timeout for request *" as timestamp, requestId: 提取日志中 ERROR [2024-11-08 12:00:00] Timeout for request 12345 的 timestamp 和 requestId。
+stats count(*) by requestId: 按 requestId 进行分组，并统计每个请求 ID 的出现次数。
+5. 使用正则表达式进行更复杂的提取
+你也可以通过使用正则表达式来进行更复杂的字段提取。例如，提取日志中的 IP 地址：
+
+sql
+复制代码
+fields @timestamp, @message
+| parse @message /(?:IP:|Source:)\s(\d+\.\d+\.\d+\.\d+)/ as ipAddress
+| stats count(*) by ipAddress
+parse @message /(?:IP:|Source:)\s(\d+\.\d+\.\d+\.\d+)/ as ipAddress: 这个查询使用正则表达式提取 IP 地址。它会匹配 "IP: 192.168.1.1" 或 "Source: 192.168.1.1" 格式的日志。
+stats count(*) by ipAddress: 按 ipAddress 字段进行分组并统计每个 IP 地址的出现次数。
+6. 组合多个解析步骤
+如果日志的结构非常复杂，你可以组合多个 parse 来提取不同的字段。例如，假设你有一个日志包含不同类型的错误信息和时间戳，你可以逐步解析不同的字段：
+
+sql
+复制代码
+fields @timestamp, @message
+| parse @message "Timestamp: * Error: * Details: *" as timestamp, errorType, details
+| parse @message "User: * Action: *" as userId, action
+| stats count(*) by errorType, userId
+第一个 parse 提取 timestamp、errorType 和 details。
+第二个 parse 提取 userId 和 action。
+最后根据 errorType 和 userId 进行统计。
+7. 通过 parse 提取字段后进行聚合和排序
+你还可以通过 stats 命令对解析后的字段进行聚合统计，并按出现次数进行排序。例如，统计每种错误类型和用户 ID 的出现次数：
+
+sql
+复制代码
+fields @timestamp, @message
+| parse @message "ErrorType: * User: *" as errorType, userId
+| stats count(*) by errorType, userId
+| sort count(*) desc
+通过 parse 提取 errorType 和 userId，然后使用 stats count(*) by 按这些字段进行聚合，并按照出现次数排序。
+总结
+parse 是 CloudWatch Logs Insights 中一个非常强大的命令，用于从日志消息中提取特定的字段。
+你可以使用正则表达式、通配符或自定义模式来灵活提取日志内容，并将其用作新的字段进行聚合、过滤、分组等操作。
+通过结合 stats、filter 和 sort 等命令，可以轻松地对日志数据进行深入分析。
