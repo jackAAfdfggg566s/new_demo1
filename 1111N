@@ -1,0 +1,62 @@
+好的！如果你想要在 AWS CloudWatch Dashboard 中实现基于下拉框（变量选择器）来选择 podname 并执行相应的日志查询，我们可以通过 CloudWatch Dashboards 中的变量来实现动态查询。
+
+以下是完整的示例，包含了下拉框的定义以及基于选择的 podname 查询日志的 JSON 配置。
+
+1. 定义下拉框（变量）部分
+在 CloudWatch Dashboard 中，我们可以使用 变量 来动态选择 podname。这些变量可以基于日志查询来填充。
+
+json
+复制代码
+{
+  "variables": [
+    {
+      "name": "podname",
+      "title": "Select Pod",
+      "default": "default-pod-name", 
+      "type": "query",
+      "query": {
+        "source": "/aws/eks/containerinsights", 
+        "queryString": "fields podname | stats count() by podname | sort podname",
+        "region": "us-west-2"
+      }
+    }
+  ]
+}
+2. 查询日志并根据 podname 显示内存数据
+json
+复制代码
+{
+  "widgets": [
+    {
+      "type": "log",
+      "properties": {
+        "title": "Memory Usage for Selected Pod",
+        "logGroupNames": [
+          "/aws/eks/containerinsights"
+        ],
+        "query": "fields @timestamp, @message | filter podname = \"$podname\" | parse @message 'memory_usage: *' as memory_usage | sort @timestamp desc | limit 20",
+        "region": "us-west-2",
+        "stat": "Average",
+        "title": "Memory Usage for Pod"
+      }
+    }
+  ]
+}
+解释：
+1. 定义下拉框（变量）
+name: podname 是下拉框的名称，表示你选择的 Pod 名称会被传递到查询中。
+type: query 表示下拉框的内容将由查询生成。
+query:
+source: /aws/eks/containerinsights 表示从该日志组中获取 podname 字段。
+queryString: fields podname | stats count() by podname | sort podname 是查询语句，它会列出所有 podname 字段的唯一值，并按字母顺序排序。你可以根据实际日志的字段进行调整。
+default: 你可以设置一个默认的 Pod 名称（例如 default-pod-name），以便用户进入 Dashboard 时可以看到默认选项。
+2. 日志查询部分
+在 query 部分中，我们使用了 $podname 变量，它会在用户选择下拉框中的 Pod 名称时动态填充。
+filter podname = "$podname" 用于过滤日志，只显示与所选 podname 相关的日志。
+其他部分（如 parse @message 'memory_usage: *' as memory_usage）用于解析日志中的内存使用数据并展示。
+结果：
+当你打开 CloudWatch Dashboard 时，用户可以通过下拉框选择不同的 podname，然后日志查询会根据所选 Pod 名称动态展示该 Pod 的内存使用数据。
+注意事项：
+确保日志中的 podname 和内存使用数据的格式与你的 queryString 和 parse 语句匹配。如果日志的格式不同，你可能需要根据实际情况调整 query 和 parse。
+podname 和 memory_usage 应该出现在日志的消息中，或者你应该在 parse 语句中调整字段提取方式。
+通过这种方式，CloudWatch Dashboards 可以动态根据用户选择的 Pod 显示相应的内存使用日志。如果有更多需求，随时告诉我！
