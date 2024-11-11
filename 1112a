@@ -1,0 +1,125 @@
+在 AWS CloudWatch Logs Insights 中，通过 下拉框选择查询参数并应用于查询是一个常见需求，尤其是在 CloudWatch Dashboard 中使用动态参数时。CloudWatch 支持通过动态变量来实现这一功能，允许你在查询中使用下拉框选择参数，以便根据选择的值执行不同的查询。
+
+目标
+通过 CloudWatch Dashboard 中的下拉框（动态变量）选择参数（如日志组、日志流等）。
+将选定的参数应用于 CloudWatch Logs Insights 查询 中。
+1. 创建动态选择器并在查询中使用
+你可以使用 CloudWatch Dashboard 的 动态变量 来创建下拉框，并根据选择的参数修改查询。以下是实现这一功能的步骤和示例。
+
+2. JSON 配置示例
+假设你想根据选择的 日志组 和 时间范围 来动态查询日志，以下是完整的 JSON 配置：
+
+示例：基于日志组选择动态查询
+json
+复制代码
+{
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "logGroupNames": [
+          "${LogGroupSelector}"
+        ],
+        "query": "fields @timestamp, @message | sort @timestamp desc | limit 20",
+        "region": "us-west-2"
+      }
+    }
+  ],
+  "parameters": {
+    "LogGroupSelector": {
+      "type": "LogGroupSelector",
+      "values": [
+        "/aws/eks/your-cluster-name/pod",
+        "/aws/lambda/your-lambda-log-group",
+        "/aws/ecs/your-ecs-log-group"
+      ]
+    }
+  }
+}
+3. JSON 解释
+widgets：定义了 CloudWatch Dashboard 中的可视化元素，这里使用的是 log 类型的小部件，显示日志查询结果。
+
+logGroupNames: 这是一个使用 ${LogGroupSelector} 作为动态变量的字段，表示选择的日志组。
+query: 这是 CloudWatch Logs Insights 查询，查询日志组中的 @timestamp 和 @message 字段，并按时间降序排序，限制结果为 20 条日志。
+region: 定义区域（这里使用的是 us-west-2）。
+parameters：这里定义了一个名为 LogGroupSelector 的动态变量，它是一个 LogGroupSelector 类型的选择器，用户可以在 Dashboard 中从下拉框中选择不同的日志组。
+
+values: 定义了下拉框中可供选择的日志组（这些值是硬编码的日志组，可以根据实际情况动态获取）。
+4. 查询中使用动态变量
+在查询中，${LogGroupSelector} 会被自动替换为用户在下拉框中选择的日志组。通过这种方式，你的查询会根据用户选择的日志组动态更新。
+
+示例查询：
+sql
+复制代码
+fields @timestamp, @message
+| filter @logGroup = '${LogGroupSelector}'
+| sort @timestamp desc
+| limit 20
+${LogGroupSelector}：这个动态变量会根据下拉框中的选择动态变化，从而筛选出不同的日志组。
+5. 动态获取日志组列表
+如果你希望自动化地获取所有日志组并填充到下拉框中，你可以使用 AWS CLI 或 SDK 来动态列出日志组，然后更新 Dashboard 配置。
+
+使用 AWS CLI 获取日志组列表：
+bash
+复制代码
+aws logs describe-log-groups --query "logGroups[].[logGroupName]" --output text
+这条命令会返回所有的日志组，你可以将返回的日志组名称作为 values 插入到 LogGroupSelector 中。
+
+示例返回的日志组列表：
+bash
+复制代码
+/aws/eks/your-cluster-name/pod
+/aws/lambda/your-lambda-log-group
+/aws/ecs/your-ecs-log-group
+将这些日志组插入到 Dashboard 配置中的 values 数组中。
+
+6. 使用动态时间范围选择
+除了日志组外，你还可以使用 时间范围 作为动态变量。以下是一个结合时间范围的完整示例：
+
+json
+复制代码
+{
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "logGroupNames": [
+          "${LogGroupSelector}"
+        ],
+        "query": "fields @timestamp, @message | filter @timestamp >= '${StartTime}' and @timestamp <= '${EndTime}' | sort @timestamp desc | limit 20",
+        "region": "us-west-2"
+      }
+    }
+  ],
+  "parameters": {
+    "LogGroupSelector": {
+      "type": "LogGroupSelector",
+      "values": [
+        "/aws/eks/your-cluster-name/pod",
+        "/aws/lambda/your-lambda-log-group",
+        "/aws/ecs/your-ecs-log-group"
+      ]
+    },
+    "StartTime": {
+      "type": "Date",
+      "value": "2024-01-01T00:00:00Z"
+    },
+    "EndTime": {
+      "type": "Date",
+      "value": "2024-01-31T23:59:59Z"
+    }
+  }
+}
+7. 总结
+动态变量：使用 ${LogGroupSelector} 作为查询中的动态变量，允许用户在下拉框中选择日志组。
+LogGroupSelector：在 parameters 中定义动态变量，设置可供选择的日志组列表（可以通过 AWS CLI 动态获取）。
+查询语句：在查询中使用动态变量来过滤日志数据，例如 filter @logGroup = '${LogGroupSelector}'。
+通过这种方式，你可以在 CloudWatch Dashboard 中创建动态下拉框选择器，并根据用户选择的参数动态更新查询条件。这对于实时监控和快速筛选特定日志组非常有用。如果有更多的需求或问题，随时告诉我！
