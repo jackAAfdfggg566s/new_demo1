@@ -1,0 +1,100 @@
+在 AWS CloudWatch Logs Insights 中，下拉框选择参数用于动态地更改查询条件，以便执行不同的查询。AWS CloudWatch Logs Insights 允许通过变量与动态选择器结合来执行查询。
+
+使用下拉框选择器动态查询
+在 CloudWatch Dashboard 中，你可以为日志查询提供动态选择框，让用户从中选择不同的日志组、查询条件等。使用 CloudWatch Dashboard 的 动态变量 来创建下拉框选择器。通过这些变量，查询语句中的参数将会动态更新。
+
+1. 创建日志查询的动态变量
+在 CloudWatch Logs Insights 查询中，可以使用 variables 来创建动态变量。你可以定义不同的下拉选项（如日志组、查询参数等），然后通过这些动态变量来过滤查询。
+
+2. CloudWatch Dashboard JSON 配置
+为了在 CloudWatch Dashboard 中使用下拉框来选择查询参数，你需要将动态变量与查询结合在一起。以下是如何通过 JSON 配置设置动态变量并进行查询的示例。
+
+示例：根据选择的日志组进行查询
+定义动态变量： 假设你想让用户从下拉框中选择不同的日志组，查询会根据选择的日志组来显示结果。
+
+CloudWatch Dashboard JSON 示例：
+
+json
+复制代码
+{
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "logGroupNames": [
+          "${LogGroupSelector}"
+        ],
+        "query": "fields @timestamp, @message | sort @timestamp desc | limit 20",
+        "region": "us-west-2"
+      }
+    }
+  ],
+  "parameters": {
+    "LogGroupSelector": {
+      "type": "LogGroupSelector",
+      "values": [
+        "/aws/lambda/your-log-group-1",
+        "/aws/lambda/your-log-group-2",
+        "/aws/lambda/your-log-group-3"
+      ]
+    }
+  }
+}
+3. 详细解析：
+widgets: 这是大盘（Dashboard）中要显示的可视化元素。在这个例子中，是一个日志查询小部件（log widget）。
+logGroupNames: 这是查询要使用的日志组。"${LogGroupSelector}" 是一个动态变量，在 Dashboard 中通过下拉框来选择日志组。
+query: 这是执行的查询语句，@timestamp 和 @message 是日志中的默认字段。查询将显示最新的 20 条日志消息。
+parameters: 定义了一个名为 LogGroupSelector 的动态变量，它将允许用户在下拉框中选择一个日志组。values 数组包含了可能的日志组选项。
+4. 如何设置下拉框
+在上面的 JSON 示例中，LogGroupSelector 是一个动态变量，用于作为日志组选择器。你可以提供多个值来让用户选择。
+用户可以通过界面中的下拉框选择一个日志组（例如 /aws/lambda/your-log-group-1），然后查询结果会基于该选择来更新。
+5. 高级使用：多个动态变量
+你可以结合多个动态变量来过滤和定制查询。例如，选择一个日志组和时间范围。
+
+json
+复制代码
+{
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "logGroupNames": [
+          "${LogGroupSelector}"
+        ],
+        "query": "fields @timestamp, @message | filter @timestamp >= ${StartTime} and @timestamp <= ${EndTime} | sort @timestamp desc | limit 20",
+        "region": "us-west-2"
+      }
+    }
+  ],
+  "parameters": {
+    "LogGroupSelector": {
+      "type": "LogGroupSelector",
+      "values": [
+        "/aws/lambda/your-log-group-1",
+        "/aws/lambda/your-log-group-2",
+        "/aws/lambda/your-log-group-3"
+      ]
+    },
+    "StartTime": {
+      "type": "Date",
+      "value": "2024-01-01T00:00:00Z"
+    },
+    "EndTime": {
+      "type": "Date",
+      "value": "2024-01-31T23:59:59Z"
+    }
+  }
+}
+6. 总结：
+parameters：定义了下拉框选项，用户可以在 Dashboard 中选择不同的值。
+${LogGroupSelector}：动态选择的变量，用户在下拉框中选择后，会自动应用到查询中。
+query：查询中使用了动态变量，能够根据选择的日志组和其他参数进行筛选。
+通过这种方式，你可以在 CloudWatch Dashboard 中创建灵活的查询和动态下拉框，让用户能够轻松选择查询条件。
