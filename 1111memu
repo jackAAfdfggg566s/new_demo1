@@ -1,0 +1,164 @@
+如果你希望在 JSON 中为前端界面提供一个支持 search（搜索）和 inputType: select（选择）的结构，可以设计一个包含这些交互字段的数据格式。这将用于表示一个可以进行搜索的下拉框（select 元素），用户可以从中选择一个项（例如 Kubernetes pod 名称）或者通过输入来过滤。
+
+以下是如何设计 JSON 来支持这种交互：
+
+JSON 结构设计
+我们将设计一个 JSON 结构来描述一个下拉框，支持搜索功能并且用 inputType: select 来表示下拉选择。用户可以搜索并选择一个 pod 名称。
+
+json
+复制代码
+{
+  "namespace": "default",  // 当前命名空间
+  "searchable": true,      // 是否允许搜索
+  "inputType": "select",   // 输入类型为 select（下拉框）
+  "placeholder": "Select Pod", // 下拉框的占位符
+  "pods": [
+    {
+      "id": "pod-1",
+      "name": "pod-1",
+      "cpuUsage": null
+    },
+    {
+      "id": "pod-2",
+      "name": "pod-2",
+      "cpuUsage": null
+    },
+    {
+      "id": "pod-3",
+      "name": "pod-3",
+      "cpuUsage": null
+    }
+  ],
+  "queries": {
+    "getPods": {
+      "logGroupName": "/aws/eks/cluster",  // 日志组名称
+      "queryString": "fields @timestamp, pod_name | filter namespace = '{namespace}' | stats count() by pod_name",
+      "timeRange": {
+        "startTime": 1683734400000,  // 查询起始时间（Unix 时间戳）
+        "endTime": 1683738000000    // 查询结束时间（Unix 时间戳）
+      }
+    },
+    "getCpuUsage": {
+      "logGroupName": "/aws/eks/cluster",
+      "queryString": "fields @timestamp, pod_name, cpu_usage | filter namespace = '{namespace}' and pod_name = '{podName}' | stats avg(cpu_usage) by pod_name, bin(@timestamp, 5m) | sort @timestamp desc",
+      "timeRange": {
+        "startTime": 1683734400000,
+        "endTime": 1683738000000
+      }
+    }
+  }
+}
+解释：
+namespace：指定当前选中的 Kubernetes 命名空间，表示用户正在操作的命名空间（例如 default）。
+searchable：一个布尔值，表示是否允许在下拉框中搜索项。如果为 true，则允许搜索；如果为 false，则是静态选择。
+inputType：指定输入类型，这里设置为 select，表示下拉框选择。
+placeholder：为下拉框提供一个占位符文本（例如 "Select Pod"），当没有选项时显示。
+pods：一个数组，包含所有可选择的 pod 名称，每个 pod 对象包括：
+id: pod 的唯一标识符。
+name: pod 的名称（显示给用户的内容）。
+cpuUsage: 当前 pod 的 CPU 使用率（初始为 null，会根据查询结果填充）。
+queries：包含两个查询：
+getPods：查询当前命名空间下的所有 pod 名称。通过 CloudWatch Logs Insights API 查询日志流，获取该 namespace 下的所有 pod 名称。
+getCpuUsage：查询指定 pod 的 CPU 使用情况。通过 CloudWatch Logs Insights 查询特定 pod 的 CPU 使用情况，按时间段汇总。
+搜索功能
+searchable：这个字段使得前端界面能够在下拉框中启用搜索功能。当用户在输入框中键入时，前端将实时过滤下拉框中的 pods 选项。
+inputType: select：明确表示这是一个下拉选择框，用户只能从列表中选择一个选项。
+例子：
+假设你有以下 pods：
+
+json
+复制代码
+"pods": [
+  {
+    "id": "pod-1",
+    "name": "pod-1",
+    "cpuUsage": null
+  },
+  {
+    "id": "pod-2",
+    "name": "pod-2",
+    "cpuUsage": null
+  },
+  {
+    "id": "pod-3",
+    "name": "pod-3",
+    "cpuUsage": null
+  }
+]
+在前端（比如 React），你可以创建一个支持搜索的下拉框，动态过滤并显示这些 pod 名称。
+
+前端实现（React 示例）
+假设我们使用 React 和 react-select 库来实现带搜索功能的下拉框。
+
+安装 react-select：
+
+bash
+复制代码
+npm install react-select
+React 组件示例：
+
+jsx
+复制代码
+import React, { useState, useEffect } from 'react';
+import Select from 'react-select';
+
+// 假设我们有一个包含 pods 数据的 JSON
+const podData = {
+  namespace: 'default',
+  searchable: true,
+  inputType: 'select',
+  placeholder: 'Select Pod',
+  pods: [
+    { id: 'pod-1', name: 'pod-1', cpuUsage: null },
+    { id: 'pod-2', name: 'pod-2', cpuUsage: null },
+    { id: 'pod-3', name: 'pod-3', cpuUsage: null }
+  ]
+};
+
+const PodSelect = () => {
+  const [selectedPod, setSelectedPod] = useState(null);
+  const [cpuUsage, setCpuUsage] = useState(null);
+
+  // 选择 pod 时的回调
+  const handlePodChange = async (selectedOption) => {
+    setSelectedPod(selectedOption);
+    
+    // 假设查询 CPU 使用率的函数
+    const podName = selectedOption.name;
+    const usage = await fetchCpuUsage(podName);
+    setCpuUsage(usage);
+  };
+
+  // 模拟查询某个 pod 的 CPU 使用率
+  const fetchCpuUsage = async (podName) => {
+    // 模拟从 CloudWatch 查询 CPU 使用率
+    return `${podName} CPU Usage: 50%`;
+  };
+
+  return (
+    <div>
+      <Select
+        options={podData.pods.map(pod => ({ value: pod.id, label: pod.name }))}
+        onChange={handlePodChange}
+        placeholder={podData.placeholder}
+        isSearchable={podData.searchable}
+      />
+      {selectedPod && <div>Selected Pod: {selectedPod.name}</div>}
+      {cpuUsage && <div>{cpuUsage}</div>}
+    </div>
+  );
+};
+
+export default PodSelect;
+解释：
+React Select：我们使用 react-select 来创建一个下拉框，isSearchable 属性由 podData.searchable 控制，决定是否启用搜索功能。
+动态查询：当用户选择一个 pod 时，会触发 handlePodChange 方法，在其中模拟了查询该 pod CPU 使用率的操作（通过 fetchCpuUsage）。
+显示 CPU 使用情况：在用户选择 pod 后，展示该 pod 的 CPU 使用率。
+总结
+在这个 JSON 结构中：
+
+searchable 控制是否允许搜索。
+inputType: select 指定这是一个下拉框。
+pods 列出了可供选择的 pod 名称及其 CPU 使用情况（初始为空，稍后会填充）。
+queries 部分为后端查询逻辑提供了模板，前端通过 API 请求来动态查询 CPU 使用情况。
+通过这种方式，你可以实现一个支持搜索和选择功能的下拉框，用户选择后显示相关信息（例如 CPU 使用率）。
