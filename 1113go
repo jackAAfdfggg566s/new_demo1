@@ -1,0 +1,39 @@
+在 AWS EKS 中，使用 CloudWatch Container Insights 来查看某个 namespace 下所有 Pod 的内存使用情况，你可以使用 CloudWatch Metrics 来获取相关数据。以下是一个简单的步骤和查询方式，帮助你查看特定时间范围内（比如 10 小时前）的内存使用情况。
+
+步骤 1: 确保启用 CloudWatch Container Insights
+首先，确保你的 EKS 集群启用了 Container Insights。你可以在 AWS Management Console 中启用它，也可以通过 eksctl 或 AWS CLI 来启用。
+
+bash
+复制代码
+eksctl utils update-cluster-logging --enable-types "api, audit, auth, authenticator, controllerManager, scheduler, containerInsights" --region <region> --cluster <cluster_name>
+步骤 2: 在 CloudWatch 中查询 Metrics
+在 CloudWatch 中，你可以根据 namespace、pod、以及时间范围来查看特定的内存指标。以下是一个基于 CloudWatch Logs Insights 的查询方式：
+
+1. 打开 CloudWatch 控制台，选择 Container Insights。
+2. 点击 Logs Insights。
+3. 选择你要查询的日志组（例如：/aws/containerinsights/your-cluster-name/performance）。
+4. 使用以下查询来查看指定时间点（比如 10 小时前）内所有 Pod 的内存使用情况。
+sql
+复制代码
+fields @timestamp, kubernetes.namespace_name, kubernetes.pod_name, kubernetes.container_name, memoryBytes
+| filter kubernetes.namespace_name = "your-namespace-name"
+| filter @timestamp >= ago(10h) and @timestamp < ago(9h)
+| stats avg(memoryBytes) by kubernetes.namespace_name, kubernetes.pod_name, kubernetes.container_name
+| sort by kubernetes.pod_name
+这个查询会：
+
+过滤指定的 namespace。
+显示 10 小时前的数据。
+聚合每个 pod 和容器的平均内存使用情况。
+解释：
+kubernetes.namespace_name: 过滤特定的 namespace。
+kubernetes.pod_name: 显示每个 Pod 的名字。
+memoryBytes: 显示内存使用的字节数。
+@timestamp: 过滤特定时间范围的数据。
+步骤 3: 结果查看与分析
+执行查询后，你可以查看各个 Pod 在该时间段的内存使用情况。如果你想查看更长时间范围的数据，只需调整查询中的 @timestamp 过滤条件。
+
+备选方法：通过 CloudWatch Metrics
+如果你更倾向于查看 CloudWatch 中的 Container Insights Metrics，你可以在 CloudWatch 控制台中选择 Metrics > EKS，然后选择你的集群和命名空间，查看 Memory 使用情况。
+
+希望这能帮助你准确地获取 EKS 集群中容器的内存使用情况。如果需要进一步定制查询或有其他问题，请随时告知！
