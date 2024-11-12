@@ -1,0 +1,133 @@
+要在 AWS CloudWatch Dashboard 中通过 下拉菜单 动态获取 EKS Pod 名称 并用于查询，你需要做一些调整，因为 EKS Pod 名称是动态生成的，且与日志流有关。
+
+在 CloudWatch 中，EKS Pod 的日志流通常是通过 @logStream 字段来标识的，通常日志流的名称中会包含 Pod 名称（例如 /aws/eks/<cluster-name>/pod/<namespace>/<pod-name>）。因此，我们可以使用 CloudWatch Logs Insights 查询 来获取所有的 Pod 名称，并让用户选择。
+
+目标
+使用下拉菜单动态列出所有 EKS Pod 名称。
+将选定的 Pod 名称 应用到查询中。
+1. 获取所有 EKS Pod 日志流
+首先，我们需要编写一个查询，以提取所有 Pod 的日志流名称。假设你的 EKS Pod 日志流的名称包含 /pod/ 字段（例如 /aws/eks/your-cluster-name/pod/<namespace>/<pod-name>），你可以使用 CloudWatch Logs Insights 查询列出所有日志流并获取 Pod 名称。
+
+查询：列出所有 Pod 名称
+sql
+复制代码
+fields @logStream
+| filter @logStream like "/pod/"
+| stats count() by @logStream
+| sort count() desc
+| limit 100
+查询说明：
+@logStream: 表示日志流字段，通常包含 Pod 名称。
+filter @logStream like "/pod/": 过滤出所有包含 /pod/ 的日志流名称。
+stats count() by @logStream: 按日志流名称进行统计，确保获取所有日志流。
+limit 100: 限制最多返回 100 个日志流。
+这个查询会列出所有包含 /pod/ 的日志流名称，并返回最多 100 个日志流。这些日志流的名称会包含 EKS Pod 的信息。
+
+2. 配置 CloudWatch Dashboard JSON
+2.1 动态获取 Pod 名称作为下拉菜单选择
+你可以在 CloudWatch Dashboard 配置中使用 LogStreamSelector 类型的动态变量来让用户选择不同的 Pod 名称。
+
+以下是一个配置示例，展示如何实现这一功能：
+
+json
+复制代码
+{
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "logGroupNames": [
+          "/aws/eks/your-cluster-name/pod"
+        ],
+        "query": "fields @timestamp, @message | filter @logStream = '${PodSelector}' | sort @timestamp desc | limit 20",
+        "region": "us-west-2"
+      }
+    }
+  ],
+  "parameters": {
+    "PodSelector": {
+      "type": "LogStreamSelector",
+      "query": "fields @logStream | filter @logStream like '/pod/' | stats count() by @logStream | sort count() desc | limit 100"
+    }
+  }
+}
+2.2 解析配置
+logGroupNames：这里设置了一个日志组 /aws/eks/your-cluster-name/pod，你可以根据你的 EKS 集群名称和日志组的结构调整这一字段。
+
+${PodSelector}：这是一个动态变量，它将根据用户从下拉菜单中选择的 Pod 名称自动替换。查询中的 @logStream = '${PodSelector}' 会过滤出选定日志流（即 Pod）对应的日志。
+
+query：该查询会根据 ${PodSelector} 动态变量获取特定 Pod 的日志，并按时间戳降序排列。
+
+parameters：这里定义了一个 PodSelector 变量，它是一个 LogStreamSelector 类型的选择器。这个选择器会根据查询动态列出所有包含 /pod/ 的日志流，作为下拉菜单的选项。
+
+3. 自动化获取日志流
+为了确保下拉框中的选项始终更新，你可以通过 AWS CLI 或 SDK 自动获取所有日志流并动态更新 Dashboard 配置。
+
+使用 AWS CLI 获取日志流列表：
+bash
+复制代码
+aws logs describe-log-streams --log-group-name "/aws/eks/your-cluster-name/pod" --query "logStreams[].[logStreamName]" --output text
+该命令会列出所有 EKS Pod 的日志流名称。然后，你可以将这些日志流名称插入到 Dashboard 配置中的 PodSelector 中。
+
+4. 示例：自动获取 Pod 日志流并更新配置
+假设通过 CLI 获取的日志流名称如下：
+
+bash
+复制代码
+/aws/eks/your-cluster-name/pod/default/pod-1
+/aws/eks/your-cluster-name/pod/default/pod-2
+/aws/eks/your-cluster-name/pod/production/pod-3
+/aws/eks/your-cluster-name/pod/staging/pod-4
+你可以将这些日志流名称填充到 PodSelector 的 values 中：
+
+json
+复制代码
+{
+  "parameters": {
+    "PodSelector": {
+      "type": "LogStreamSelector",
+      "values": [
+        "/aws/eks/your-cluster-name/pod/default/pod-1",
+        "/aws/eks/your-cluster-name/pod/default/pod-2",
+        "/aws/eks/your-cluster-name/pod/production/pod-3",
+        "/aws/eks/your-cluster-name/pod/staging/pod-4"
+      ]
+    }
+  }
+}
+5. 完整的 JSON 示例：
+json
+复制代码
+{
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "logGroupNames": [
+          "/aws/eks/your-cluster-name/pod"
+        ],
+        "query": "fields @timestamp, @message | filter @logStream = '${PodSelector}' | sort @timestamp desc | limit 20",
+        "region": "us-west-2"
+      }
+    }
+  ],
+  "parameters": {
+    "PodSelector": {
+      "type": "LogStreamSelector",
+      "query": "fields @logStream | filter @logStream like '/pod/' | stats count() by @logStream | sort count() desc | limit 100"
+    }
+  }
+}
+6. 总结
+使用 CloudWatch Logs Insights 查询列出所有的 EKS Pod 日志流，提取其中的 Pod 名称。
+使用 LogStreamSelector 类型的动态变量创建一个下拉框，用户可以选择 Pod。
+查询语句中的 ${PodSelector} 变量会根据用户选择的 Pod 名称动态更新。
+通过这种方式，你可以在 CloudWatch Dashboard 中创建一个动态下拉框，让用户选择不同的 EKS Pod 并查看与该 Pod 相关的日志。如果你有多个 Pod 或日志流，可以根据日志流名称进行筛选。
