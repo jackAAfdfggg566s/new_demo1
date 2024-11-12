@@ -1,0 +1,89 @@
+在 AWS CloudWatch Logs Insights 中，想要通过 下拉菜单 传入变量（如 par），你需要创建一个 查询模板，并利用 CloudWatch 仪表盘（Dashboard）来设置变量，并通过 JSON 配置 来实现参数化查询。
+
+实现步骤概览
+创建查询模板：首先，你在 CloudWatch Logs Insights 中创建一个查询模板，查询模板允许通过 ${par} 来接收输入值。
+创建仪表盘：然后，你将查询模板添加到一个 CloudWatch 仪表盘 中，并配置一个下拉菜单，允许选择变量值。
+仪表盘 JSON 配置：最后，使用仪表盘 JSON 来定义变量，并将下拉菜单关联到这些变量。
+步骤 1：创建查询模板
+首先，你需要在 CloudWatch Logs Insights 查询编辑器中创建一个查询，使用 ${par} 来引用变量。
+
+示例查询（按变量 par 过滤日志）
+sql
+复制代码
+fields @timestamp, @message
+| filter @message like /${par}/
+| sort @timestamp desc
+| limit 20
+在这个查询中，par 是一个占位符变量。通过在 CloudWatch 仪表盘中配置，这个变量的值可以通过下拉菜单动态传入。
+
+步骤 2：创建仪表盘
+登录到 AWS 管理控制台，然后进入 CloudWatch。
+在左侧导航栏中，选择 仪表盘 (Dashboards)。
+创建一个新的仪表盘或编辑现有仪表盘。
+在仪表盘中，添加一个 日志查询 小组件（Log query widget）。
+在添加小组件时，选择你刚刚创建的查询，并确保它使用 ${par} 作为查询中的参数。
+步骤 3：使用仪表盘 JSON 配置变量
+你可以通过 CloudWatch 仪表盘的 JSON 配置来为查询提供动态变量（如 par）。在仪表盘 JSON 配置中，你可以使用 变量（如下拉菜单）并将它们绑定到查询。
+
+仪表盘 JSON 配置示例
+假设你希望通过下拉菜单动态选择 par 的值。你可以通过以下 JSON 配置在仪表盘中定义一个变量 par，并将它用于查询。
+
+json
+复制代码
+{
+  "version": "8",
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "query": "fields @timestamp, @message | filter @message like /${par}/ | sort @timestamp desc | limit 20",
+        "region": "us-east-1",
+        "statistic": "Sum",
+        "period": 300,
+        "view": "timeSeries",
+        "title": "Log Query for ${par}",
+        "start": "-1h",
+        "end": "now",
+        "logGroupNames": [
+          "/aws/lambda/my-function"
+        ]
+      }
+    }
+  ],
+  "parameters": [
+    {
+      "name": "par",
+      "label": "Select Filter Value",
+      "type": "String",
+      "default": "memoryUsage",
+      "allowedValues": [
+        "memoryUsage",
+        "error",
+        "latency"
+      ]
+    }
+  ]
+}
+解释：
+query: 这是你的 Log Insights 查询，其中 ${par} 会被你在下拉菜单中选择的值替换。查询中使用 like /${par}/ 来匹配日志消息中包含指定字符串的部分。
+parameters: 这是你在仪表盘中定义的变量部分。par 是一个 String 类型的变量，可以选择 "memoryUsage"、"error" 或 "latency"，作为日志查询的过滤条件。
+name: par 是变量的名称，在查询中使用 ${par} 来引用。
+label: Select Filter Value 是下拉菜单的标签。
+default: memoryUsage 是下拉菜单的默认值。
+allowedValues: 这是一个下拉菜单中的可选值，用户可以从中选择一个值。
+变量的工作原理：
+用户在仪表盘上通过下拉菜单选择 par 的值（例如 memoryUsage、error 或 latency）。
+查询中的 ${par} 会自动被选中的值替换。
+这样，查询就可以根据选择的值过滤日志内容。
+步骤 4：在仪表盘中使用下拉菜单
+通过上述配置，你的仪表盘将会自动生成一个下拉菜单供用户选择值，并且在查询中动态替换 ${par} 变量的值。查询结果会根据选择的值过滤，并显示相应的日志数据。
+
+小结
+查询模板：在 CloudWatch Logs Insights 查询中使用 ${par} 作为占位符。
+仪表盘 JSON 配置：在仪表盘的 JSON 配置中定义 par 变量，并提供可选值列表。
+动态查询：下拉菜单允许你选择一个值，这个值会替换查询中的 ${par} 变量，从而动态过滤日志。
+这种方法让你在 CloudWatch 仪表盘中创建灵活的日志查询，并通过下拉菜单传入参数，实现动态查询的功能。如果有更多问题，欢迎继续提问！
