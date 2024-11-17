@@ -1,0 +1,155 @@
+好的，如果你希望使用 **AWS Lambda** 与 **Python** 来执行 AWS CLI 命令，以下是一个详细的实现步骤。我们将使用 `subprocess` 模块来执行 AWS CLI 命令，并通过 Lambda 和 API Gateway 创建一个查询按钮，使用户能够查询数据。
+
+### 步骤 1: 创建 Lambda 函数（Python）
+
+我们将创建一个 Lambda 函数，通过 `subprocess` 模块来调用 AWS CLI。
+
+#### Lambda 函数代码（Python）
+
+Lambda 函数需要安装 AWS CLI。如果你使用的是 AWS Lambda 环境，默认并没有安装 AWS CLI，因此我们将通过 `subprocess` 来执行命令。首先，需要创建 Lambda 函数并在其中执行命令。
+
+```python
+import subprocess
+import json
+
+def lambda_handler(event, context):
+    # 示例：查询 CloudWatch 指标数据
+    node_name = event.get("nodeName", "node-1")  # 可以从事件中获取节点名称，默认值为 node-1
+
+    # 构造 AWS CLI 命令
+    command = [
+        'aws', 'cloudwatch', 'get-metric-statistics',
+        '--namespace', 'Kubernetes',
+        '--metric-name', 'PodNodeInstanceID',
+        '--dimensions', f'Name=NodeName,Value={node_name}',
+        '--start-time', '$(date --date="1 hour ago" --utc +%Y-%m-%dT%H:%M:%SZ)',
+        '--end-time', '$(date --utc +%Y-%m-%dT%H:%M:%SZ)',
+        '--period', '60',
+        '--statistics', 'Average',
+        '--region', 'us-west-2'
+    ]
+
+    try:
+        # 使用 subprocess 执行 AWS CLI 命令
+        result = subprocess.run(command, capture_output=True, text=True, check=True)
+        output = result.stdout  # 获取命令执行的标准输出
+
+        # 返回执行结果
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': 'Query successful!',
+                'result': output
+            })
+        }
+    except subprocess.CalledProcessError as e:
+        # 如果 AWS CLI 命令执行失败，返回错误信息
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'message': 'Failed to execute AWS CLI command.',
+                'error': str(e)
+            })
+        }
+```
+
+### 解释：
+
+- `subprocess.run()` 用于执行 AWS CLI 命令并捕获命令的标准输出（`stdout`）。
+- 我们通过 `event` 获取传入的参数 `nodeName`，这可以通过 API Gateway 传递给 Lambda。
+- 如果执行命令成功，将返回查询结果；如果命令执行失败，将返回错误信息。
+
+### 步骤 2: 在 Lambda 中安装 AWS CLI
+
+Lambda 环境默认不带 AWS CLI，你需要手动安装它。你可以通过创建一个包含 AWS CLI 的 Lambda 层来完成这个步骤，或者在本地打包一个包含 AWS CLI 的 Lambda 部署包。
+
+#### 在本地安装并打包 AWS CLI
+
+1. **创建一个虚拟环境并安装 AWS CLI**：
+
+   ```bash
+   mkdir lambda-package
+   cd lambda-package
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install awscli
+   ```
+
+2. **打包部署包**：
+
+   打包 `awscli` 和你的 Lambda 函数：
+
+   ```bash
+   mkdir python
+   cp -r venv/lib/python3.*/site-packages/* python/
+   cp ../lambda_function.py .
+   zip -r lambda_function.zip .
+   ```
+
+3. **上传到 Lambda**：
+
+   进入 AWS Lambda 控制台，将这个 `lambda_function.zip` 文件上传作为 Lambda 函数。
+
+#### 使用 AWS Lambda 层（可选）
+
+你可以选择通过 Lambda 层来安装 AWS CLI。这里假设你已经准备好一个包含 AWS CLI 的层，可以直接在 Lambda 配置中引用它。
+
+### 步骤 3: 配置 API Gateway
+
+1. **创建 API Gateway**：进入 **API Gateway** 控制台，创建一个 **HTTP API**。
+2. **创建 POST 方法**：选择 API Gateway 中的 POST 方法，将其与 Lambda 函数进行集成。
+3. **设置 CORS**：为了能够在 CloudWatch Dashboard 中调用该 API，你需要启用 CORS（跨域资源共享）。
+
+### 步骤 4: 在 CloudWatch Dashboard 中添加查询按钮
+
+在 CloudWatch Dashboards 中，你可以使用 HTML 小部件来展示查询按钮，并通过 JavaScript 调用 API Gateway 来触发 Lambda 函数。
+
+#### HTML + JavaScript 示例
+
+```html
+<div>
+  <button onclick="fetchMetrics()">查询节点实例ID</button>
+  <div id="result"></div>
+</div>
+
+<script>
+  async function fetchMetrics() {
+    const nodeName = 'node-1';  // 可以动态改变此参数
+    
+    const response = await fetch('https://your-api-id.execute-api.region.amazonaws.com/default/your-lambda-function', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ nodeName: nodeName }),
+    });
+
+    const result = await response.json();
+    
+    // 展示结果
+    document.getElementById('result').innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+  }
+</script>
+```
+
+#### 说明：
+
+- **查询按钮**：点击按钮后，`fetchMetrics()` 函数会被触发，向 API Gateway 发送 POST 请求。
+- **API 请求**：`fetchMetrics()` 使用 JavaScript 的 `fetch()` 函数向 API Gateway 发送 HTTP 请求，传递 `nodeName` 参数。
+- **显示查询结果**：查询结果会返回到前端，并展示在页面中。
+
+### 步骤 5: 测试和优化
+
+1. 在 **CloudWatch Dashboard** 中，点击查询按钮，查看是否能成功触发 API 请求并返回查询结果。
+2. 如果需要，你可以调整 Lambda 函数中的查询逻辑，或修改 `nodeName` 参数。
+3. 通过 AWS CLI 命令，你还可以做更复杂的查询操作，只需在 Lambda 函数中修改命令即可。
+
+### 总结
+
+通过这个过程，我们实现了以下功能：
+
+1. 在 **Lambda** 中使用 Python 调用 **AWS CLI** 执行查询操作。
+2. 使用 **API Gateway** 将 Lambda 函数暴露为 HTTP API。
+3. 在 **CloudWatch Dashboard** 中使用 HTML 小部件添加一个查询按钮，通过 JavaScript 调用 API Gateway 触发 Lambda 执行查询并返回结果。
+
+这种方法虽然需要一定的配置工作，但能够大大增强 CloudWatch Dashboards 的交互性，使其能够通过自定义查询按钮实时查询数据。
