@@ -1,0 +1,36 @@
+在AWS CloudWatch上，若想展示Kubernetes集群中Pod所属的Node的实例ID，可以利用CloudWatch Metrics与自定义指标结合来实现。以下是实现的步骤：
+
+步骤 1: 确保Kubernetes集群已启用CloudWatch Agent
+首先，确保你的Kubernetes集群中每个Node都已安装并配置了CloudWatch Agent（通常是通过amazon-cloudwatch-agent）。这个Agent将会收集Node的信息（如实例ID、CPU、内存等），并将其发送到CloudWatch。
+
+步骤 2: 在Kubernetes中标记Pod和Node的关系
+你可以使用Kubernetes的kubelet提供的标签和注解来获取Pod和Node之间的关系。Pod的nodeName属性会标记它运行在哪个Node上。为了获取Node的实例ID，你可以通过以下方式获取：
+
+Node的EC2实例ID：
+
+在每个Node上，可以通过instance metadata接口访问EC2实例的ID：
+ruby
+复制代码
+curl http://169.254.169.254/latest/meta-data/instance-id
+利用标签：
+
+你可以使用kubectl命令来查看Node上包含的EC2实例ID（如果集群的节点使用了标签）。可以使用如下命令获取Node实例ID：
+bash
+复制代码
+kubectl get nodes -o wide
+或者通过特定的标签映射将Node与EC2实例ID关联。
+步骤 3: 创建CloudWatch自定义指标
+使用CloudWatch Agent收集到的节点信息后，你可以通过CloudWatch的自定义仪表板（Dashboard）将其展示。
+
+在CloudWatch中创建自定义指标（如果没有现成的Node EC2实例ID指标）。
+使用aws-sdk、aws-cli或者CloudWatch控制台来上传这些自定义指标。上传时可以将Pod的Node信息（如EC2实例ID）作为标签附加。
+步骤 4: 创建CloudWatch大盘展示Pod与Node的关系
+登录到AWS CloudWatch控制台。
+选择Dashboards，点击创建新的Dashboard。
+在大盘中添加一个新的Widget，选择“Metrics”类型。
+选择你上传的自定义指标，并根据Pod和Node之间的关系来设置展示内容。
+例如，你可以按Pod与Node关联的EC2实例ID展示。
+步骤 5: 使用CloudWatch Logs和Metrics查看Pod日志
+若你需要查看Pod和Node的实时状态或日志，可以将Kubernetes的日志集成到CloudWatch Logs中，结合Metrics来监控。
+
+通过以上步骤，你可以实现AWS CloudWatch展示Pod所属Node的实例ID，进而在大盘中进行可视化监控。
