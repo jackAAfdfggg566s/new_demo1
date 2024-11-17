@@ -1,0 +1,126 @@
+要在 AWS CloudWatch Dashboard 上添加一个查询按钮，然后使用 AWS CLI 执行查询并返回结果，直接在 CloudWatch Dashboard 内执行 AWS CLI 命令是不可行的。CloudWatch Dashboards 本身不支持直接通过按钮触发 AWS CLI 命令。但你可以通过一些额外的工具和技术来实现类似的功能。以下是如何通过 Lambda 函数和 API Gateway 创建一个**自定义查询按钮**，在 CloudWatch Dashboard 中查询数据并显示结果。
+
+### 实现思路
+
+1. **创建 Lambda 函数**：该函数会接收查询请求，执行 `aws cli` 命令或相应的 AWS SDK 操作，获取数据。
+2. **使用 API Gateway**：为 Lambda 函数创建一个 HTTP API，使其可以通过 Web 请求（例如 CloudWatch Dashboard 上的查询按钮）调用。
+3. **在 CloudWatch Dashboard 中集成查询按钮**：使用 CloudWatch Dashboards 的 **Web呼叫**（例如 `HTML` 小部件）与 API Gateway 通信，通过按钮触发查询。
+
+### 具体步骤
+
+#### 步骤 1: 创建 Lambda 函数
+
+首先，创建一个 AWS Lambda 函数，来执行你想要的查询操作（如调用 AWS CLI 或使用 AWS SDK）。
+
+假设我们想查询每个节点的 EC2 实例ID，并返回一个结果。
+
+**Lambda 函数示例 (Node.js)**：
+
+```javascript
+const AWS = require('aws-sdk');
+const cloudwatch = new AWS.CloudWatch();
+
+exports.handler = async (event) => {
+    // 通过 CloudWatch 获取自定义指标数据
+    const params = {
+        MetricName: 'PodNodeInstanceID',
+        Namespace: 'Kubernetes',
+        Dimensions: [
+            {
+                Name: 'NodeName',
+                Value: event.nodeName // 通过传入的参数来指定Node名称
+            }
+        ],
+        StartTime: new Date(new Date().getTime() - 3600 * 1000), // 过去1小时
+        EndTime: new Date(),
+        Period: 60,
+        Statistics: ['Average']
+    };
+
+    try {
+        const data = await cloudwatch.getMetricStatistics(params).promise();
+        
+        // 返回结果
+        return {
+            statusCode: 200,
+            body: JSON.stringify(data),
+        };
+    } catch (error) {
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ message: error.message }),
+        };
+    }
+};
+```
+
+这个 Lambda 函数会查询指定 `NodeName` 的 CloudWatch 指标（如 `PodNodeInstanceID`），并返回过去1小时的数据。
+
+#### 步骤 2: 配置 API Gateway
+
+接下来，创建一个 **API Gateway** 来触发这个 Lambda 函数。
+
+1. 在 AWS 控制台中，进入 **API Gateway** 服务。
+2. 创建一个 **HTTP API**。
+3. 配置一个 **POST 方法**，并将它连接到刚刚创建的 Lambda 函数。
+4. 在 `Integration` 中选择 Lambda 函数，并授权 API Gateway 调用该 Lambda 函数。
+5. 部署 API，获得一个 HTTP 端点 URL。
+
+#### 步骤 3: 在 CloudWatch Dashboard 中添加查询按钮
+
+CloudWatch Dashboards 支持添加 HTML 小部件，可以用来嵌入自定义内容（例如按钮、表单等）。你可以利用这个功能来创建一个查询按钮，并通过 JavaScript 和 API Gateway 的 HTTP 端点触发 Lambda 查询。
+
+1. 打开 **CloudWatch Dashboard**，并创建或编辑一个现有的大盘。
+2. 在 Dashboard 中添加一个 **Text Widget**，并选择 **HTML** 格式。
+3. 在 HTML 中嵌入一个按钮，并使用 JavaScript 触发 API 请求。
+
+**HTML + JavaScript 示例：**
+
+```html
+<div>
+  <button onclick="fetchMetrics()">查询节点实例ID</button>
+  <div id="result"></div>
+</div>
+
+<script>
+  async function fetchMetrics() {
+    const nodeName = 'node-1'; // 你可以动态改变此参数
+    
+    const response = await fetch('https://your-api-id.execute-api.region.amazonaws.com/default/your-lambda-function', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ nodeName: nodeName }),
+    });
+
+    const result = await response.json();
+    
+    // 展示结果
+    document.getElementById('result').innerHTML = `<pre>${JSON.stringify(result, null, 2)}</pre>`;
+  }
+</script>
+```
+
+在这个示例中：
+
+- 用户点击 "查询节点实例ID" 按钮时，会触发 `fetchMetrics()` 函数。
+- `fetchMetrics()` 函数会向 API Gateway 发送 HTTP 请求，触发 Lambda 函数。
+- Lambda 函数执行后，会返回查询结果，并在 CloudWatch Dashboard 上的 `result` 部分显示出来。
+
+#### 步骤 4: 测试和优化
+
+1. 在 CloudWatch Dashboard 中测试查询按钮，确保它可以触发 Lambda 函数并返回数据。
+2. 你可以根据需要修改查询条件，或进一步美化展示结果。
+
+### 总结
+
+通过结合 AWS Lambda、API Gateway 和 CloudWatch Dashboards 的 HTML 小部件，你可以在 CloudWatch 大盘中实现一个查询按钮。当用户点击该按钮时，Lambda 函数会自动执行查询（比如获取 Kubernetes Node 实例 ID），并通过 API Gateway 返回查询结果。
+
+这种方法的优势是：
+
+- **自动化**：查询过程由 Lambda 函数处理，可以灵活定制。
+- **实时性**：可以动态获取 CloudWatch 中的数据，实时响应用户请求。
+- **扩展性**：你可以轻松调整查询条件，或者根据不同的需求修改 Lambda 函数的逻辑。
+
+这种方法虽然需要一些设置，但可以将 CloudWatch Dashboards 变得更加互动和动态，提升运维人员的操作效率。
