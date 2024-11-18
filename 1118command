@@ -1,0 +1,20 @@
+要获取某个特定 `namespace` 下处于 `Ready` 状态的 Pod，可以使用以下 `kubectl` 命令：
+
+```bash
+kubectl get pods -n <namespace> --field-selector=status.phase=Running -o=jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready"&&@.status=="True")])].metadata.name}'
+```
+
+### 解释：
+- `-n <namespace>`：指定你要查询的 Kubernetes `namespace`。
+- `--field-selector=status.phase=Running`：筛选出处于 `Running` 状态的 Pod（并非所有 `Running` 状态的 Pod 都是 Ready）。
+- `-o=jsonpath=...`：通过 `jsonpath` 提取符合条件的 Pod 名称。
+  - `{.items[?(@.status.conditions[?(@.type=="Ready"&&@.status=="True")])].metadata.name}`：这是一个 `jsonpath` 表达式，用于查找 `Ready` 状态的 Pod。
+
+### 例子：
+假设你要查询 `my-namespace` 中的 Pod，可以运行以下命令：
+
+```bash
+kubectl get pods -n my-namespace --field-selector=status.phase=Running -o=jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready"&&@.status=="True")])].metadata.name}'
+```
+
+该命令将返回 `my-namespace` 中所有处于 `Ready` 状态的 Pod 名称。
