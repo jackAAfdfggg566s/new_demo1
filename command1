@@ -1,0 +1,28 @@
+报错 `unterminated filter` 通常意味着 `jsonpath` 表达式中存在语法错误或括号没有正确关闭。在你的例子中，问题可能出在 `jsonpath` 表达式的书写方式上。
+
+为了解决这个问题，可以调整命令格式，使其更稳定并正确地解析 JSON 路径。以下是改正后的命令：
+
+```bash
+kubectl get pods -n <namespace> -o=jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready"&&@.status=="True")]).metadata.name}'
+```
+
+### 解释：
+1. `kubectl get pods -n <namespace>`：列出指定命名空间中的所有 Pod。
+2. `-o=jsonpath='...'`：使用 `jsonpath` 提取所需数据。
+3. `items[?(@.status.conditions[?(@.type=="Ready"&&@.status=="True")]).metadata.name`：改正了过滤条件部分，使其正确匹配所有 `Ready` 状态的 Pods。
+
+### 完整示例：
+假设你要查询 `my-namespace` 中的 `Ready` Pod，可以运行以下命令：
+
+```bash
+kubectl get pods -n my-namespace -o=jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready"&&@.status=="True")]).metadata.name}'
+```
+
+### 如果问题仍然存在：
+可以使用以下命令调试并打印出完整的 Pod 信息，查看 `jsonpath` 是否符合你的预期：
+
+```bash
+kubectl get pods -n <namespace> -o json
+```
+
+通过查看完整的 JSON 输出，你可以确认 Pod 的状态和条件部分，确保 `jsonpath` 表达式的正确性。
