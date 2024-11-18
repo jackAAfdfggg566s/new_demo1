@@ -1,156 +1,58 @@
-在 AWS Fault Injection Simulator (AWS FIS) 中，自动化执行故障注入实验可以通过以下方式实现。通常，FIS 测试需要指定实验的目标资源，比如 ECS 服务、EC2 实例、Lambda 函数等。在 Kubernetes 环境中，你可以通过 AWS FIS 来执行针对 **EKS (Elastic Kubernetes Service)** 的故障注入实验，例如模拟 **Pod 的故障**、**网络延迟** 等。
+在自动化 AWS FIS (Fault Injection Simulator) 使用中，如果需要动态更新 Pod 名称，并判断在指定的 namespace 下哪些 Pod 处于 ready 状态，可以通过以下步骤来实现：
 
-对于 Kubernetes 环境中的 Pod，通常会遇到需要手动更新 Pod 名称的问题。例如，目标 Pod 名称通常需要在每次实验前手动指定，这可能在多 Pod 环境中不太方便。为了简化流程，以下是如何通过自动化实现 AWS FIS 中的 Pod 名称动态更新，减少人工干预。
+### 1. 获取指定 namespace 下所有 Pod 的状态
 
-### 自动化 AWS FIS 实验的步骤
-
-1. **获取 Pod 名称动态生成目标**：我们可以通过 AWS SDK 或 AWS CLI 动态查询当前 EKS 集群中的 Pod 名称，然后将这些 Pod 名称传递到 AWS FIS 实验配置中。
-  
-2. **使用 Lambda 函数来动态获取 Pod 名称**：通过编写 Lambda 函数，动态获取 EKS 集群中的 Pod 名称，并将其传递给 FIS 的实验模板。
-
-3. **使用 CloudWatch Events 来触发 Lambda 函数**：将 Lambda 函数与 CloudWatch 事件规则结合，在需要时自动启动实验。
-
-### 步骤 1：获取 Pod 名称
-
-首先，我们需要获取 EKS 集群中当前运行的 Pod 名称。你可以通过 AWS CLI 或 AWS SDK 执行 `kubectl` 命令来查询 Pod。
-
-#### 1.1 使用 Python 和 `boto3` 获取 Pod 名称
-
-如果你在 Lambda 中执行这个操作，可以使用 Python 来通过 `kubectl` 命令获取 Pod 名称。Lambda 需要适当的权限来访问 EKS 集群。
-
-```python
-import boto3
-import subprocess
-
-def get_pod_names(cluster_name, namespace):
-    # 配置 EKS 客户端
-    eks = boto3.client('eks')
-    
-    # 获取 EKS 集群认证信息
-    response = eks.describe_cluster(name=cluster_name)
-    endpoint = response['cluster']['endpoint']
-    certificate = response['cluster']['certificateAuthority']['data']
-    
-    # 使用 kubectl 命令来查询 Pods
-    # 使用 kubectl 命令需要有配置 kubeconfig，或者你可以在 Lambda 中使用 AWS SDK 获取临时凭证
-    command = [
-        'kubectl', 'get', 'pods', '-n', namespace, '--output=jsonpath={.items[*].metadata.name}'
-    ]
-    
-    result = subprocess.run(command, capture_output=True, text=True)
-    
-    if result.returncode == 0:
-        # 返回 Pod 名称列表
-        pod_names = result.stdout.strip().split()
-        return pod_names
-    else:
-        raise Exception(f"Failed to get pods: {result.stderr}")
-
-# 示例调用
-pod_names = get_pod_names('my-cluster', 'default')
-print(pod_names)
-```
-
-#### 1.2 使用 AWS SDK 动态查询 Pod 名称
-
-如果不希望直接使用 `kubectl`，你可以使用 AWS SDK (`boto3`) 查询 EKS 集群并通过 Kubernetes API 获取 Pod 名称。
-
-### 步骤 2：创建 FIS 实验模板
-
-你需要通过 AWS Fault Injection Simulator 创建一个实验模板。这个模板包含了实验的具体操作，比如要注入故障的资源类型（例如 EC2 实例、Pod、Lambda 等）以及故障类型（例如 CPU 负载、内存故障、网络延迟等）。
-
-AWS FIS 提供了一个 **实验模板**，可以使用它来指定 Pod 名称作为目标。为了动态注入 Pod 名称，你可以通过 API 创建实验模板。
-
-#### 2.1 使用 AWS CLI 创建实验模板
-
-假设你已经查询到 Pod 名称，你可以通过 AWS CLI 来创建 FIS 实验模板，并将查询到的 Pod 名称作为目标资源。
+首先，我们可以使用 `kubectl` 命令来列出指定 namespace 下所有 Pod 的信息，并筛选出 `Ready` 状态的 Pod。假设目标 namespace 为 `your-namespace`：
 
 ```bash
-aws fis create-experiment-template \
-  --description "Pod failure simulation" \
-  --targets '{
+kubectl get pods -n your-namespace --field-selector=status.phase=Running -o=jsonpath='{.items[?(@.status.conditions[?(@.type=="Ready"&&@.status=="True")])].metadata.name}'
+```
+
+这个命令将输出在 `your-namespace` 中所有处于 `Running` 且 `Ready` 状态的 Pod 的名称。
+
+### 2. 使用 AWS FIS 自动化执行
+
+要在 AWS FIS 中自动执行上述操作，你需要编写一个 AWS FIS 实验模板，并在模板中使用容器或脚本来动态执行命令。以下是一个大致的思路：
+
+- **实验模板定义**：AWS FIS 允许你通过定义实验模板，来指定故障注入的目标和类型。你可以选择 Kubernetes 集群作为目标，指定资源类型为 Pods。
+
+- **自定义脚本**：你可以将上述的 `kubectl` 命令封装成脚本，利用 FIS 的 "run script" 或 "execute" 行为来执行。
+
+以下是一个 AWS FIS 模板的示例，假设你已将 Kubernetes 配置好，并且在环境中安装了 `kubectl` 工具。
+
+```json
+{
+  "description": "FIS Experiment to find ready pods in a namespace",
+  "targets": {
     "pods": {
       "resourceType": "aws:eks:pod",
       "selectionMode": "ALL",
-      "resourceTags": {
-        "Name": "my-pod"  # 使用动态获取的 Pod 名称来替换
+      "filters": {
+        "namespace": "your-namespace"
       }
     }
-  }' \
-  --actions '{
-    "fault-injection": {
-      "action": "aws:inject-fault",
+  },
+  "actions": {
+    "findReadyPods": {
+      "actionId": "aws:runShellScript",
       "parameters": {
-        "type": "cpu-load"
+        "script": "#!/bin/bash\nkubectl get pods -n your-namespace --field-selector=status.phase=Running -o=jsonpath='{.items[?(@.status.conditions[?(@.type==\"Ready\"&&@.status==\"True\")])].metadata.name}'"
+      },
+      "targets": {
+        "pods": "pods"
       }
     }
-  }' \
-  --role-arn "arn:aws:iam::YOUR_ACCOUNT_ID:role/FIS-Execution-Role"
+  }
+}
 ```
 
-在上面的命令中，我们将 `resourceTags` 中的 `Name` 设置为 Pod 名称，`aws:eks:pod` 是我们要模拟故障的资源类型。可以通过 **AWS SDK** 或 **Lambda** 动态替换 `Name` 为实际的 Pod 名称。
+### 3. 更新 Pod 名称并执行 FIS
 
-#### 2.2 使用 AWS SDK 或 Boto3 创建实验模板
+通过 FIS 调度该实验时，它会自动调用指定脚本，并输出在给定 namespace 下处于 Ready 状态的 Pod 名称。
 
-你可以通过 Python 脚本使用 **Boto3** 动态创建 FIS 实验模板，并自动将查询到的 Pod 名称传递给 FIS。
+### 注意事项：
 
-```python
-import boto3
-
-# 创建 FIS 客户端
-fis = boto3.client('fis')
-
-def create_fis_experiment(pod_name):
-    experiment_template = {
-        'description': 'Pod failure simulation',
-        'targets': {
-            'pods': {
-                'resourceType': 'aws:eks:pod',
-                'selectionMode': 'ALL',
-                'resourceTags': {
-                    'Name': pod_name  # 使用动态获取的 Pod 名称
-                }
-            }
-        },
-        'actions': {
-            'fault-injection': {
-                'action': 'aws:inject-fault',
-                'parameters': {
-                    'type': 'cpu-load'
-                }
-            }
-        },
-        'roleArn': 'arn:aws:iam::YOUR_ACCOUNT_ID:role/FIS-Execution-Role'
-    }
-
-    response = fis.create_experiment_template(**experiment_template)
-    return response
-
-# 示例调用
-pod_name = "my-pod-name"
-create_fis_experiment(pod_name)
-```
-
-### 步骤 3：自动化触发实验
-
-一旦你创建了 Lambda 函数来动态查询 Pod 名称并通过 FIS 启动实验，你可以使用 **CloudWatch Events** 来自动化这个流程。比如，设置一个定时触发器，定期查询当前的 Pod 名称并执行 FIS 实验，或者在特定事件发生时触发实验。
-
-#### 3.1 使用 CloudWatch Events 触发 Lambda 函数
-
-1. 在 **CloudWatch** 控制台中，选择 **Rules**。
-2. 创建一个新的 **Rule**，并选择触发类型（例如定时、EKS 集群事件、EC2 状态变更等）。
-3. 设置目标为 **Lambda 函数**，选择之前创建的 Lambda 函数。
-4. 配置规则，使其自动触发 Lambda 函数，并启动故障注入实验。
-
-### 步骤 4：监控和分析实验结果
-
-通过 **AWS CloudWatch** 和 **AWS FIS 控制台**，你可以监控实验的运行状态和效果。FIS 会提供日志和指标数据，帮助你分析实验的成功与否，及时调整实验配置。
-
-### 总结
-
-通过上述步骤，您可以实现 AWS FIS 故障注入实验的自动化，尤其是在 Kubernetes（EKS）环境中动态获取 Pod 名称并将其作为目标传递给 FIS。具体来说：
-1. **Lambda 函数**：用来动态查询 Pod 名称并调用 AWS FIS API 启动实验。
-2. **CloudWatch Events**：可以用来触发实验，例如定时执行或在特定事件发生时触发。
-3. **自动化实验模板创建**：通过 Boto3 或 AWS CLI 来创建实验模板并自动注入 Pod 名称。
-
-这种自动化方法能够减少人工干预，增强故障注入的灵活性和可扩展性。
+- 确保 FIS 实验有足够的权限访问你的 EKS 集群，通常需要将 IAM 权限与 `eks:DescribePod` 相关联。
+- 如果有多个 Kubernetes 集群或命名空间，确保脚本和权限正确配置，以便精确查询目标 Pod。
+  
+这个自动化流程可以帮助你在 AWS FIS 中动态查找符合条件的 Pod 名称，并执行故障注入测试。
