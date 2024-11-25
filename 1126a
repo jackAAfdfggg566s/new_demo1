@@ -1,0 +1,68 @@
+在 AWS CloudWatch 中创建一个大盘 (Dashboard)，来显示每个 Pod 的 NodeName 和 Instance ID，通常需要从 Amazon EKS (Elastic Kubernetes Service) 中收集 Kubernetes 的指标数据并发送到 CloudWatch。通过在 CloudWatch 中展示这些指标，可以更方便地进行监控和故障排查。
+
+要实现这个需求，我们可以通过以下几个步骤创建 CloudWatch 大盘的 JSON 配置：
+
+### 步骤 1: 监控 Kubernetes 集群的指标
+确保你的 Kubernetes 集群已正确设置与 CloudWatch 集成。可以使用 AWS CloudWatch Agent 或是通过启用 EKS 默认的监控来收集指标。特别是要确保 `kubelet` 和 `metrics-server` 正常工作，并将相关指标（例如，NodeName、Instance ID、Pod 等）推送到 CloudWatch。
+
+### 步骤 2: 创建 CloudWatch 大盘 JSON 配置
+以下是一个示例 JSON 配置，它创建一个 CloudWatch 大盘，展示每个 Pod 的 `NodeName` 和 `Instance ID` 信息。我们假设这些信息通过 `eks` 集群的日志和指标传递到 CloudWatch：
+
+```json
+{
+  "DashboardName": "K8sPodNodeInstanceDashboard",
+  "Widgets": [
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [
+            "EKS",
+            "PodNodeName",
+            "ClusterName",
+            "YourClusterName",
+            "PodName",
+            "YourPodName"
+          ],
+          [
+            "EKS",
+            "InstanceId",
+            "ClusterName",
+            "YourClusterName",
+            "PodName",
+            "YourPodName"
+          ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "us-west-2",
+        "stat": "Average",
+        "period": 300,
+        "title": "Pod NodeName and Instance ID"
+      }
+    }
+  ]
+}
+```
+
+### 解释：
+1. **DashboardName**: 定义了大盘的名称（`K8sPodNodeInstanceDashboard`）。
+2. **Widgets**: 包含所有小部件，这里我们创建了一个显示 Pod 和节点信息的图表。
+   - **metrics**: 是一个数组，指定要显示的指标。`EKS` 是指标的命名空间，后面接着的是相关的指标名称（例如，`PodNodeName` 和 `InstanceId`）。你需要根据实际推送的指标修改这些名称。
+   - **ClusterName**: Kubernetes 集群的名称。
+   - **PodName**: Pod 的名称。
+3. **view**: 图表的展示类型，这里设置为 `timeSeries`，表示时间序列数据。
+4. **stat**: 指定指标的统计方式，通常使用 `Average` 或 `Sum`。
+5. **region**: CloudWatch 控制台的区域（如 `us-west-2`）。
+6. **period**: 每个数据点的时间间隔，单位是秒。
+
+### 步骤 3: 部署大盘
+1. 在 AWS CloudWatch 控制台中，选择 **Dashboards** -> **Create dashboard**。
+2. 使用 **JSON** 配置粘贴上述内容，并进行必要的修改。
+3. 点击 **Create dashboard** 即可。
+
+请注意，上述 JSON 配置只是一个基础的示例，实际情况可能需要根据你 Kubernetes 集群的实际指标、日志配置以及命名方式进行调整。如果使用的是 CloudWatch Container Insights 或其他相关集成服务，可能还需要特定的配置和修改。
