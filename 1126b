@@ -1,0 +1,55 @@
+在 **AWS CloudWatch Container Insights** 中，可以查看与 **Kubernetes** 集群相关的多种指标。要查看每个 Pod 所属的 **NodeName**，你需要关注 **Container Insights** 提供的 Kubernetes 指标，特别是 **`Node`** 相关的指标。
+
+### 在 CloudWatch Container Insights 中查找 NodeName
+
+**CloudWatch Container Insights** 自动收集以下与节点和容器相关的指标。在查看 Pod 所属的 **NodeName** 时，通常会查看与节点相关的指标，具体来说是以下几种：
+
+#### 1. **Kubernetes Pod 相关的指标**
+在 **Container Insights** 中，Pod 和 Node 的信息通过 `Pod` 和 `Node` 维度（dimension）关联。以下是一些常见的与 Pod 和 Node 相关的指标：
+
+- **`K8SNodeName`**: 该指标显示 Pod 所属的 Node 名称。
+- **`k8s_pod_name`**: 该指标显示 Pod 的名称。
+
+#### 2. **查看 NodeName 的指标**
+在 CloudWatch 中，`NodeName` 通常作为 **`Node`** 维度的一部分出现在以下类型的指标中：
+
+- **`K8SNodeName`**: 这是与节点关联的指标。通过查询这个维度，你可以获得节点名称和 Pod 之间的映射关系。
+  
+在 CloudWatch 控制台中，你可以查询以下形式的指标：
+
+- **Namespace**: `ContainerInsights`
+- **Metric Name**: `NodeMemoryUtilization`, `NodeCPUUtilization`, `PodCPUUtilization`, `PodMemoryUtilization` 等
+- **Dimensions**: `ClusterName`, `PodName`, `NodeName` 等
+
+### 示例查询：查看 Pod 所属的 NodeName
+
+假设你想查看每个 Pod 所在的 **NodeName**，你可以在 CloudWatch 控制台中使用如下的查询语句来进行查找：
+
+1. 进入 **CloudWatch** 控制台。
+2. 选择 **Metrics**，然后选择 **Container Insights**。
+3. 选择 `Pod` 维度，查找如 **PodCPUUtilization** 或 **PodMemoryUtilization** 等指标。
+4. 在查询中，你可以选择 `NodeName` 作为维度。
+
+例如，查看 `NodeMemoryUtilization` 指标，可以查询：
+
+- **Namespace**: `ContainerInsights`
+- **Metric Name**: `NodeMemoryUtilization`
+- **Dimension**: `NodeName`
+
+通过这个查询，你可以看到每个 Node（节点）上的内存使用情况，同时也可以关联到具体的 `NodeName`。
+
+### 示例：CloudWatch Insights 查询
+如果你使用 **CloudWatch Logs Insights**，可以编写查询语句来查看日志中的 `NodeName` 和其他信息。例如：
+
+```sql
+fields @timestamp, kubernetes.pod_name, kubernetes.node_name
+| filter kubernetes.pod_name != ""
+| sort @timestamp desc
+| limit 20
+```
+
+该查询会返回最新的 20 条日志，并显示每个 Pod 的名称和它所属的 **NodeName**。
+
+### 总结：
+- 在 **CloudWatch Container Insights** 中，查看 **Pod** 所属的 **NodeName** 可以通过 `Node` 相关的指标，如 `K8SNodeName` 或其他容器和节点指标进行查询。
+- 在 **CloudWatch Metrics** 中，可以查询 `NodeMemoryUtilization`、`NodeCPUUtilization` 等指标，并通过 `NodeName` 维度查看每个 Pod 所在的节点。
