@@ -1,0 +1,29 @@
+在上述示例中，`<url>` 标签中的路径 (`http://your-nexus-repository/repository/maven-releases/`) 是指向 Nexus 仓库的一个 URL，表示你要上传的目标仓库位置。Nexus 仓库中是没有预先创建的单引号目录的，Maven 会根据上传的 `groupId` 和 `artifactId` 来自动组织和创建相应的目录结构。
+
+### 说明
+
+- **Maven Releases 和 Snapshots**：在 Nexus 中，`maven-releases` 和 `maven-snapshots` 是两个常见的仓库，用来区分正式版本和开发版本。你可以将 JAR 文件上传到这两个仓库中的一个。
+  
+- **目录结构**：Nexus 会自动根据你在 `pom.xml` 中配置的 `groupId`、`artifactId` 和 `version` 来创建目录结构。例如：
+  
+  如果你的 `groupId` 是 `com.example`，`artifactId` 是 `your-artifact`，版本号是 `1.0.0`，Nexus 将会按如下结构组织文件：
+  
+  ```
+  /repository/maven-releases/com/example/your-artifact/1.0.0/your-artifact-1.0.0.jar
+  ```
+
+  在这个例子中，`com/example/your-artifact/1.0.0/` 会被自动创建，而不需要你手动创建目录。
+
+### 目录和仓库是否存在
+
+- **仓库**：`maven-releases` 和 `maven-snapshots` 这些仓库名称需要在 Nexus 中事先配置好，并且要确保你有权限推送到这些仓库。
+  
+- **目录**：`groupId` 和 `artifactId` 结构是由 Maven 自动处理的，通常不需要手动创建目录。上传时，Nexus 会根据上传的文件内容自动生成对应的目录结构。
+
+### 总结
+
+1. **`maven-releases` 和 `maven-snapshots`** 是你在 Nexus 中配置的仓库名称，不是实际的文件夹，而是仓库中的虚拟目录。
+2. **目录结构** 会根据你上传的 JAR 文件的 `groupId`、`artifactId` 和 `version` 自动创建。
+3. 你不需要在 Nexus 中事先创建这些目录，Maven 会帮助你自动组织并上传文件到正确的位置。
+
+所以，你无需担心是否要创建目录，Maven 会根据项目的构建信息自动完成这一切。
