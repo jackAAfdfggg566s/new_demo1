@@ -1,0 +1,82 @@
+To push a JAR file to Nexus Repository using Maven in Java, you need to follow these steps:
+
+### 1. **Configure the `pom.xml`**
+In your `pom.xml`, add the distribution management section to specify the Nexus repository where the JAR file will be uploaded.
+
+```xml
+<distributionManagement>
+    <repository>
+        <id>nexus-releases</id>
+        <name>Nexus Release Repository</name>
+        <url>https://your-nexus-server/repository/maven-releases/</url>
+    </repository>
+    <snapshotRepository>
+        <id>nexus-snapshots</id>
+        <name>Nexus Snapshot Repository</name>
+        <url>https://your-nexus-server/repository/maven-snapshots/</url>
+    </snapshotRepository>
+</distributionManagement>
+```
+
+### 2. **Configure Server Credentials in `settings.xml`**
+You need to configure your Nexus credentials in Maven’s `settings.xml` file (located in `~/.m2/settings.xml` or `C:\Users\<User>\.m2\settings.xml`).
+
+```xml
+<servers>
+    <server>
+        <id>nexus-releases</id>
+        <username>your-username</username>
+        <password>your-password</password>
+    </server>
+    <server>
+        <id>nexus-snapshots</id>
+        <username>your-username</username>
+        <password>your-password</password>
+    </server>
+</servers>
+```
+
+### 3. **Configure the `maven-deploy-plugin`**
+Ensure that the `maven-deploy-plugin` is configured in your `pom.xml` to handle the deployment of the JAR file.
+
+```xml
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-deploy-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+                <execution>
+                    <goals>
+                        <goal>deploy</goal>
+                    </goals>
+                </execution>
+            </executions>
+        </plugin>
+    </plugins>
+</build>
+```
+
+### 4. **Build and Deploy**
+Run the following Maven command to build the JAR file and deploy it to Nexus:
+
+```bash
+mvn clean deploy
+```
+
+This will:
+
+- Clean and build the project
+- Upload the generated JAR file to the Nexus repository specified in the `distributionManagement` section of `pom.xml`
+
+### 5. **Ensure Artifact Versioning**
+Make sure you are using a correct versioning scheme. If you're deploying a release version, it should not contain `-SNAPSHOT`, and for snapshots, ensure your version ends with `-SNAPSHOT`.
+
+### Summary
+1. Configure the Nexus repository in `pom.xml` under `<distributionManagement>`.
+2. Set the credentials for Nexus in `settings.xml`.
+3. Use the `maven-deploy-plugin` for deployment.
+4. Run `mvn clean deploy` to push the JAR to Nexus.
+
+Make sure your credentials and Nexus repository URLs are correct.
