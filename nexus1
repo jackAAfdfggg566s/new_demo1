@@ -1,0 +1,87 @@
+要将 JAR 文件推送到 Nexus 仓库，你需要设置 Maven 或 Gradle 来上传文件。这里的 XML 配置主要是针对 Maven 的配置方式。以下是配置 Maven 将 JAR 文件推送到 Nexus 仓库的步骤：
+
+### 1. **在 `pom.xml` 文件中配置 Nexus 仓库信息**
+
+在你的 Maven 项目的 `pom.xml` 文件中，你需要添加仓库的信息，以及认证信息（如用户名和密码）。示例配置如下：
+
+```xml
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>your-artifact</artifactId>
+    <version>1.0.0</version>
+
+    <distributionManagement>
+        <repository>
+            <id>nexus-releases</id>
+            <url>http://your-nexus-repository/repository/maven-releases/</url>
+        </repository>
+        <snapshotRepository>
+            <id>nexus-snapshots</id>
+            <url>http://your-nexus-repository/repository/maven-snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.0.0-M1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>deploy</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>
+```
+
+### 2. **配置 Nexus 仓库认证信息**
+
+Maven 默认使用 `settings.xml` 文件来存储敏感信息（如用户名和密码）。你需要在 Maven 的 `settings.xml` 文件中添加 Nexus 的认证信息。
+
+通常，`settings.xml` 位于 `~/.m2/settings.xml`（如果是全局配置的话，在 Maven 安装目录的 `conf/settings.xml`）。在 `settings.xml` 中添加如下内容：
+
+```xml
+<settings>
+    <servers>
+        <server>
+            <id>nexus-releases</id>
+            <username>your-username</username>
+            <password>your-password</password>
+        </server>
+        <server>
+            <id>nexus-snapshots</id>
+            <username>your-username</username>
+            <password>your-password</password>
+        </server>
+    </servers>
+</settings>
+```
+
+### 3. **推送 JAR 文件到 Nexus**
+
+完成上述配置后，你可以使用 Maven 的 `deploy` 命令来推送你的 JAR 文件到 Nexus 仓库：
+
+```bash
+mvn clean deploy
+```
+
+这会将构建的 JAR 文件上传到你配置的 Nexus 仓库（根据版本号上传到 `releases` 或 `snapshots` 仓库）。
+
+### 其他注意事项
+
+1. **Nexus Repository URL**：确保你提供了正确的 Nexus 仓库 URL，通常是类似 `http://your-nexus-repository/repository/maven-releases/` 或 `http://your-nexus-repository/repository/maven-snapshots/`。
+2. **验证身份**：确保 Nexus 仓库中已经设置了对应的权限，以允许推送 JAR 文件。
+3. **版本号管理**：根据你上传的 JAR 文件版本号，如果是稳定版本则上传到 `releases` 仓库，若是开发中的版本则上传到 `snapshots` 仓库。
+
+以上步骤完成后，你的 JAR 文件就会成功推送到 Nexus 仓库。
