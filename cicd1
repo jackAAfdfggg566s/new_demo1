@@ -1,0 +1,27 @@
+stages:
+  - build
+  - test
+  - deploy
+
+# 构建阶段
+build:
+  stage: build
+  script:
+    - echo "Building the project..."
+    - # 这里可以是构建项目的命令，例如 npm install 或 make
+
+# 测试阶段
+test:
+  stage: test
+  script:
+    - echo "Running tests..."
+    - # 这里可以是运行测试的命令，例如 npm test 或 pytest
+
+# 部署阶段
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying the project..."
+    - # 这里是部署命令，例如 scp 或 docker push 等
+  only:
+    - main  # 仅在 main 分支上执行部署任务
