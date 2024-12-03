@@ -1,0 +1,44 @@
+要将 `.txt` 文件上传到 Nexus 仓库，通常的做法是通过 Maven 或其他支持的工具（如 `curl`）来进行。如果你使用的是 Nexus 的 Maven 仓库，可以按照以下步骤：
+
+### 1. 使用 Maven 推送文件到 Nexus
+你可以通过 Maven 的 `deploy:deploy-file` 插件将 `.txt` 文件上传到 Nexus 仓库。这种方式通常用于将文件当作工件上传，而不仅仅是作为普通的文件。
+
+以下是 Maven 命令示例：
+
+```bash
+mvn deploy:deploy-file \
+  -DgroupId=com.example \
+  -DartifactId=myfile \
+  -Dversion=1.0.0 \
+  -Dpackaging=txt \
+  -Dfile=/path/to/your/file.txt \
+  -DrepositoryId=nexus \
+  -Durl=https://your-nexus-repository-url/repository/your-repository/
+```
+
+在这个命令中：
+- `-DgroupId` 是组ID
+- `-DartifactId` 是工件ID
+- `-Dversion` 是版本号
+- `-Dpackaging` 是文件类型，通常为 `jar`, `war`, 或者这里的 `txt`
+- `-Dfile` 是要上传的文件路径
+- `-DrepositoryId` 是你在 Maven 配置中的仓库ID
+- `-Durl` 是你的 Nexus 仓库的 URL 地址
+
+### 2. 使用 `curl` 命令上传文件到 Nexus
+你也可以使用 `curl` 命令上传 `.txt` 文件到 Nexus：
+
+```bash
+curl -u username:password --upload-file /path/to/your/file.txt \
+  https://your-nexus-repository-url/repository/your-repository/com/example/myfile/1.0.0/myfile-1.0.0.txt
+```
+
+在这个命令中：
+- `username:password` 是你的 Nexus 用户名和密码
+- `/path/to/your/file.txt` 是你本地 `.txt` 文件的路径
+- `https://your-nexus-repository-url/repository/your-repository/...` 是你要上传到的 Nexus 仓库的 URL 地址
+
+### 3. 配置 Nexus 仓库
+确保你已经在 Nexus 中创建了一个适当的仓库，并配置了相关权限，以便能够将文件上传至该仓库。
+
+通过这些方法，你可以将 `.txt` 文件上传到 Nexus 仓库。
