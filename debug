@@ -1,0 +1,56 @@
+在 `pom.xml` 中配置的 `mvn deploy:deploy-file` 命令需要使用 `maven-deploy-plugin` 插件，通常这个插件是 Maven 默认自带的，因此你无需单独安装它。如果你已经安装了 Maven，那么它应该已经存在并且可以直接使用。
+
+### 插件配置：
+在 `pom.xml` 中配置 `maven-deploy-plugin` 插件的示例如下：
+
+```xml
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-deploy-plugin</artifactId>
+            <version>3.0.0-M1</version> <!-- 版本根据需求选择 -->
+            <executions>
+                <execution>
+                    <goals>
+                        <goal>deploy-file</goal>
+                    </goals>
+                    <configuration>
+                        <file>/path/to/your/file.txt</file> <!-- 要上传的文件 -->
+                        <groupId>com.example</groupId> <!-- groupId -->
+                        <artifactId>example</artifactId> <!-- artifactId -->
+                        <version>1.0.0</version> <!-- 版本号 -->
+                        <packaging>txt</packaging> <!-- 文件类型 -->
+                        <repositoryId>nexus-repo</repositoryId> <!-- 配置在settings.xml中的仓库ID -->
+                        <url>https://your-nexus-repository-url/repository/your-repository/</url> <!-- Nexus仓库URL -->
+                    </configuration>
+                </execution>
+            </executions>
+        </plugin>
+    </plugins>
+</build>
+```
+
+### Maven 默认插件：
+`maven-deploy-plugin` 是 Maven 的官方插件，在 Maven 安装包中默认包含，因此你不需要特别安装它。如果你已经安装了 Maven，只需按照上述步骤在 `pom.xml` 中进行配置即可。
+
+### 安装 Maven：
+如果你尚未安装 Maven，可以通过以下步骤安装：
+
+#### 1. 下载和安装 Maven：
+- 访问 [Maven 官网](https://maven.apache.org/download.cgi)，下载合适版本的 Maven。
+- 解压下载的文件到你的系统目录中。
+
+#### 2. 配置环境变量：
+- 设置 `MAVEN_HOME` 和 `PATH` 环境变量，以便在命令行中使用 Maven。
+
+#### 3. 验证安装：
+- 在命令行中执行以下命令，检查 Maven 是否正确安装：
+  ```bash
+  mvn -v
+  ```
+  如果安装成功，你应该能看到 Maven 版本信息。
+
+### 总结：
+- `maven-deploy-plugin` 是 Maven 默认自带的插件，你无需单独安装。
+- 如果你已经安装了 Maven，则可以直接在 `pom.xml` 中配置该插件并执行 `mvn deploy:deploy-file` 命令。
