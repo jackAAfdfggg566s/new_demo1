@@ -1,0 +1,58 @@
+{
+  "description": "Simulate simultaneous failover of two Pods in Kubernetes",
+  "targets": {
+    "pod1": {
+      "resourceType": "aws:k8s:pod",
+      "resourceTags": {
+        "app": "my-app",
+        "pod": "pod-1"
+      }
+    },
+    "pod2": {
+      "resourceType": "aws:k8s:pod",
+      "resourceTags": {
+        "app": "my-app",
+        "pod": "pod-2"
+      }
+    }
+  },
+  "actions": {
+    "terminate-pod-1": {
+      "actionId": "aws:k8s:terminate-pod",
+      "parameters": {
+        "PodName": "pod-1"
+      },
+      "targets": {
+        "pod1": {
+          "resourceType": "aws:k8s:pod",
+          "resourceTags": {
+            "app": "my-app",
+            "pod": "pod-1"
+          }
+        }
+      }
+    },
+    "terminate-pod-2": {
+      "actionId": "aws:k8s:terminate-pod",
+      "parameters": {
+        "PodName": "pod-2"
+      },
+      "targets": {
+        "pod2": {
+          "resourceType": "aws:k8s:pod",
+          "resourceTags": {
+            "app": "my-app",
+            "pod": "pod-2"
+          }
+        }
+      }
+    }
+  },
+  "stopConditions": [
+    {
+      "source": "aws:fis:status",
+      "value": "stopped"
+    }
+  ],
+  "durationSeconds": 300
+}
