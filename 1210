@@ -1,0 +1,155 @@
+在 GitLab CI/CD 中上传到 Nexus，并自动更新 Artifact 版本号，通常可以通过以下方式实现。主要的步骤包括自动增加版本号、上传构建的 artifact 到 Nexus 仓库，并确保版本号的唯一性。
+
+### 1. 自动更新版本号
+
+通常，构建工具（如 Maven、Gradle 等）使用 `version` 来标识 artifact 的版本号。要在每次构建时自动更新版本号，你可以采用以下几种方法：
+
+#### 1.1. 使用 Git 标签（适用于 Maven 或 Gradle）
+
+通过 Git 标签来生成版本号，例如，使用 Git 的 `git describe` 命令生成版本号，并通过 CI 环境变量传递给构建工具。
+
+例如，使用 Git 标签作为版本号，在 GitLab CI 中：
+
+```bash
+# 获取最新的 Git 标签作为版本号
+VERSION=$(git describe --tags --always)
+
+# 如果没有标签，则使用默认版本号
+if [[ -z "$VERSION" ]]; then
+  VERSION="1.0.0-SNAPSHOT"
+fi
+
+echo "Version: $VERSION"
+```
+
+然后，在构建工具中使用该变量（例如 Maven 的 `pom.xml` 或 Gradle 的 `build.gradle`）。
+
+#### 1.2. 使用 GitLab CI 环境变量
+
+GitLab CI 可以通过内建的环境变量自动为每次构建提供版本号，例如 `CI_COMMIT_REF_NAME`（分支名称）或 `CI_COMMIT_SHA`（提交 SHA）。
+
+你可以在 `.gitlab-ci.yml` 文件中设置版本号变量：
+
+```yaml
+stages:
+  - build
+  - deploy
+
+variables:
+  VERSION: "${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHA}"
+
+build:
+  stage: build
+  script:
+    - echo "Building with version $VERSION"
+    - mvn clean install -Dversion=$VERSION
+```
+
+### 2. 上传 Artifact 到 Nexus
+
+假设你使用 Maven、Gradle 等构建工具来上传构建的 artifact 到 Nexus 仓库，可以配置上传命令，确保版本号是最新的。
+
+#### 2.1. 使用 Maven 上传到 Nexus
+
+Maven 通常通过 `nexus-staging-maven-plugin` 插件上传 artifact。你可以通过在 `pom.xml` 文件中配置插件来上传，并且可以使用上面获取的版本号。
+
+```xml
+<distributionManagement>
+  <repository>
+    <id>nexus-releases</id>
+    <url>https://nexus.example.com/repository/maven-releases/</url>
+  </repository>
+  <snapshotRepository>
+    <id>nexus-snapshots</id>
+    <url>https://nexus.example.com/repository/maven-snapshots/</url>
+  </snapshotRepository>
+</distributionManagement>
+
+<build>
+  <plugins>
+    <plugin>
+      <groupId>org.sonatype.plugins</groupId>
+      <artifactId>nexus-staging-maven-plugin</artifactId>
+      <version>1.6.7</version>
+      <executions>
+        <execution>
+          <goals>
+            <goal>deploy</goal>
+          </goals>
+        </execution>
+      </executions>
+    </plugin>
+  </plugins>
+</build>
+```
+
+然后在 `.gitlab-ci.yml` 中添加步骤来构建并上传：
+
+```yaml
+deploy:
+  stage: deploy
+  script:
+    - mvn clean deploy -Dversion=${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHA} -DskipTests
+  only:
+    - main
+```
+
+#### 2.2. 使用 Gradle 上传到 Nexus
+
+Gradle 上传到 Nexus 也类似，你可以使用 `maven-publish` 插件来完成。首先，确保你在 `build.gradle` 中定义了上传的部分。
+
+```gradle
+apply plugin: 'maven-publish'
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            version = project.version
+        }
+    }
+    repositories {
+        maven {
+            url = uri("https://nexus.example.com/repository/maven-releases/")
+            credentials {
+                username = project.findProperty("nexusUsername") ?: System.getenv("NEXUS_USERNAME")
+                password = project.findProperty("nexusPassword") ?: System.getenv("NEXUS_PASSWORD")
+            }
+        }
+    }
+}
+```
+
+然后在 `.gitlab-ci.yml` 中定义构建和发布步骤：
+
+```yaml
+deploy:
+  stage: deploy
+  script:
+    - ./gradlew publish -Pversion=${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHA}
+  only:
+    - main
+```
+
+### 3. 自动发布到 Nexus
+
+确保在 GitLab CI 中配置了适当的权限，例如，通过 `NEXUS_USERNAME` 和 `NEXUS_PASSWORD` 环境变量来验证并上传到 Nexus。
+
+```yaml
+deploy:
+  stage: deploy
+  script:
+    - mvn clean deploy -Dversion=${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHA} -DskipTests
+  only:
+    - main
+  environment:
+    NEXUS_USERNAME: $NEXUS_USERNAME
+    NEXUS_PASSWORD: $NEXUS_PASSWORD
+```
+
+### 总结
+
+- **版本号管理**：可以使用 Git 标签、提交 SHA 或 GitLab CI 环境变量来自动生成版本号。
+- **上传到 Nexus**：通过配置 Maven 或 Gradle 构建工具来上传构建产物，并通过 CI 脚本自动化这个过程。
+
+确保在 GitLab CI 配置文件中设置好环境变量（如 `NEXUS_USERNAME` 和 `NEXUS_PASSWORD`）以便安全地认证并上传到 Nexus 仓库。
