@@ -1,0 +1,14 @@
+今天记录第10课，tutorial 进行了实验，收获很大
+实验1 ： 在jenkins server中新建node节点，(使用其他vm 添加)，通过添加node,能保证在生产环境中多个pineline同时运行。
+添加有两种方式： lauch agent by connecting it to the controller,和lauch agent via SSH
+在master node 上添加node3,  master node ssh 连 node3 ,（使用lauch agent via SSH方式）
+1.把 master node  jenkins 用户的  public  放到 node3 里面( node3 执行：echo " YourPublicKey" >> ~/.ssh/authorized_keys)
+2. master node添加know_hosts, ssh-keyscan -H you.gcp.vm.ip >> /var/lib/jenkins/.ssh/known_hosts
+3、 将master的privite key ，加到jenkins 里  创建node的时候add
+用过这个实验，更好地理解了 authentication 的过程
+同时还学习了pipeline syntax ，熟悉了常见使用场景的pipeline 的写法
+实验2：在userpreofile项目，研究了怎么在pineline上调用docker ,先手动build镜像，手动跑docker ,然后进入docker，跑npm install,npm test,npm test,npm run cover
+能正常跑出测试结果。在pineline 中需要在stage的 agent中指定 镜像 docker { image 'cf11/userprofile:2.0' }，进行修改调试，观察结果
+同时在stage中添加了 docker镜像push的过程。
+在过程中收获很大。
+#澳洲IT #学习打卡
