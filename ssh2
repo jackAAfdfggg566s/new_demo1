@@ -1,0 +1,82 @@
+要使用 GitLab CI/CD Agent 配置 SSH 连接到目标机器，你需要设置 GitLab Agent 和目标机器之间的 SSH 密钥认证。下面是详细的步骤：
+
+1. 安装 GitLab Agent
+
+首先，确保你已经安装了 GitLab Agent。
+
+在 GitLab 中创建一个代理项目：
+
+登录到 GitLab 后，进入 Admin Area -> CI/CD -> GitLab Agent，并创建一个代理项目。
+
+记下该项目的名称和令牌。
+
+
+在目标机器上安装 GitLab Agent（如果尚未安装）：
+
+你可以按照 GitLab 官方文档 来安装 GitLab Agent。
+
+
+
+2. 配置 SSH 密钥
+
+为了能通过 GitLab Agent 进行 SSH 连接，你需要设置 SSH 密钥对，并将公钥添加到目标机器的 authorized_keys 文件中。
+
+生成 SSH 密钥对
+
+1. 在 GitLab CI/CD 代理机器上生成一个 SSH 密钥对：
+
+ssh-keygen -t rsa -b 4096 -C "gitlab-agent" -f ~/.ssh/gitlab_agent_rsa
+
+
+2. 然后，复制生成的公钥 ~/.ssh/gitlab_agent_rsa.pub 内容。
+
+
+
+将公钥添加到目标机器
+
+1. 在目标机器上，确保 SSH 服务是可用的。
+
+
+2. 将公钥添加到目标机器的 ~/.ssh/authorized_keys 文件中：
+
+echo "your_public_key" >> ~/.ssh/authorized_keys
+
+请替换 your_public_key 为刚才生成的公钥内容。
+
+
+
+配置目标机器的 SSH 访问
+
+确保目标机器上的 ~/.ssh 目录权限是正确的，并且 authorized_keys 文件权限为 600：
+
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/authorized_keys
+
+3. 配置 GitLab Agent
+
+在 GitLab 中配置你的 CI/CD Agent 以使用 SSH 密钥连接目标机器。
+
+1. 在 GitLab 中，创建一个 SSH 密钥的 Secret Variable，名称通常为 CI_DEPLOY_KEY，并将其设置为你在第2步中生成的私钥 gitlab_agent_rsa 的内容。
+
+
+2. 配置 GitLab CI/CD Pipeline 文件，确保你的 .gitlab-ci.yml 文件使用该 SSH 密钥来访问目标机器：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$CI_DEPLOY_KEY" > ~/.ssh/gitlab_agent_rsa
+    - chmod 600 ~/.ssh/gitlab_agent_rsa
+    - ssh -i ~/.ssh/gitlab_agent_rsa user@your_target_machine "deploy_command"
+
+
+
+4. 测试连接
+
+完成上述步骤后，运行 GitLab CI/CD Pipeline，确保连接到目标机器成功并执行部署任务。
+
+如果一切设置正确，GitLab CI/CD 代理应该能够通过 SSH 成功连接到目标机器并执行命令。
+
