@@ -1,0 +1,139 @@
+错误信息 "error loading key stdin error in libcrypto" 通常是在使用 SSH 密钥时出现的问题，尤其是在 libcrypto（用于加密操作的 OpenSSL 库）相关的操作中。这通常是由于密钥格式问题、权限设置不当、密钥传递错误或 OpenSSL 版本不兼容导致的。
+
+下面是一些常见的原因和解决方法：
+
+1. SSH 密钥格式问题
+
+该错误通常与密钥的格式不兼容有关。旧的 SSH 密钥格式可能无法被某些 SSH 客户端或库（如 OpenSSL）正确读取。
+
+解决方法：
+
+如果你的 SSH 密钥使用的是旧格式，可以将其转换为新的 OpenSSH 格式。
+
+1. 检查密钥格式： 打开你的密钥文件，查看其内容：
+
+如果密钥以 -----BEGIN RSA PRIVATE KEY----- 开头，那么它是旧格式，可能需要转换为新的 OpenSSH 格式。
+
+
+
+2. 转换为 OpenSSH 格式： 你可以使用 ssh-keygen 工具将密钥转换为 OpenSSH 格式：
+
+ssh-keygen -p -m PEM -f ~/.ssh/id_rsa
+
+这将转换密钥格式，并在必要时重设密钥的密码。
+
+
+
+2. 私钥权限问题
+
+如果私钥文件的权限设置不正确，SSH 可能会拒绝使用该密钥。
+
+解决方法：
+
+确保你的私钥文件权限设置为 600，即只有文件的拥有者可以读取和写入该文件：
+
+chmod 600 ~/.ssh/id_rsa
+
+3. 密钥密码问题
+
+如果你的密钥有密码保护，并且你在使用过程中遇到问题，可能是因为 SSH 客户端无法正确解密密钥。
+
+解决方法：
+
+你可以使用 SSH agent 来管理带密码的私钥，避免每次都需要输入密码。
+
+1. 启动 SSH agent：
+
+eval "$(ssh-agent -s)"
+
+
+2. 将密钥添加到 SSH agent 中：
+
+ssh-add ~/.ssh/id_rsa
+
+
+3. 如果你在 GitLab CI/CD 中使用 SSH 密钥，确保密钥通过环境变量正确传递，并且在 CI/CD 流程中正确设置。
+
+
+
+4. 确保 .gitlab-ci.yml 配置正确
+
+如果你在 GitLab CI/CD 中遇到这个错误，可能是因为密钥在 CI 环境中传递或配置不正确。确保你在 .gitlab-ci.yml 文件中正确处理了 SSH 密钥。
+
+deploy:
+  stage: deploy
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config
+    - ssh -o StrictHostKeyChecking=no user@remote_host "deploy_command"
+
+在上面的例子中，$SSH_PRIVATE_KEY 是一个存储在 GitLab CI 环境变量中的私钥，确保它是以正确的格式传递的。
+
+5. 密钥文件损坏
+
+如果你的密钥文件损坏（例如，在通过环境变量传递时格式被更改），可能会导致无法加载密钥。
+
+解决方法：
+
+确保密钥没有被修改或损坏。如果有疑问，可以重新生成一对新的密钥：
+
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
+
+然后，将新生成的公钥添加到远程服务器的 ~/.ssh/authorized_keys 文件中。
+
+6. OpenSSL 版本问题
+
+libcrypto 是 OpenSSL 的一部分，某些旧版本的 OpenSSL 可能不支持某些密钥算法或格式，导致该错误。
+
+解决方法：
+
+确保你的系统安装了最新版本的 OpenSSL，可以通过以下命令更新：
+
+sudo apt-get update
+sudo apt-get install openssl
+
+然后，通过以下命令检查 OpenSSL 版本：
+
+openssl version
+
+确保你使用的是支持你密钥格式的现代版本的 OpenSSL。
+
+7. 使用正确的 SSH 命令
+
+如果你在命令行中直接使用 SSH 命令连接远程主机，也要确保传递密钥时使用了正确的命令格式：
+
+ssh -i ~/.ssh/id_rsa user@remote_host
+
+如果你是在脚本或 GitLab CI/CD 中使用密钥，确保密钥正确传递和加载。
+
+
+---
+
+总结
+
+1. 检查密钥格式：如果是旧格式密钥，使用 ssh-keygen 转换为 OpenSSH 格式。
+
+
+2. 设置正确的文件权限：确保私钥文件权限是 600 (chmod 600 ~/.ssh/id_rsa)。
+
+
+3. 使用 SSH agent 管理带密码的密钥：避免手动输入密码。
+
+
+4. 在 GitLab CI/CD 中正确配置密钥：确保密钥作为环境变量传递，并且格式正确。
+
+
+5. 重新生成密钥：如果密钥文件损坏，可以重新生成一对密钥。
+
+
+6. 更新 OpenSSL 版本：确保使用最新版本的 OpenSSL。
+
+
+7. 使用正确的 SSH 命令：确保密钥文件路径正确，并且 SSH 命令正确执行。
+
+
+
+按照这些步骤，你应该能够解决 "error loading key stdin error in libcrypto" 错误，并顺利使用 SSH 密钥进行连接。
+
