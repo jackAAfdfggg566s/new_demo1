@@ -1,0 +1,140 @@
+出现 "Permission denied (publickey,gssapi-keyex,gssapi-with-mic,password)" 错误通常表明 SSH 连接尝试失败，并且没有使用正确的认证方式。这个错误通常有以下几个原因：
+
+1. SSH 密钥没有正确配置
+
+问题描述： 通常这个错误意味着 SSH 客户端未能正确传递私钥或远程主机没有正确地接受该密钥。可能原因包括密钥没有正确传递，或者远程主机的 authorized_keys 文件没有正确设置。
+
+解决方法：
+
+1. 确保私钥文件权限正确：确保私钥文件权限为 600，否则 SSH 不会使用它。
+
+chmod 600 ~/.ssh/id_rsa
+
+
+2. 确保将公钥添加到远程主机的 authorized_keys 文件： 在远程服务器上，确保公钥被正确地添加到 ~/.ssh/authorized_keys 文件中。
+
+cat ~/.ssh/id_rsa.pub | ssh user@remote_host 'cat >> ~/.ssh/authorized_keys'
+
+
+3. 指定正确的密钥文件： 如果你有多个密钥文件，或者默认的 id_rsa 文件不匹配，你需要显式指定你希望使用的密钥文件。
+
+ssh -i ~/.ssh/your_private_key user@remote_host
+
+
+4. 确保远程服务器的 SSH 配置允许密钥认证： 在远程主机的 /etc/ssh/sshd_config 文件中，确保 PubkeyAuthentication 被设置为 yes。
+
+PubkeyAuthentication yes
+
+修改完后，重新加载 SSH 服务：
+
+sudo systemctl restart sshd
+
+
+
+2. 密钥格式问题
+
+问题描述： 有时，密钥格式不兼容，可能导致密钥验证失败。特别是在某些环境下，如果密钥格式不被支持，SSH 会回退到密码验证模式，但由于没有密码，会导致 Permission denied 错误。
+
+解决方法：
+
+1. 使用 OpenSSH 格式： 如果密钥是旧格式（例如 -----BEGIN RSA PRIVATE KEY-----），使用 ssh-keygen 将其转换为 OpenSSH 格式。
+
+ssh-keygen -p -m PEM -f ~/.ssh/id_rsa
+
+
+2. 确保没有密码保护（如果可以）： 如果密钥文件有密码保护，并且在 SSH 连接时没有正确传递密码，可能会导致验证失败。你可以使用 SSH agent 来管理带密码的密钥：
+
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_rsa
+
+
+
+3. GitLab CI/CD 配置问题
+
+问题描述： 如果你在 GitLab CI/CD 中运行部署，错误可能是由于密钥没有正确传递，或者密钥文件的权限不正确。
+
+解决方法：
+
+1. 检查 .gitlab-ci.yml 配置： 在 GitLab CI/CD 中，确保将 SSH 私钥通过环境变量传递给 CI/CD 进程，并且私钥被正确保存到 ~/.ssh/id_rsa。
+
+deploy:
+  stage: deploy
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config
+    - ssh -o StrictHostKeyChecking=no user@remote_host "deploy_command"
+
+其中，$SSH_PRIVATE_KEY 是你在 GitLab CI/CD 配置中的环境变量。
+
+
+2. 确保远程主机的 SSH 配置允许密钥认证： 远程服务器的 sshd_config 文件需要允许密钥认证：
+
+PubkeyAuthentication yes
+
+并重启 SSH 服务：
+
+sudo systemctl restart sshd
+
+
+
+4. 远程主机的 SSH 配置问题
+
+问题描述： SSH 配置不允许某些类型的认证方法，或者远程主机的配置错误。
+
+解决方法：
+
+1. 确保远程主机允许公钥认证： 在远程主机的 /etc/ssh/sshd_config 文件中，确保以下项已启用：
+
+PubkeyAuthentication yes
+PasswordAuthentication no
+
+然后重启 SSH 服务：
+
+sudo systemctl restart sshd
+
+
+2. 检查 SSH 服务状态： 如果远程主机的 SSH 服务有问题，检查 SSH 服务的状态并重新启动：
+
+sudo systemctl status sshd
+sudo systemctl restart sshd
+
+
+
+5. GSSAPI 错误
+
+问题描述： 在某些情况下，SSH 会尝试使用 GSSAPI（通用安全服务应用程序接口）进行认证，如果服务器或客户端配置不正确，可能导致该认证方法失败。
+
+解决方法：
+
+1. 禁用 GSSAPI： 你可以禁用 GSSAPI 认证，以确保 SSH 只使用公钥认证。可以在 SSH 客户端配置文件中禁用 GSSAPI：
+
+echo "GSSAPIAuthentication no" >> ~/.ssh/config
+
+
+2. 确保服务器端禁用 GSSAPI： 在远程主机的 /etc/ssh/sshd_config 文件中，禁用 GSSAPI 认证：
+
+GSSAPIAuthentication no
+
+然后重启 SSH 服务：
+
+sudo systemctl restart sshd
+
+
+
+总结：
+
+确保 SSH 密钥配置正确，包括权限设置、正确添加到远程主机的 authorized_keys 文件中。
+
+检查密钥格式，确保使用的是支持的格式，并且可以通过 ssh-keygen 转换。
+
+在 GitLab CI/CD 中正确传递密钥，并确保 .gitlab-ci.yml 中配置正确。
+
+确保远程服务器允许公钥认证，并禁用不必要的认证方式（如 GSSAPI）。
+
+检查远程服务器的 SSH 服务，并确保其配置允许密钥认证。
+
+
+通过检查这些配置，你应该能够解决 "Permission denied (publickey,gssapi-keyex,gssapi-with-mic,password)" 错误。
+
