@@ -1,0 +1,111 @@
+在 GitLab 中使用 共享 Runner（shared runner）时，你并不能直接登录或访问这些 Runner，因为它们是由 GitLab 管理和提供的。共享 Runner 是在 GitLab 的基础设施中运行的，GitLab 自动管理它们，你无法像自托管 Runner 那样直接访问它们的操作系统或文件系统。
+
+但是，共享 Runner 可以通过配置和在 .gitlab-ci.yml 文件中编写适当的脚本来自动化部署到远程服务器（例如 AWS EC2）。你需要通过 SSH 密钥在 CI/CD 流水线中与远程服务器建立连接，而不需要直接访问共享 Runner 的机器。
+
+GitLab 共享 Runner 的工作方式
+
+GitLab 共享 Runner 运行在 GitLab 的基础设施上，并通过 Docker 或 Shell 执行 CI/CD 作业。当你触发 CI/CD 流水线时，GitLab 会分配一个共享 Runner 来执行任务。你可以在 .gitlab-ci.yml 文件中配置 SSH 密钥，使 GitLab Runner 可以连接到远程服务器（例如 AWS EC2）并执行部署。
+
+登录到 GitLab 共享 Runner 的工作方式
+
+由于你无法直接登录共享 Runner 的机器，你可以通过以下方式与它进行交互：
+
+1. 通过配置 GitLab CI/CD 环境变量：使用 SSH 密钥来认证并连接到远程服务器（例如 AWS EC2）。
+
+
+2. 在 .gitlab-ci.yml 文件中使用 SSH：配置 GitLab CI/CD 脚本，在共享 Runner 上运行时与远程服务器建立连接。
+
+
+
+示例：通过共享 Runner 使用 SSH 连接到 AWS EC2 实例
+
+假设你已经配置好了私钥和公钥，下面是如何通过 GitLab 共享 Runner 部署到 AWS EC2 实例的过程。
+
+步骤 1：生成 SSH 密钥对（私钥和公钥）
+
+在本地机器上或 GitLab Runner 的机器上生成 SSH 密钥对：
+
+ssh-keygen -t rsa -b 4096 -C "gitlab-ci" -f ~/.ssh/gitlab-ci-id_rsa
+
+这将生成以下两个文件：
+
+~/.ssh/gitlab-ci-id_rsa：私钥
+
+~/.ssh/gitlab-ci-id_rsa.pub：公钥
+
+
+步骤 2：将公钥添加到 AWS EC2 实例
+
+1. 复制公钥内容：
+
+cat ~/.ssh/gitlab-ci-id_rsa.pub
+
+
+2. 登录到 EC2 实例：
+
+ssh -i your-ec2-key.pem ec2-user@your-ec2-ip
+
+
+3. 将公钥添加到 EC2 实例的 ~/.ssh/authorized_keys 文件中：
+
+echo "your_public_key" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+
+
+
+步骤 3：在 GitLab CI/CD 中配置私钥
+
+1. 进入 GitLab 项目。
+
+
+2. 进入 Settings > CI / CD。
+
+
+3. 在 Variables 部分，添加新的变量：
+
+Key: SSH_PRIVATE_KEY
+
+Value: 将私钥内容（gitlab-ci-id_rsa）粘贴到这里。
+
+
+
+
+步骤 4：编写 .gitlab-ci.yml 配置文件
+
+deploy:
+  stage: deploy
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa  # 将私钥存入 id_rsa 文件
+    - chmod 600 ~/.ssh/id_rsa  # 设置权限
+    - echo "StrictHostKeyChecking no" >> ~/.ssh/config  # 跳过第一次连接的主机密钥确认
+    - ssh ec2-user@your-ec2-ip "your-deploy-command"  # 执行远程部署命令
+
+1. echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa：将 GitLab 环境变量中的私钥内容写入文件。
+
+
+2. chmod 600 ~/.ssh/id_rsa：设置文件权限，确保私钥能够被 SSH 客户端读取。
+
+
+3. echo "StrictHostKeyChecking no" >> ~/.ssh/config：跳过第一次连接时对主机密钥的验证。
+
+
+4. ssh ec2-user@your-ec2-ip "your-deploy-command"：使用 SSH 执行部署命令。
+
+
+
+步骤 5：触发 CI/CD 流水线
+
+提交 .gitlab-ci.yml 配置文件后，GitLab 会触发 CI/CD 流水线，GitLab 共享 Runner 将执行你配置的任务。GitLab Runner 会使用你在 GitLab CI/CD 环境变量中配置的私钥，通过 SSH 连接到你的 AWS EC2 实例，并执行部署脚本。
+
+总结
+
+无法直接登录共享 Runner：因为它们是由 GitLab 管理的，你不能直接访问它们的操作系统。
+
+通过配置 SSH 密钥：你可以在 .gitlab-ci.yml 文件中通过环境变量使用私钥，配置 GitLab Runner 通过 SSH 连接到远程服务器（如 AWS EC2）。
+
+CI/CD 流水线自动执行部署：当你提交更改并触发 CI/CD 流水线时，GitLab Runner 会使用配置的 SSH 密钥与远程服务器通信，并执行部署任务。
+
+
+这样，你就能在 GitLab 的共享 Runner 上实现自动化部署到 AWS EC2，而无需手动登录共享 Runner。
+
