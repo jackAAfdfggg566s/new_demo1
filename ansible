@@ -1,0 +1,115 @@
+如果你希望在 GitLab CI/CD 中使用 密码 而不是 SSH 密钥 来进行 SSH 认证并使用 Ansible 来执行文件传输（SCP），你可以使用 sshpass 工具来模拟密码输入。这里是如何配置的详细步骤。
+
+步骤 1：安装 sshpass
+
+在 GitLab CI/CD 的 Runner 环境中，你需要安装 sshpass 来实现基于密码的 SSH 认证。sshpass 允许你在命令行中传递密码来执行 SSH 或 SCP 操作。
+
+在 .gitlab-ci.yml 中安装 sshpass 和 ansible：
+
+before_script:
+  - apt-get update
+  - apt-get install -y ansible sshpass
+
+步骤 2：编写 Ansible Playbook
+
+假设你想要使用 密码 通过 SCP 将文件上传到远程服务器。由于 ansible.builtin.copy 模块通常需要通过 SSH 密钥认证，所以你需要在 Ansible 中使用 sshpass 来支持密码认证。
+
+这里是一个使用 sshpass 执行 SCP 操作的示例 scp_playbook.yml：
+
+---
+- name: Copy files using SCP with password
+  hosts: remote_servers
+  tasks:
+    - name: Copy file to remote server using scp
+      delegate_to: localhost  # 在本地执行 SCP 命令
+      shell: "sshpass -p '{{ remote_password }}' scp -o StrictHostKeyChecking=no {{ local_file }} {{ remote_user }}@{{ remote_host }}:{{ remote_path }}"
+      environment:
+        SSHPASS: "{{ remote_password }}"
+
+在这个 Playbook 中：
+
+sshpass -p '{{ remote_password }}' 用来传递密码。
+
+scp -o StrictHostKeyChecking=no 禁用 SSH 主机验证，避免第一次连接时出现提示。
+
+delegate_to: localhost 表示 SCP 命令将在 GitLab Runner 本地执行，而不是在远程主机上执行。
+
+
+步骤 3：配置 .gitlab-ci.yml 文件
+
+在 GitLab CI/CD 配置文件中，使用 ansible-playbook 来运行这个 Playbook，并传递所需的变量（例如，文件路径、远程主机信息、密码等）。
+
+stages:
+  - deploy
+
+deploy_to_remote:
+  stage: deploy
+  image: ubuntu:latest  # 使用适合的 Docker 镜像
+  before_script:
+    - apt-get update
+    - apt-get install -y ansible sshpass
+  script:
+    - ansible-playbook -i "$REMOTE_HOST," scp_playbook.yml -e "local_file=./path/to/local/file remote_path=/remote/path remote_user=$REMOTE_USER remote_host=$REMOTE_HOST remote_password=$REMOTE_PASSWORD"
+
+详细解释：
+
+1. before_script：
+
+安装所需工具：ansible 和 sshpass。
+
+
+
+2. script：
+
+使用 ansible-playbook 命令运行 scp_playbook.yml，并通过 -e 选项传递：
+
+local_file: 本地文件的路径。
+
+remote_path: 远程服务器的目标路径。
+
+remote_user: 远程服务器的用户名。
+
+remote_host: 远程主机的 IP 地址或主机名。
+
+remote_password: 远程主机的密码。
+
+
+
+
+
+步骤 4：设置 GitLab CI/CD 环境变量
+
+在 GitLab 项目中，前往 Settings > CI / CD > Variables，并添加以下环境变量：
+
+REMOTE_USER: 远程主机的用户名（如 ubuntu 或 ec2-user）。
+
+REMOTE_HOST: 远程主机的 IP 地址或主机名。
+
+REMOTE_PASSWORD: 远程主机的密码。
+
+LOCAL_FILE: 要上传的本地文件路径。
+
+REMOTE_PATH: 远程目标路径。
+
+
+步骤 5：触发 CI/CD 流程
+
+当你提交并推送代码时，GitLab 会自动触发 CI/CD 流程并执行 deploy_to_remote 作业，使用 密码 认证通过 sshpass 执行 SCP 操作，将文件上传到远程服务器。
+
+示例输出
+
+当该作业执行时，GitLab CI/CD 日志将显示以下信息，表示 SCP 操作的成功执行：
+
+$ ansible-playbook -i "$REMOTE_HOST," scp_playbook.yml -e "local_file=./path/to/local/file remote_path=/remote/path remote_user=$REMOTE_USER remote_host=$REMOTE_HOST remote_password=$REMOTE_PASSWORD"
+
+总结
+
+你可以使用 密码 而不是 SSH 密钥 在 GitLab CI/CD 中执行 SSH 操作和文件传输。
+
+需要使用 sshpass 来自动化密码输入，通过 ansible-playbook 执行 SCP 操作。
+
+要确保将远程主机信息和密码作为 GitLab CI/CD 环境变量进行配置。
+
+
+尽管这样可以工作，但需要注意 密码认证 的安全性较低，建议在可能的情况下使用 SSH 密钥认证，以提高安全性和自动化水平。
+
