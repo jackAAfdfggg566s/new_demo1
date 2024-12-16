@@ -1,0 +1,96 @@
+如果你希望使用 用户名和密码 进行 scp（Secure Copy Protocol）操作，而不使用 SSH 密钥，你可以在 GitLab CI/CD 中配置用户名和密码进行远程服务器的 scp 文件传输。不过，scp 本身并不支持直接通过用户名和密码进行交互式的身份验证，而是通常依赖于 SSH 密钥 或 SSH 密码认证。
+
+使用用户名和密码执行 scp 操作的思路
+
+1. 启用 SSH 密码认证：你需要确保远程服务器允许使用密码进行 SSH 身份验证。默认情况下，许多服务器会禁用密码认证，只允许使用 SSH 密钥认证。
+
+
+2. 在 GitLab CI 中传递用户名和密码：你可以在 GitLab CI/CD 的环境变量中存储用户名和密码，并在 scp 命令中使用它们。
+
+
+
+解决方案
+
+以下是如何在 GitLab CI/CD 中配置并使用用户名和密码进行 scp 操作的示例。
+
+步骤 1：将用户名和密码存储为 GitLab CI/CD 环境变量
+
+1. 进入 GitLab 项目 页面。
+
+
+2. 进入 Settings > CI / CD。
+
+
+3. 在 Variables 部分，添加以下环境变量：
+
+REMOTE_USER: 远程服务器的用户名。
+
+REMOTE_PASSWORD: 远程服务器的密码。
+
+REMOTE_HOST: 远程服务器的主机名或 IP 地址。
+
+REMOTE_PATH: 远程服务器的目标路径。
+
+LOCAL_FILE: 本地文件路径。
+
+
+
+
+步骤 2：安装 sshpass（支持通过密码进行 SSH 操作）
+
+由于 scp 本身不直接支持密码认证，你可以使用 sshpass 工具，它可以自动将密码传递给 scp 命令。
+
+在 .gitlab-ci.yml 文件中，安装并使用 sshpass 来进行 scp 操作。
+
+步骤 3：编写 .gitlab-ci.yml 配置文件
+
+stages:
+  - deploy
+
+deploy_to_remote:
+  stage: deploy
+  script:
+    # 安装 sshpass（允许通过密码进行 ssh/scp 操作）
+    - apt-get update && apt-get install -y sshpass
+
+    # 使用 sshpass 和 scp 进行文件传输
+    - sshpass -p "$REMOTE_PASSWORD" scp -o StrictHostKeyChecking=no "$LOCAL_FILE" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH"
+
+    # 可选：打印成功消息
+    - echo "文件已成功传输到远程服务器"
+
+详细解释：
+
+安装 sshpass：sshpass 是一个允许你通过命令行传递密码的工具，它会自动将密码传递给 scp 或 ssh 命令。我们通过 apt-get install -y sshpass 安装它。
+
+sshpass 使用：使用 sshpass -p "$REMOTE_PASSWORD" 命令将密码传递给 scp。这里，-p 后面跟的是存储在 GitLab CI 环境变量中的密码。
+
+scp 命令：scp 命令用于将文件从本地机器传输到远程服务器。选项 -o StrictHostKeyChecking=no 用于避免因第一次连接远程服务器而出现的 SSH 主机验证问题。
+
+$LOCAL_FILE：本地文件路径，存储在环境变量中。
+
+$REMOTE_USER、$REMOTE_HOST 和 $REMOTE_PATH：这些是你在 GitLab CI/CD 环境变量中配置的远程服务器用户名、IP 地址和目标路径。
+
+
+注意事项：
+
+1. 密码认证需要启用：确保远程服务器的 SSH 配置允许使用密码认证。你可以检查 /etc/ssh/sshd_config 文件，确保 PasswordAuthentication yes 被启用。
+
+PasswordAuthentication yes
+
+然后重启 SSH 服务：
+
+sudo systemctl restart sshd
+
+
+2. 安全性：虽然使用密码进行 scp 操作比 SSH 密钥更简单，但它的安全性较低。建议尽可能使用 SSH 密钥进行身份验证。若必须使用密码认证，请确保密码安全，并限制远程服务器的访问权限。
+
+
+3. sshpass 使用：虽然 sshpass 可以在 CI/CD 中实现自动化，但它不推荐在生产环境中使用，因为它可能会暴露密码。务必谨慎处理这些凭证。
+
+
+
+总结：
+
+通过在 GitLab CI/CD 中使用 sshpass，你可以实现通过用户名和密码使用 scp 命令将文件传输到远程服务器。这种方法适用于需要快速搭建的场景，但在生产环境中，使用 SSH 密钥认证是更为安全的选择。
+
