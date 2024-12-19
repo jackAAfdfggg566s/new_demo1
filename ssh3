@@ -1,0 +1,125 @@
+如果你希望 GitLab CI/CD 流水线中执行的脚本根据客户传入的参数来决定执行的脚本内容，可以通过 GitLab 的 CI/CD variables（CI/CD 变量）或通过 GitLab 手动触发功能来动态传递参数。以下是如何在 GitLab CI/CD 流水线中传入客户自定义参数，并在 Ansible Playbook 中根据这些参数执行不同脚本的详细步骤。
+
+步骤 1：通过 GitLab CI/CD 变量传递客户参数
+
+在 GitLab CI/CD 流水线中，你可以通过 GitLab UI 或者 .gitlab-ci.yml 文件直接传递参数。
+
+1.1 通过 GitLab UI 设置自定义变量
+
+1. 打开你的 GitLab 项目。
+
+
+2. 进入 Settings > CI / CD > Variables。
+
+
+3. 添加一个新变量（例如：CUSTOM_SCRIPT），并指定一个默认值（例如：default-script）。
+
+
+
+通过这种方式，GitLab 会把这个变量传递给 CI 流水线，随后你可以在 .gitlab-ci.yml 文件中引用这个变量。
+
+1.2 通过 .gitlab-ci.yml 文件传递客户参数
+
+你也可以直接在 .gitlab-ci.yml 文件的 variables 部分定义这些参数：
+
+variables:
+  CUSTOM_SCRIPT: "feature-script"  # 客户传入的参数，默认值为 "feature-script"
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    # 安装 Ansible 和 sshpass（如果未安装）
+    - apt-get update && apt-get install -y ansible sshpass
+
+    # 设置 SSH 密钥（通过 GitLab secret 变量）
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+
+    # 禁用 SSH 主机密钥检查
+    - echo "Host *" > ~/.ssh/config
+    - echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+    - echo "  UserKnownHostsFile=/dev/null" >> ~/.ssh/config
+
+    # 传递客户指定的脚本名到 Playbook
+    - ansible-playbook -i "your-remote-host," --user your-username --private-key ~/.ssh/id_rsa \
+      -e "ansible_ssh_extra_args=-o StrictHostKeyChecking=no" \
+      -e "script_name=${CUSTOM_SCRIPT}" \
+      run_script.yml
+
+在这个例子中，我们定义了一个名为 CUSTOM_SCRIPT 的变量，默认值为 "feature-script"。客户可以在 GitLab 中修改该变量，或在运行时通过 API/手动触发时传递其他值。
+
+步骤 2：修改 Ansible Playbook 来接收并执行客户传入的参数
+
+在 Ansible Playbook (run_script.yml) 中，你可以根据传递的 script_name 变量来执行不同的脚本。
+
+---
+- name: Run a script on remote machine based on client parameter
+  hosts: localhost  # 使用 localhost，GitLab 会动态传递远程主机
+  gather_facts: no
+
+  tasks:
+    - name: Run the corresponding script based on script_name parameter
+      ansible.builtin.shell: |
+        # 根据 script_name 运行不同的脚本
+        if [ "{{ script_name }}" == "feature-script" ]; then
+          /path/to/feature-script.sh
+        elif [ "{{ script_name }}" == "development-script" ]; then
+          /path/to/development-script.sh
+        else
+          /path/to/default-script.sh
+        fi
+      become: yes  # 如果需要 sudo 权限，使用 become
+
+步骤 3：通过手动触发传递参数（可选）
+
+如果你希望客户手动触发 GitLab CI 流水线，并传递不同的参数，可以通过 GitLab Pipeline Triggers 功能来实现。
+
+3.1 创建一个 GitLab 触发器
+
+1. 在 GitLab 项目中，进入 Settings > CI / CD > Pipeline triggers。
+
+
+2. 创建一个新的触发器，GitLab 会给你一个触发 URL 和令牌。
+
+
+
+3.2 使用触发器手动传递参数
+
+使用触发器 API，客户可以通过以下命令触发流水线并传递自定义参数：
+
+curl --request POST --form token=YOUR_TRIGGER_TOKEN \
+  --form ref=main \
+  --form "variables[CUSTOM_SCRIPT]=development-script" \
+  https://gitlab.example.com/api/v4/projects/YOUR_PROJECT_ID/trigger/pipeline
+
+这将会触发 GitLab CI 流水线并将 CUSTOM_SCRIPT 变量设置为 "development-script"，然后该值会传递到 Ansible Playbook 中，执行相应的脚本。
+
+步骤 4：执行不同的脚本
+
+根据传递的 CUSTOM_SCRIPT 参数，Ansible Playbook 会执行不同的脚本：
+
+如果 CUSTOM_SCRIPT 为 feature-script，执行 /path/to/feature-script.sh。
+
+如果 CUSTOM_SCRIPT 为 development-script，执行 /path/to/development-script.sh。
+
+如果没有传递或传递其他值，则执行默认脚本 /path/to/default-script.sh。
+
+
+小结：
+
+1. 传递参数：你可以通过 GitLab CI/CD 变量来传递客户的参数。
+
+
+2. 动态执行脚本：在 Ansible Playbook 中根据传入的 script_name 参数来执行不同的脚本。
+
+
+3. 手动触发：如果需要，客户可以通过 GitLab 触发器手动传递参数来启动流水线。
+
+
+
+这样，客户可以根据实际需求动态选择要执行的脚本。
+
