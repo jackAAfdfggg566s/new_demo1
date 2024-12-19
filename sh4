@@ -1,0 +1,108 @@
+是的，你可以通过 GitLab 的 手动触发（Manual Pipeline） 来让客户通过 GitLab 界面直接传入参数。这种方式允许你在 GitLab 中创建一个手动触发的流水线，客户可以在 GitLab UI 界面中输入自定义参数来决定执行哪些脚本。
+
+步骤 1：修改 .gitlab-ci.yml 文件，添加手动触发并接受参数
+
+你需要修改 .gitlab-ci.yml 文件，允许客户通过 GitLab 界面传递自定义变量。这可以通过 when: manual 和 variables 实现。
+
+以下是一个完整的例子，展示了如何设置手动触发，并允许客户通过 GitLab 界面传递自定义参数（例如，传入脚本名称）。
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    # 安装 Ansible 和 sshpass（如果未安装）
+    - apt-get update && apt-get install -y ansible sshpass
+
+    # 设置 SSH 密钥（通过 GitLab secret 变量）
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+
+    # 禁用 SSH 主机密钥检查
+    - echo "Host *" > ~/.ssh/config
+    - echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+    - echo "  UserKnownHostsFile=/dev/null" >> ~/.ssh/config
+
+    # 传递客户指定的脚本名到 Playbook
+    - ansible-playbook -i "your-remote-host," --user your-username --private-key ~/.ssh/id_rsa \
+      -e "ansible_ssh_extra_args=-o StrictHostKeyChecking=no" \
+      -e "script_name=${CUSTOM_SCRIPT}" \
+      run_script.yml
+  when: manual  # 使此作业为手动触发
+
+# 定义一个默认的变量值，这可以在 GitLab UI 中手动覆盖
+variables:
+  CUSTOM_SCRIPT: "feature-script"  # 默认为 "feature-script"
+
+在这个例子中，我们添加了以下内容：
+
+when: manual：这会使 deploy 作业成为手动触发作业。客户需要通过 GitLab UI 来启动它。
+
+variables 部分：我们定义了一个名为 CUSTOM_SCRIPT 的变量，它有一个默认值 "feature-script"，但客户可以在 GitLab UI 中修改该变量。
+
+
+步骤 2：客户手动触发流水线并传递参数
+
+当作业设置为手动触发时，客户可以通过 GitLab 界面触发流水线并传入自定义参数。
+
+2.1 触发手动作业
+
+1. 打开你的 GitLab 项目页面。
+
+
+2. 转到 CI / CD > Pipelines。
+
+
+3. 找到你想要手动触发的流水线，点击右侧的 Run Pipeline 按钮。
+
+
+4. 在弹出的窗口中，你将看到一个可编辑的输入框，允许你修改默认的 CUSTOM_SCRIPT 变量。
+
+
+
+例如，客户可以将 CUSTOM_SCRIPT 从默认的 feature-script 修改为 development-script，然后点击 Run Pipeline。
+
+2.2 提交参数
+
+一旦客户在界面中输入了他们想要的脚本名称（例如 development-script），GitLab 会使用这个新值来运行流水线。这个新值将会传递给 ansible-playbook 命令，进而传递给 Playbook 中的 script_name 参数。
+
+步骤 3：修改 Ansible Playbook 来执行客户指定的脚本
+
+在 run_script.yml Playbook 中，你可以根据传入的 script_name 参数来决定执行哪个脚本：
+
+---
+- name: Run a script on remote machine based on client parameter
+  hosts: localhost  # 使用 localhost，GitLab 会动态传递远程主机
+  gather_facts: no
+
+  tasks:
+    - name: Run the corresponding script based on script_name parameter
+      ansible.builtin.shell: |
+        # 根据 script_name 运行不同的脚本
+        if [ "{{ script_name }}" == "feature-script" ]; then
+          /path/to/feature-script.sh
+        elif [ "{{ script_name }}" == "development-script" ]; then
+          /path/to/development-script.sh
+        else
+          /path/to/default-script.sh
+        fi
+      become: yes  # 如果需要 sudo 权限，使用 become
+
+在上面的 Playbook 中，script_name 变量是通过 GitLab CI 传递的，它的值是客户在 GitLab UI 中手动输入的内容。根据该值，Ansible 会选择不同的脚本进行执行。
+
+小结
+
+1. 手动触发流水线：在 .gitlab-ci.yml 中使用 when: manual 来设置作业为手动触发。
+
+
+2. 客户传递参数：使用 GitLab CI/CD 变量让客户通过 GitLab UI 修改参数，如脚本名称。
+
+
+3. 根据参数执行脚本：在 Ansible Playbook 中根据传递的参数选择执行不同的脚本。
+
+
+
+这样，客户可以通过 GitLab 的界面灵活地传入参数，并控制远程机器上执行哪个脚本。
+
