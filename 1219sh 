@@ -1,0 +1,105 @@
+要使用 GitLab CI/CD 配合 Ansible 通过 SSH 远程执行脚本，可以按照以下步骤进行操作。这个例子将引导你通过 GitLab CI 配置一个流水线，使用 Ansible 连接远程机器并执行脚本。
+
+前提条件：
+
+1. GitLab CI/CD：确保你已经在 GitLab 仓库中创建了 .gitlab-ci.yml 文件来定义 CI/CD 流水线。
+
+
+2. GitLab Runner 安装 Ansible：GitLab Runner 需要安装 Ansible。
+
+
+3. SSH 访问：远程机器需要能够通过 SSH 从 GitLab Runner 访问，并且你需要配置 SSH 密钥或密码。
+
+
+4. 远程机器脚本：你想要执行的脚本应该已经存在于远程机器上，或者你可以将脚本传递给流水线。
+
+
+
+步骤 1：在 GitLab Runner 上安装 Ansible
+
+如果 GitLab Runner 上没有安装 Ansible，你可以在 CI 配置文件（.gitlab-ci.yml）中添加安装 Ansible 的步骤：
+
+before_script:
+  - apt-get update
+  - apt-get install -y ansible sshpass
+
+这将确保在执行任何作业之前，GitLab Runner 已经安装了 Ansible 和 sshpass（如果需要使用密码的话）。
+
+步骤 2：定义 GitLab CI/CD 流水线（.gitlab-ci.yml）
+
+在 .gitlab-ci.yml 文件中，定义一个作业来使用 Ansible 通过 SSH 连接到远程机器并执行脚本。以下是一个示例：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    # 安装 Ansible（如果没有安装的话）
+    - apt-get update && apt-get install -y ansible sshpass
+
+    # 设置 SSH 密钥（你可以通过 GitLab 的 Secret Variables 配置 SSH 密钥）
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+
+    # 可选：禁用 SSH 主机密钥验证，避免 SSH 提示
+    - echo "Host *" > ~/.ssh/config
+    - echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+    - echo "  UserKnownHostsFile=/dev/null" >> ~/.ssh/config
+
+    # 使用 Ansible 运行远程脚本（可以根据需要传递变量）
+    - ansible-playbook -i "your-remote-host," --user your-username --private-key ~/.ssh/id_rsa -e "ansible_ssh_extra_args=-o StrictHostKeyChecking=no" run_script.yml
+
+步骤 3：创建 Ansible Playbook（run_script.yml）
+
+在 Playbook 中执行远程脚本。以下是一个示例 Playbook，用于在远程服务器上运行脚本：
+
+---
+- name: Run script on remote machine
+  hosts: localhost  # 由于我们动态传递单个主机，所以使用 localhost
+  gather_facts: no
+
+  tasks:
+    - name: Run remote script
+      ansible.builtin.shell: |
+        # 指定远程机器上的脚本路径，或者上传脚本
+        /path/to/your/script.sh
+      become: yes  # 如果需要 sudo 权限来运行脚本，可以使用此选项
+
+此示例假设脚本已经存在于远程机器上。如果需要从 GitLab Runner 上传脚本到远程机器，你可以在 Playbook 中使用 copy 或 template 模块来上传脚本，然后再执行。
+
+步骤 4：在 GitLab 中配置 SSH 私钥作为秘密变量
+
+为了安全起见，最好将 SSH 私钥存储为 GitLab CI/CD 的秘密变量。你可以按照以下步骤操作：
+
+1. 进入你的 GitLab 项目。
+
+
+2. 导航至 Settings > CI / CD > Variables。
+
+
+3. 添加一个名为 SSH_PRIVATE_KEY 的变量，并将你的私钥粘贴为值。
+
+
+
+步骤 5：触发流水线
+
+完成 .gitlab-ci.yml 和 run_script.yml 的配置后，提交并推送更改到 GitLab。GitLab 会触发流水线，Ansible 将通过 SSH 连接到远程机器并执行脚本。
+
+示例流程：
+
+1. GitLab CI/CD 流水线：安装 Ansible 和 SSH 密钥。
+
+
+2. SSH 连接：GitLab Runner 使用私钥通过 SSH 连接到远程机器。
+
+
+3. 运行脚本：通过 Ansible 执行远程脚本。
+
+
+
+小结：
+
+通过这个设置，你可以在 GitLab CI/CD 中使用 Ansible 远程执行脚本，且不需要每次手动配置 SSH 密钥。只要配置好私钥和相关设置，GitLab 就可以自动化地通过 SSH 远程执行任务。
+
