@@ -1,0 +1,129 @@
+为了通过 Amazon RDS 使用 FIS（Fault Injection Simulator）进行数据库重启，您需要配置适当的 IAM 角色 和 策略。以下是您需要的 IAM 权限和角色配置步骤。
+
+1. 创建 IAM 角色
+
+在使用 FIS 进行故障注入（比如重启 RDS 实例）时，FIS 需要执行操作的权限。您需要为 FIS 创建一个 IAM 角色，该角色允许 FIS 执行这些操作。此角色通常包括对 RDS 实例的权限。
+
+IAM 角色基本要求：
+
+FIS 需要 sts:AssumeRole 权限，以允许模拟用户或服务角色的权限。
+
+角色应允许 RDS 实例操作，如重启实例。
+
+
+2. IAM 策略
+
+为 FIS 提供操作所需的权限，您需要为该角色附加一个或多个 IAM 策略。具体策略包括对 Amazon RDS 实例的管理权限，至少包括重启 RDS 实例的权限。
+
+以下是一个示例策略，授予 FIS 对 RDS 实例的管理权限（如重启实例）：
+
+示例 IAM 策略 - 允许重启 RDS 实例：
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "rds:RebootDBInstance",
+                "rds:DescribeDBInstances",
+                "rds:DescribeDBClusters"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "fis:StartExperiment",
+                "fis:StopExperiment",
+                "fis:DescribeExperiment",
+                "fis:ListExperiments"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+策略说明：
+
+1. rds:RebootDBInstance: 允许 FIS 重启 RDS 实例。
+
+
+2. rds:DescribeDBInstances 和 rds:DescribeDBClusters: 允许 FIS 查看 RDS 实例的描述信息，以便选择要重启的实例。
+
+
+3. fis:StartExperiment, fis:StopExperiment, fis:DescribeExperiment, fis:ListExperiments: 允许 FIS 启动、停止、描述和列出实验。
+
+
+
+3. 设置 FIS 实验角色
+
+您需要为 FIS 实验 配置实验角色，它将使用上述 IAM 角色。
+
+配置步骤：
+
+1. 创建 IAM 角色：按照上述示例策略创建一个新的 IAM 角色，并为其提供足够的权限来管理 RDS 实例。
+
+
+2. 允许 FIS 假设角色：角色信任策略应该包括允许 FIS 使用此角色，类似于以下信任策略：
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "fis.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+
+
+3. 将 IAM 角色与 FIS 实验关联：在创建 FIS 实验时，您需要将此角色作为实验的角色。
+
+
+
+4. FIS 实验配置
+
+当您配置 FIS 实验时，确保选择适当的 IAM 角色，并指定正确的 RDS 实例作为故障注入目标。
+
+1. 登录到 AWS FIS 控制台。
+
+
+2. 创建一个新的 Experiment Template。
+
+
+3. 选择 RDS 作为故障注入目标，并设置实验的具体细节。
+
+
+4. 为实验选择您创建的 IAM 角色（具有重启权限的角色）。
+
+
+
+5. 附加权限
+
+如果需要，您还可以附加其他权限，以便进行更多的操作，如：
+
+rds:ModifyDBInstance: 如果你需要修改数据库实例的配置（例如，调整实例规格或修改参数组）。
+
+rds:StartDBInstance / rds:StopDBInstance: 这些权限可以让 FIS 启动或停止 RDS 实例，但这不适用于故障注入重启操作，因为重启操作只需要 RebootDBInstance 权限。
+
+
+总结
+
+为了使用 FIS 重启 RDS 数据库，您需要：
+
+1. 创建一个 IAM 角色，允许 FIS 执行 RDS 实例的重启 操作。
+
+
+2. 为角色附加策略，授予以下权限：rds:RebootDBInstance，rds:DescribeDBInstances，fis:StartExperiment 等。
+
+
+3. 配置该角色为 FIS 实验的角色，以便 FIS 能够执行故障注入操作。
+
+
+
+确保在实验开始前对角色和策略进行验证，以便确保 FIS 能够正确地访问并操作 RDS 实例。
+
