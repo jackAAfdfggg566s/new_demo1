@@ -1,0 +1,159 @@
+如果您希望通过 AWS Fault Injection Simulator (FIS) 执行 RDS 实例的故障转移（Failover），您需要更新 IAM 角色和策略 以允许 FIS 执行相应的 故障转移 操作。
+
+在 Amazon RDS 中，故障转移 适用于 多可用区（Multi-AZ）部署的数据库实例，例如 RDS for MySQL, RDS for PostgreSQL, RDS for SQL Server 和 Amazon Aurora 等。当主实例发生故障时，RDS 会自动进行故障转移。通过 FIS，您可以模拟这种故障转移。
+
+1. 更新 IAM 策略 - 允许故障转移
+
+为了通过 FIS 进行 RDS 故障转移，您需要为 FIS 提供适当的权限。这些权限包括触发故障转移操作的权限。具体来说，您需要以下权限：
+
+rds:FailoverDBCluster: 允许 FIS 执行故障转移操作。
+
+rds:DescribeDBInstances 和 rds:DescribeDBClusters: 允许查看数据库实例的状态，以便选择要进行故障转移的实例。
+
+
+2. 更新 IAM 策略示例：
+
+以下是允许 FIS 执行 RDS 故障转移 操作的 IAM 策略 示例：
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "rds:FailoverDBCluster",
+                "rds:DescribeDBInstances",
+                "rds:DescribeDBClusters"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "fis:StartExperiment",
+                "fis:StopExperiment",
+                "fis:DescribeExperiment",
+                "fis:ListExperiments"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+策略解释：
+
+1. rds:FailoverDBCluster:
+
+该权限允许您对 RDS 集群进行 故障转移，这是 多可用区（Multi-AZ） 数据库实例的一个操作。对于 Amazon Aurora，此操作会触发 Aurora 集群的故障转移。
+
+
+
+2. rds:DescribeDBInstances 和 rds:DescribeDBClusters:
+
+允许 FIS 查询 RDS 实例或集群的信息，以便识别哪些实例适合进行故障转移。
+
+
+
+3. fis:StartExperiment, fis:StopExperiment, fis:DescribeExperiment, fis:ListExperiments:
+
+这些权限允许 FIS 启动、停止、描述和列出实验。
+
+
+
+
+3. 角色信任策略：
+
+您需要配置 IAM 角色的信任策略，允许 FIS 服务假设此角色来执行必要的操作。以下是一个信任策略示例：
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "fis.amazonaws.com"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+
+这个信任策略允许 FIS 使用此 IAM 角色执行实验操作。
+
+4. 配置 FIS 实验角色
+
+在创建 FIS 实验时，您需要选择上述角色作为 实验角色，使得 FIS 能够使用该角色执行故障转移操作。
+
+5. 创建 FIS 实验
+
+在创建 FIS 实验 时，选择 RDS 作为目标，并指定故障转移操作。在实验模板中，您可以配置以下操作：
+
+故障注入类型：选择 FailoverDBCluster 来模拟 RDS 的故障转移操作。
+
+
+6. FIS 实验配置中的故障转移操作示例：
+
+FIS 实验中的操作可以是：
+
+故障转移操作：将主实例切换到备用实例。
+
+
+示例 FIS 实验模板 JSON：
+
+{
+    "experimentTemplateName": "RDS-Failover-Experiment",
+    "description": "Simulate RDS failover to test application behavior",
+    "targets": {
+        "rds-cluster": {
+            "resourceType": "aws:rds:dbcluster",
+            "selectionMode": "ALL",
+            "resourceTags": {
+                "Environment": "Production"
+            }
+        }
+    },
+    "actions": {
+        "failover": {
+            "actionId": "aws:rds.failover-db-cluster",
+            "parameters": {
+                "dbClusterIdentifier": "your-db-cluster-id"
+            },
+            "target": "rds-cluster",
+            "roleArn": "arn:aws:iam::your-account-id:role/your-fis-role"
+        }
+    },
+    "roleArn": "arn:aws:iam::your-account-id:role/your-fis-role"
+}
+
+解释：
+
+targets: 选择要执行故障转移操作的 RDS 集群（resourceType: aws:rds:dbcluster）。您可以使用资源标签来筛选目标。
+
+actions: 设置故障转移操作（aws:rds.failover-db-cluster），并传入 RDS 集群标识符（dbClusterIdentifier）。
+
+roleArn: 为实验设置的 IAM 角色 ARN，FIS 将使用该角色来执行操作。
+
+
+7. 启动实验
+
+配置好实验模板后，您可以启动该实验来模拟 RDS 故障转移。这将触发 RDS 集群的故障转移操作，您可以观察应用程序的行为以及故障转移对 RDS 实例的影响。
+
+总结：
+
+为了通过 FIS 执行 RDS 故障转移，您需要：
+
+1. 为 FIS 创建一个 IAM 角色，附加具有 rds:FailoverDBCluster、rds:DescribeDBInstances 和 rds:DescribeDBClusters 等权限的策略。
+
+
+2. 配置该角色的信任策略，允许 FIS 假设该角色。
+
+
+3. 在 FIS 中配置实验模板，设置 故障转移 操作。
+
+
+4. 使用 IAM 角色 作为实验角色，确保 FIS 有权限执行故障转移。
+
+
+
+通过这些步骤，您可以使用 FIS 模拟 RDS 实例或集群的故障转移操作。
+
