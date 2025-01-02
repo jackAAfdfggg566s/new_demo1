@@ -1,0 +1,102 @@
+要在大盘（Dashboard）展示 RDS（Relational Database Service）Failover 所用的时间，首先需要通过 Event Bus（事件总线）收集相关的事件数据，然后将这些数据进行展示。以下是大致的步骤和方法：
+
+1. 捕获 RDS Failover 事件
+
+使用 AWS CloudWatch Events（现在称为 Amazon EventBridge）来捕获 RDS 的 Failover 事件。这些事件通常会包含 Failover 的开始时间和结束时间。
+
+创建一个规则来捕获这些事件并将其发送到指定的目标。目标可以是 Lambda 函数、SNS（Simple Notification Service）或 SQS（Simple Queue Service）。
+
+
+步骤：
+
+1. 创建 CloudWatch Event 规则：
+
+登录到 AWS 管理控制台。
+
+进入 CloudWatch 服务，选择 Events 或 EventBridge。
+
+创建一个新规则，选择事件源为 RDS，然后选择相关事件类型，比如 RDS DB Instance failover。
+
+
+
+2. 定义目标：
+
+选择一个目标，例如 Lambda 函数，SNS 主题等。
+
+目标将接收事件并处理它们，比如提取 Failover 的时间。
+
+
+
+
+2. 处理事件数据
+
+使用 Lambda 或其他目标来处理 CloudWatch 事件。Lambda 函数可以解析 Failover 事件，并计算 Failover 所用的时间。
+
+事件中通常会包含 事件时间、RDS 实例、Failover 的状态等信息。
+
+通过解析事件时间戳，可以计算 Failover 的持续时间。
+
+
+示例 Lambda 函数（伪代码）：
+
+import json
+import time
+
+def lambda_handler(event, context):
+    failover_start = event['detail']['startTimestamp']  # 获取开始时间
+    failover_end = event['detail']['endTimestamp']  # 获取结束时间
+
+    failover_duration = failover_end - failover_start  # 计算持续时间
+
+    # 可以选择将时间数据存入一个数据库（如 DynamoDB）或者推送到监控系统
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'failover_duration': failover_duration
+        })
+    }
+
+3. 将数据存储并展示
+
+将计算出的 Failover 持续时间 存储到一个数据源中（如 DynamoDB、RDS 或 S3）。
+
+使用监控和可视化工具（如 AWS CloudWatch Dashboards、Grafana、Tableau 等）来展示这些数据。
+
+
+步骤：
+
+1. 将数据存储到 DynamoDB 或 RDS：
+
+在 Lambda 中，将每个 Failover 事件的持续时间保存到 DynamoDB 表或者 RDS 数据库中。
+
+
+
+2. 展示数据：
+
+如果使用 CloudWatch Dashboards：
+
+在 CloudWatch 中创建一个 Dashboard，展示不同 RDS 实例的 Failover 持续时间。
+
+
+如果使用 Grafana：
+
+Grafana 可以连接到 DynamoDB 或 RDS，配置数据源，构建一个监控面板，展示 Failover 时长、次数等。
+
+
+
+
+
+4. 警报和通知
+
+可以设置警报（例如通过 CloudWatch Alarms），当 Failover 持续时间超过某个阈值时，通知相关人员。
+
+
+5. 定期检查和优化
+
+根据展示的指标，定期检查 RDS Failover 的表现，是否存在性能瓶颈或者其他潜在问题。
+
+
+总结：
+
+通过 AWS CloudWatch Events 捕获 RDS Failover 事件，使用 Lambda 函数处理这些事件并计算 Failover 的持续时间，然后将这些数据存储并通过 CloudWatch Dashboards 或 Grafana 等工具展示，最终形成一个完整的监控解决方案。
+
