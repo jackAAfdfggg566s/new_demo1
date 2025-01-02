@@ -1,0 +1,91 @@
+在创建 CloudWatch Events 规则时，您可以使用 Event Pattern 来精细化捕获特定的 RDS Failover 事件。通过设置 Event Pattern，您可以确保只捕获与 RDS Failover 相关的事件，而不是所有的 RDS 事件。
+
+设置 Event Pattern 以捕获 RDS Failover 事件
+
+1. 登录 AWS 管理控制台，进入 CloudWatch。
+
+
+2. 在左侧菜单中，选择 Rules（规则），然后点击 Create Rule（创建规则）。
+
+
+3. 在 Create Rule 页面，选择 Event Source 为 AWS service，然后选择 RDS 作为事件源。
+
+
+4. 接下来，在 Event Pattern 部分，您可以根据需要设置事件模式。我们将为 RDS Failover 设置一个过滤模式，捕获 RDS-EVENT-0027（RDS Failover）事件。
+
+
+
+Event Pattern 设置示例：
+
+下面是一个用于捕获 RDS Failover 事件的 Event Pattern 示例：
+
+{
+  "source": [
+    "aws.rds"
+  ],
+  "detail-type": [
+    "RDS DB Event"
+  ],
+  "detail": {
+    "EventCategories": [
+      "failover"
+    ]
+  }
+}
+
+解释：
+
+source：指定事件源为 aws.rds，即来自 RDS 服务的事件。
+
+detail-type：指定事件的类型为 RDS DB Event，即与 RDS 数据库 相关的事件。
+
+detail：在事件的详细信息中，过滤出包含 failover 事件类别的事件。
+
+"EventCategories": ["failover"]：这表示我们只捕获包含 failover 事件类别的 RDS DB Event，即故障转移相关的事件。
+
+
+
+步骤 5：设置目标
+
+在规则的目标部分，您可以选择将事件发送到 CloudWatch Logs、SNS 主题、Lambda 函数 等，具体取决于您的需求。比如，如果您希望将这些事件记录到 CloudWatch Logs 中，可以选择 CloudWatch Logs 作为目标。
+
+步骤 6：完成创建规则
+
+完成设置后，点击 Create（创建）按钮，这样就创建了一个规则，能够捕获与 RDS Failover 相关的事件。
+
+额外说明：
+
+您可以根据需要进一步细化 Event Pattern，比如指定特定的 RDS 实例 或 事件 ID。例如，您还可以通过如下方式指定 RDS-EVENT-0027：
+
+
+{
+  "source": [
+    "aws.rds"
+  ],
+  "detail-type": [
+    "RDS DB Event"
+  ],
+  "detail": {
+    "EventCategories": [
+      "failover"
+    ],
+    "SourceId": [
+      "my-db-instance"
+    ],
+    "EventID": [
+      "RDS-EVENT-0027"
+    ]
+  }
+}
+
+这样，规则将只捕获 my-db-instance 实例的故障转移事件。
+
+
+使用 Event Pattern 的好处
+
+通过设置 Event Pattern，您可以灵活地捕获和筛选特定类型的 RDS Failover 事件，而不需要捕获其他与 RDS 相关的事件，这样可以更有效地监控故障转移事件，并将它们发送到适当的目标（如日志、SNS、Lambda 函数等）。
+
+总结：
+
+通过正确设置 Event Pattern，您可以精确捕获与 RDS Failover 相关的事件。这不仅有助于简化事件管理，还能提高系统的监控效率。
+
