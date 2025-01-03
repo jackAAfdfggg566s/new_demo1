@@ -1,0 +1,90 @@
+要通过不同的 detail 消息来判断 原主重启、新主被提升、新主重启，你需要首先确认事件消息的格式，特别是 EventBridge 或 CloudWatch Logs 中存储的日志数据。这些事件会包含类似于 "detail" 字段，其中会有具体描述事件的内容。
+
+假设你已经将 RDS 事件正确地发送到 CloudWatch Logs，并且每个事件的日志消息包含有关事件类型和 DB 实例的信息。根据不同的事件（例如，原主重启、新主被提升、新主重启），你可以在 CloudWatch Logs Insights 中使用查询语言来过滤和提取特定的事件。
+
+假设日志消息的结构
+
+假设每个日志消息的格式如下：
+
+原主重启：日志中会包含 "Original primary restarted"。
+
+新主被提升：日志中会包含 "New primary promoted"。
+
+新主重启：日志中会包含 "New primary restarted"。
+
+
+查询 1：原主重启的事件
+
+使用 like 操作符来过滤日志消息，查找包含 "Original primary restarted" 的事件。查询如下：
+
+fields @timestamp, @message
+| filter @message like /Original primary restarted/
+| sort @timestamp desc
+| limit 20
+
+这将返回所有与 原主重启 相关的事件，并按时间戳降序排列。
+
+查询 2：新主被提升的事件
+
+类似地，您可以使用查询查找 新主被提升 相关的事件：
+
+fields @timestamp, @message
+| filter @message like /New primary promoted/
+| sort @timestamp desc
+| limit 20
+
+这将返回所有与 新主被提升 相关的事件。
+
+查询 3：新主重启的事件
+
+要过滤 新主重启 的事件，您可以使用如下查询：
+
+fields @timestamp, @message
+| filter @message like /New primary restarted/
+| sort @timestamp desc
+| limit 20
+
+这将返回所有与 新主重启 相关的事件。
+
+查询 4：综合查询 - 依次分析所有事件
+
+如果您想在一个查询中分别捕获所有三种事件，可以将 filter 条件结合使用，并为每种类型的事件加上标签。查询如下：
+
+fields @timestamp, @message
+| filter @message like /Original primary restarted/ 
+    or @message like /New primary promoted/ 
+    or @message like /New primary restarted/
+| sort @timestamp desc
+| limit 50
+
+该查询将返回包含 原主重启、新主被提升 和 新主重启 的事件，并按时间戳降序排列。
+
+查询 5：解析和提取信息（可选）
+
+如果日志消息包含了更多细节（例如，实例 ID 或其他信息），您可以使用 parse 语句提取关键字段。比如，假设日志消息的格式如下：
+
+Original primary restarted for DB instance: db-instance-id
+New primary promoted: db-instance-id
+New primary restarted for DB instance: db-instance-id
+
+您可以解析出实例 ID 来更具体地进行查询：
+
+fields @timestamp, @message
+| parse @message "Original primary restarted for DB instance: *" as db_instance_id
+| filter db_instance_id != ""
+| sort @timestamp desc
+| limit 20
+
+这个查询会提取出 原主重启 事件中的 DB 实例标识符，并按时间戳返回前 20 条记录。
+
+总结
+
+通过 CloudWatch Logs Insights，你可以根据不同的 detail 消息过滤出 原主重启、新主被提升 和 新主重启 事件。
+
+使用 like 语句来查找包含特定关键字的日志消息，或者使用 parse 来提取更多的细节（如 DB 实例标识符）。
+
+可以结合多个 like 条件，获取不同类型的事件，并按时间戳排序。
+
+
+通过这些查询，您可以非常灵活地在 CloudWatch Logs Insights 中捕获和分析 RDS Failover 和重启相关的事件。
+
