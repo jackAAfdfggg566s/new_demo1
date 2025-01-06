@@ -1,0 +1,203 @@
+感谢您的进一步说明！您的需求是将 CloudWatch Events 规则的目标设置为 CloudWatch Logs Group，并且该规则需要放置在某个 EventBridge 事件总线下。让我们根据这些要求来更新 Terraform 配置。
+
+更新后的目标：
+
+1. CloudWatch Events 规则的目标是 Log Group：将事件发送到指定的 CloudWatch Log Group。
+
+
+2. 规则属于某个 EventBus：规则将与特定的 EventBridge 事件总线关联。
+
+
+
+更新后的 Terraform 配置
+
+我们将做如下更改：
+
+创建一个自定义 EventBridge 事件总线。
+
+在此事件总线上创建一个 CloudWatch Events 规则。
+
+将规则的目标设置为 CloudWatch Log Group。
+
+
+1. 创建自定义事件总线
+
+首先，创建一个自定义的 EventBridge 事件总线。
+
+resource "aws_events_bus" "custom_event_bus" {
+  name = "custom-event-bus"
+}
+
+2. 创建 CloudWatch Log Group
+
+创建一个 CloudWatch Log Group，用于存储日志。
+
+resource "aws_cloudwatch_log_group" "log_group" {
+  name = "/aws/events/rds-events"
+}
+
+3. 创建 CloudWatch Events 规则并将其与自定义事件总线关联
+
+创建一个 CloudWatch Events 规则，规则将捕获 RDS 事件，并将其转发到自定义事件总线。
+
+resource "aws_cloudwatch_event_rule" "rds_event_rule" {
+  name        = "rds_event_rule"
+  description = "Capture RDS events and forward them to CloudWatch Logs"
+  event_bus_name = aws_events_bus.custom_event_bus.name  # 将规则设置为自定义事件总线
+  event_pattern = jsonencode({
+    source = ["aws.rds"]
+    detail-type = ["RDS DB Event"]
+  })
+}
+
+4. 配置规则的目标为 CloudWatch Logs
+
+配置 CloudWatch Events 规则的目标为 CloudWatch Logs Group。
+
+resource "aws_cloudwatch_event_target" "log_target" {
+  rule      = aws_cloudwatch_event_rule.rds_event_rule.name
+  arn       = aws_cloudwatch_log_group.log_group.arn  # 设置目标为 CloudWatch Log Group
+  role_arn  = aws_iam_role.cloudwatch_event_role.arn  # 需要授权 CloudWatch Events 写入日志
+}
+
+5. 创建 IAM 角色
+
+确保 CloudWatch Events 可以将事件发送到 CloudWatch Logs，因此需要一个 IAM 角色，并授权 events.amazonaws.com 角色将日志发送到 CloudWatch Logs。
+
+resource "aws_iam_role" "cloudwatch_event_role" {
+  name = "cloudwatch_event_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "cloudwatch_event_policy" {
+  name        = "cloudwatch_event_policy"
+  description = "Policy for CloudWatch Events to send to CloudWatch Logs"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = [
+          "logs:PutLogEvents",
+          "logs:CreateLogStream"
+        ]
+        Effect   = "Allow"
+        Resource = aws_cloudwatch_log_group.log_group.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cloudwatch_event_policy_attachment" {
+  role       = aws_iam_role.cloudwatch_event_role.name
+  policy_arn = aws_iam_policy.cloudwatch_event_policy.arn
+}
+
+完整的 Terraform 配置
+
+以下是更新后的完整配置，满足您的要求：将 CloudWatch 事件规则的目标设置为 CloudWatch Log Group，并且规则关联到自定义 EventBridge 事件总线。
+
+provider "aws" {
+  region = "us-west-2"  # 替换为您的 AWS 区域
+}
+
+resource "aws_iam_role" "cloudwatch_event_role" {
+  name = "cloudwatch_event_role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "events.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "cloudwatch_event_policy" {
+  name        = "cloudwatch_event_policy"
+  description = "Policy for CloudWatch Events to send to CloudWatch Logs"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = [
+          "logs:PutLogEvents",
+          "logs:CreateLogStream"
+        ]
+        Effect   = "Allow"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "cloudwatch_event_policy_attachment" {
+  role       = aws_iam_role.cloudwatch_event_role.name
+  policy_arn = aws_iam_policy.cloudwatch_event_policy.arn
+}
+
+resource "aws_events_bus" "custom_event_bus" {
+  name = "custom-event-bus"
+}
+
+resource "aws_cloudwatch_log_group" "log_group" {
+  name = "/aws/events/rds-events"
+}
+
+resource "aws_cloudwatch_event_rule" "rds_event_rule" {
+  name        = "rds_event_rule"
+  description = "Capture RDS events and forward them to CloudWatch Logs"
+  event_bus_name = aws_events_bus.custom_event_bus.name  # 规则关联到自定义事件总线
+  event_pattern = jsonencode({
+    source = ["aws.rds"]
+    detail-type = ["RDS DB Event"]
+  })
+}
+
+resource "aws_cloudwatch_event_target" "log_target" {
+  rule      = aws_cloudwatch_event_rule.rds_event_rule.name
+  arn       = aws_cloudwatch_log_group.log_group.arn  # 设置目标为 CloudWatch Log Group
+  role_arn  = aws_iam_role.cloudwatch_event_role.arn  # 角色需要有权限发送日志
+}
+
+解释：
+
+自定义事件总线：aws_events_bus 创建了一个名为 custom-event-bus 的自定义事件总线。
+
+CloudWatch Log Group：aws_cloudwatch_log_group 创建了一个用于存储事件日志的日志组。
+
+CloudWatch 事件规则：aws_cloudwatch_event_rule 规则捕获 RDS 事件并将其发送到事件总线。
+
+事件目标为 CloudWatch Logs：aws_cloudwatch_event_target 将事件的目标设置为 CloudWatch Log Group。
+
+IAM 角色和策略：创建了一个 IAM 角色，允许 CloudWatch Events 将事件发送到 CloudWatch Logs。
+
+
+应用更改
+
+更新完 Terraform 配置后，您可以使用以下命令来应用更改：
+
+terraform init    # 初始化 Terraform
+terraform plan    # 查看将要应用的更改
+terraform apply   # 应用更改到 AWS 账户
+
+这样配置后，CloudWatch Events 规则将捕获 RDS 事件，并将它们发送到 CloudWatch Logs 中，且该规则是与自定义 EventBridge 事件总线关联的。
+
