@@ -1,0 +1,73 @@
+如果你希望在 本地机器（即运行 Ansible 的控制节点）上查找 .jar 文件并将它们复制到本地的其他路径，而不是远程主机，你可以使用 Ansible 的 local_action 来确保任务在本地执行，而不是远程机器。
+
+具体实现：
+
+你可以使用以下方式：
+
+1. 使用 find 查找本地 .jar 文件。
+
+
+2. 使用 copy 将文件复制到本地目录。
+
+
+
+Playbook 示例（本地机器）：
+
+---
+- name: Find all jar files in the target directory on local machine and copy them locally
+  hosts: localhost
+  tasks:
+    - name: Find all jar files in the target directory
+      shell: find ./target -type f -name "*.jar"
+      register: jar_files
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Copy jar files to the local destination directory
+      copy:
+        src: "{{ item }}"
+        dest: /path/to/destination/
+      loop: "{{ jar_files.stdout_lines }}"
+      when: jar_files.stdout_lines is defined and jar_files.stdout_lines | length > 0
+
+解释：
+
+1. hosts: localhost：
+
+这表示任务将在 本地机器 上运行，而不是在远程主机上。
+
+
+
+2. 查找 .jar 文件：
+
+shell: find ./target -type f -name "*.jar"：在本地的 target 目录下查找所有的 .jar 文件。请确保你的 target 目录路径是相对于运行 Ansible 的机器。
+
+register: jar_files：将 find 命令的输出（即 .jar 文件的路径）保存到 jar_files 变量中。
+
+ignore_errors: yes：如果没有找到文件，任务不会失败，Playbook 会继续执行。
+
+
+
+3. 复制文件到本地目标路径：
+
+copy 模块：将查找的 .jar 文件从本地源目录（src）复制到目标目录（dest）。
+
+loop: "{{ jar_files.stdout_lines }}"：循环遍历 find 命令的输出，逐个复制文件。
+
+when: jar_files.stdout_lines is defined and jar_files.stdout_lines | length > 0：确保只有在 .jar 文件列表非空时才会执行复制任务。
+
+
+
+
+注意事项：
+
+本地目标路径：确保目标路径 /path/to/destination/ 是本地路径，并且你有权限写入。
+
+ignore_errors: yes：即使没有找到任何 .jar 文件，任务也不会失败。
+
+
+运行结果：
+
+这个 Playbook 会在 本地机器 上查找 target 目录下的所有 .jar 文件，并将它们复制到指定的目标路径 /path/to/destination/。
+
+
