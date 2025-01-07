@@ -1,0 +1,94 @@
+如果你在使用 Ansible Playbook 复制本地文件时选择了 *.jar，但出现了找不到文件的错误，而 ls target 能够列出文件，那么问题可能出在以下几个方面：
+
+1. Shell Globbing 语法问题
+
+Ansible 的 copy 模块通常不能直接处理 shell 风格的通配符（如 *.jar）。这是因为 Ansible 在执行时并不会将这些通配符扩展为文件列表，它会把 *.jar 当作字面值处理。
+
+解决方法：
+
+你可以使用 find 模块或者在 copy 模块中显式地列出文件。以下是一些常见的解决方法：
+
+方法一： 使用 find 模块查找文件并传递到 copy 模块
+
+你可以使用 find 模块查找文件，并将文件路径传递给 copy 模块进行复制。
+
+- name: Find .jar files in target directory
+  find:
+    paths: target
+    patterns: "*.jar"
+  register: jar_files
+
+- name: Copy .jar files to remote server
+  copy:
+    src: "{{ item.path }}"
+    dest: "/path/to/destination/"
+  with_items: "{{ jar_files.files }}"
+
+find 模块会查找 target 目录下所有符合 *.jar 模式的文件，并将文件路径保存在 jar_files.files 中。
+
+然后，使用 with_items 循环将这些文件复制到目标目录。
+
+
+方法二： 使用 copy 模块并列出文件路径
+
+如果文件较少，可以直接在 copy 模块中列出文件路径：
+
+- name: Copy .jar files to remote server
+  copy:
+    src: target/your-file.jar
+    dest: "/path/to/destination/"
+
+这种方法仅适用于你知道文件名并可以明确指定的情况。
+
+2. 确保 target 目录在正确的位置
+
+如果 ls target 可以输出文件，但 Ansible 仍然报错找不到文件，可能是因为 Ansible Playbook 的当前工作目录不同于你执行 ls 命令时的目录。你需要确保 Ansible Playbook 运行时的路径正确。
+
+解决方法：
+
+使用 ansible 的 chdir 参数来确保你在正确的目录中执行操作。
+
+- name: Copy .jar files to remote server
+  copy:
+    src: target/your-file.jar
+    dest: "/path/to/destination/"
+  args:
+    chdir: /path/to/your/project  # 确保在正确的目录下运行
+
+3. 确认文件权限
+
+确保 Ansible 运行的用户有权限访问 target 目录和其中的 .jar 文件。如果文件权限不足，Ansible 可能无法读取文件。
+
+解决方法：
+
+确保文件和目录的权限设置正确，例如：
+
+chmod -R +r target/
+
+4. 调试和日志
+
+在 Ansible 中使用 debug 模块输出信息，以便更好地了解 target 目录和文件的状态：
+
+- name: Debug file paths
+  debug:
+    var: jar_files.files
+
+这样你可以检查 jar_files.files 中的文件路径是否正确，并确保 find 模块能正确获取到文件列表。
+
+总结：
+
+1. 避免在 copy 模块中直接使用 *.jar，可以使用 find 模块查找文件，或者明确指定文件路径。
+
+
+2. 确保 target 目录在正确的路径，可以使用 chdir 参数来调整工作目录。
+
+
+3. 检查文件权限，确保 Ansible 用户有足够的权限读取源文件。
+
+
+4. 调试：使用 debug 模块检查文件路径是否正确。
+
+
+
+这样做应该能够解决找不到文件的问题。如果还有问题，欢迎提供更多的日志或配置细节。
+
