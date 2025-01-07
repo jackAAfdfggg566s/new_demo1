@@ -1,0 +1,96 @@
+在 Ansible 中，如果你需要对两个不同的主机组执行任务，你可以通过以下几种方式来设置不同的主机：
+
+1. 使用 hosts 参数指定主机或主机组
+
+你可以在 hosts 参数中指定多个主机或主机组。Ansible 会在所有指定的主机上执行任务。如果你有多个主机组，可以通过逗号分隔，或者直接使用 all。
+
+示例：指定多个主机组
+
+假设你有两个不同的主机组 web_servers 和 db_servers，你可以在 Playbook 中使用如下方式：
+
+---
+- name: Tasks for web servers
+  hosts: web_servers  # 指定主机组
+  tasks:
+    - name: Task for web servers
+      shell: echo "This is a web server"
+      
+- name: Tasks for db servers
+  hosts: db_servers  # 指定主机组
+  tasks:
+    - name: Task for db servers
+      shell: echo "This is a db server"
+
+2. 在同一个任务中使用多个主机
+
+如果你想在一个任务中同时对多个主机执行操作，可以将 hosts 设置为多个主机的列表。
+
+---
+- name: Run tasks on multiple hosts
+  hosts:
+    - web_servers
+    - db_servers
+  tasks:
+    - name: A task that runs on both web and db servers
+      shell: echo "This runs on both web and db servers"
+
+3. 使用 delegation 或 host 来分配特定任务给特定主机
+
+有时你可能需要在多个主机之间分配不同的任务，可以使用 delegate_to 或 hosts 进行不同的任务分配。
+
+示例：使用 delegate_to 为特定主机执行任务
+
+---
+- name: Run tasks on web server
+  hosts: localhost  # 运行任务在本地主机
+  tasks:
+    - name: Run task on web server
+      shell: echo "This is a web server task"
+      delegate_to: web_servers  # 将任务代理到 web_servers 主机组
+
+- name: Run tasks on db server
+  hosts: localhost
+  tasks:
+    - name: Run task on db server
+      shell: echo "This is a db server task"
+      delegate_to: db_servers  # 将任务代理到 db_servers 主机组
+
+4. 使用不同的 Inventory 文件
+
+如果你有复杂的主机配置，可能会使用多个 Inventory 文件来定义不同的主机。你可以在 ansible-playbook 命令中指定不同的 Inventory 文件：
+
+ansible-playbook -i inventory1.ini playbook.yml  # 使用第一个Inventory文件
+ansible-playbook -i inventory2.ini playbook.yml  # 使用第二个Inventory文件
+
+5. 组合多个主机组的任务
+
+如果你希望在不同的主机组上分别执行不同的任务，或者某些任务是专门针对某个主机组的，可以将这些任务分成多个部分。
+
+---
+- name: Run tasks on web servers
+  hosts: web_servers
+  tasks:
+    - name: Install web server
+      apt:
+        name: nginx
+        state: present
+
+- name: Run tasks on db servers
+  hosts: db_servers
+  tasks:
+    - name: Install database server
+      apt:
+        name: mysql-server
+        state: present
+
+总结：
+
+hosts: web_servers 和 hosts: db_servers：你可以分别指定不同的主机组执行不同的任务。
+
+delegate_to：如果你希望某些任务在其他主机上执行，可以使用 delegate_to。
+
+多个主机组：可以在一个 Playbook 中同时运行多个主机组的任务，只需使用多个 hosts 配置。
+
+
+根据你的需求，可以灵活组合这些方式来实现对多个主机或主机组的管理。
+
