@@ -1,0 +1,130 @@
+在上面的例子中，如果你想在远程机器上通过 Ansible 执行多个命令，可以通过以下几种方式：
+
+方式 1：使用 command 或 shell 模块依次运行多个命令
+
+Ansible 允许你在 tasks 部分使用多个任务来运行多个命令。你可以使用 command 或 shell 模块来执行一系列命令。
+
+修改后的 .gitlab-ci.yml 文件：
+
+stages:
+  - deploy
+
+deploy_to_remote:
+  stage: deploy
+  image: python:3.8  # 使用 Python 镜像，因为 Ansible 需要 Python 环境
+  before_script:
+    # 安装 Ansible 和 SSH 客户端
+    - apt-get update && apt-get install -y ansible openssh-client
+    # 创建 SSH 配置和密钥
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config  # 禁用主机验证
+  script:
+    # 创建 Ansible inventory 文件
+    - echo "[remote]" > inventory
+    - echo "remote_host ansible_ssh_user=user ansible_ssh_private_key_file=~/.ssh/id_rsa" >> inventory
+    # 执行远程的脚本，运行多个命令
+    - ansible-playbook -i inventory playbook.yml
+  only:
+    - master
+
+修改后的 playbook.yml 文件：
+
+在 playbook.yml 文件中，可以通过添加多个 task 来运行多个命令。以下是执行多个命令的示例：
+
+---
+- name: Execute multiple commands on remote machine
+  hosts: remote
+  tasks:
+    - name: Run first command
+      shell: |
+        echo "Running first command"
+        cd /some/directory && ls -la
+    
+    - name: Run second command
+      shell: |
+        echo "Running second command"
+        sudo apt-get update
+    
+    - name: Run third command
+      shell: |
+        echo "Running third command"
+        ./some_script.sh
+
+解释：
+
+1. shell 模块：
+
+使用 shell 模块来执行多个命令。你可以使用 |（多行字符串）将多个命令连接在一起，Ansible 会依次执行它们。
+
+在 shell 模块中，echo 是为了打印信息以便调试，实际的命令可以根据需要修改。
+
+
+
+2. 多个命令：
+
+每个 task 中的 shell 模块会依次运行一组命令。你可以在每个任务中运行多个命令，如 cd 和 ls。
+
+
+
+3. 使用 sudo 执行命令：
+
+如果需要在某些命令中以管理员权限运行，可以使用 sudo。确保远程主机已配置无密码的 sudo 权限。
+
+
+
+4. playbook.yml 中的多个任务：
+
+每个 task 都会在远程机器上执行一条命令。通过这种方式，你可以按顺序执行多个命令，Ansible 会等待每个命令完成后再执行下一个任务。
+
+
+
+
+方式 2：通过 script 模块执行一段脚本
+
+如果你有一个包含多个命令的脚本，并希望在远程机器上执行该脚本，可以使用 Ansible 的 script 模块。你可以将本地脚本上传到远程主机，并执行该脚本。
+
+修改后的 playbook.yml 文件：
+
+---
+- name: Execute multiple commands via script on remote machine
+  hosts: remote
+  tasks:
+    - name: Upload and run script
+      script: /path/to/local/script.sh
+
+解释：
+
+script 模块：
+
+script 模块会将本地脚本文件上传到远程主机，并执行它。你可以在脚本中包含多个命令。
+
+
+脚本内容：
+
+/path/to/local/script.sh 可以是你在 GitLab 仓库中的脚本文件。它可以包含多个命令，例如：
+
+#!/bin/bash
+echo "Running first command"
+cd /some/directory && ls -la
+echo "Running second command"
+sudo apt-get update
+echo "Running third command"
+./some_script.sh
+
+
+
+通过这种方式，你可以把一系列命令写进脚本中，并通过 Ansible 将脚本上传并执行。
+
+总结：
+
+1. 使用 shell 或 command 模块：可以在每个任务中依次运行多个命令。每个任务都可以执行一组命令。
+
+
+2. 使用 script 模块：如果有较长的命令序列，或者你希望将命令集中在一个脚本文件中，可以将脚本文件上传到远程主机并执行。
+
+
+
+根据你的需求，可以选择使用哪种方式来在 GitLab CI/CD 中运行多个命令。
+
