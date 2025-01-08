@@ -1,0 +1,51 @@
+这个错误通常是由于尝试在列表对象上调用 endswith 方法引起的。可能的原因是在使用 find 模块时，返回的 found_files.files 是一个列表对象，其中包含文件的信息，而你可能在某个地方错误地使用了 endswith 方法。endswith 是字符串的方法，而不是列表的方法。
+
+在你的情况中，find 模块返回的每个文件对象中包含了文件路径和其他属性，你需要使用正确的属性来访问路径，并将其传递给 copy 模块。
+
+解决方法：
+
+在 found_files.files 列表中，每个元素实际上是一个字典对象，包含多个键（如 path、size 等）。你需要在 copy 模块的 src 参数中正确引用文件的 path 属性。
+
+确保在 loop 中遍历 found_files.files 时，正确地引用文件路径，即 item.path。
+
+修改后的 Playbook 示例：
+
+---
+- name: Find files on the local machine and copy them to remote machine
+  hosts: your_remote_hosts_group
+  tasks:
+    - name: Find all .txt files on the local machine
+      find:
+        paths: /path/to/local/directory
+        patterns: "*.txt"
+      register: found_files
+      delegate_to: localhost  # 确保find命令在本地机器上执行
+
+    - name: Copy found files to the remote machine
+      copy:
+        src: "{{ item.path }}"  # 正确引用文件的path属性
+        dest: /path/to/remote/directory/
+      loop: "{{ found_files.files }}"  # 循环遍历所有找到的文件
+      when: found_files.matched > 0  # 仅当找到文件时才执行复制
+
+解释：
+
+src: "{{ item.path }}"：item 是 found_files.files 列表中的一个元素，每个元素是一个字典，包含文件的属性。item.path 是文件的路径。
+
+loop: "{{ found_files.files }}"：遍历 found_files.files 列表，其中每个元素包含文件的信息。通过 item.path 获取每个文件的路径。
+
+delegate_to: localhost：确保 find 模块在 本地机器 上执行。
+
+
+错误原因分析：
+
+find 模块返回的 found_files.files 是一个包含字典的列表（每个字典代表一个文件）。如果你尝试在整个列表上使用 endswith，会报错，因为 endswith 是字符串的方法，而不是列表的方法。
+
+解决方法是正确地引用字典中的文件路径（item.path），而不是尝试在整个列表上调用 endswith。
+
+
+测试：
+
+运行此 Playbook 后，它将在 本地机器 查找 .txt 文件，并将它们复制到 远程主机 的目标目录 /path/to/remote/directory/。
+
+
