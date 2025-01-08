@@ -1,0 +1,120 @@
+要在 GitLab CI/CD 中使用 Ansible 通过 SSH 连接到远程机器并执行脚本，可以通过以下方式配置。你需要确保在 CI/CD 环境中安装并配置好 Ansible，同时确保 Ansible 使用 SSH 密钥对远程主机进行连接。
+
+步骤 1：配置 SSH 密钥对
+
+1. 生成 SSH 密钥对（如果没有）：
+
+如果你还没有 SSH 密钥对，可以通过以下命令在本地生成：
+
+ssh-keygen -t rsa -b 4096 -C "your_email@example.com"
+
+这会在本地机器的 ~/.ssh/id_rsa 和 ~/.ssh/id_rsa.pub 中生成 SSH 密钥对。
+
+
+2. 将公钥添加到远程服务器：
+
+将生成的公钥（id_rsa.pub）内容添加到远程机器的 ~/.ssh/authorized_keys 文件中：
+
+cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+
+
+3. 将私钥添加到 GitLab CI/CD：
+
+将私钥的内容添加为 GitLab CI/CD 环境变量 SSH_PRIVATE_KEY。在 GitLab 项目中，进入 Settings -> CI / CD -> Variables 部分，添加一个新的变量 SSH_PRIVATE_KEY，并将私钥（id_rsa）的内容作为变量值。
+
+
+
+步骤 2：在 .gitlab-ci.yml 中配置 Ansible 执行任务
+
+下面是一个使用 Ansible 的 GitLab CI/CD 配置示例，来通过 SSH 执行远程机器上的脚本。
+
+stages:
+  - deploy
+
+deploy_to_remote:
+  stage: deploy
+  image: python:3.8  # 使用 Python 镜像，因为 Ansible 需要 Python 环境
+  before_script:
+    # 安装 Ansible 和 SSH 客户端
+    - apt-get update && apt-get install -y ansible openssh-client
+    # 创建 SSH 配置和密钥
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config  # 禁用主机验证
+  script:
+    # 创建 Ansible inventory 文件
+    - echo "[remote]" > inventory
+    - echo "remote_host ansible_ssh_user=user ansible_ssh_private_key_file=~/.ssh/id_rsa" >> inventory
+    # 执行远程的脚本
+    - ansible-playbook -i inventory playbook.yml
+  only:
+    - master
+
+解释：
+
+1. image: python:3.8：
+
+使用包含 Python 的 Docker 镜像，因为 Ansible 需要 Python 环境才能运行。
+
+
+
+2. before_script：
+
+安装 Ansible 和 SSH 客户端。
+
+配置 SSH 密钥：将 GitLab CI/CD 中的 SSH_PRIVATE_KEY 环境变量存储到 ~/.ssh/id_rsa 文件中，并设置正确的权限。
+
+禁用 SSH 主机验证：通过 ~/.ssh/config 配置禁用第一次连接时的主机密钥验证。
+
+
+
+3. script：
+
+inventory 文件：Ansible 需要一个 inventory 文件来指定远程主机。在这个文件中，我们定义了主机 remote_host，并指定了 SSH 用户名和 SSH 私钥文件的位置。
+
+ansible-playbook：执行指定的 Ansible Playbook（playbook.yml）。你需要在仓库中提供这个 Playbook，它会包含在远程主机上执行的任务。
+
+
+
+4. only: master：
+
+这个配置确保只有在推送到 master 分支时，才会运行这个部署任务。
+
+
+
+
+步骤 3：创建 Ansible Playbook
+
+你需要在项目中创建一个 Ansible Playbook，例如 playbook.yml，用来定义你希望在远程机器上执行的操作。例如，假设你希望远程主机执行一个 shell 脚本：
+
+---
+- name: Execute remote script
+  hosts: remote
+  tasks:
+    - name: Run shell script on remote machine
+      command: /path/to/remote/script.sh
+
+解释：
+
+hosts: remote：这是你在 inventory 文件中定义的主机组名。
+
+command: /path/to/remote/script.sh：使用 Ansible 的 command 模块来执行远程主机上的 shell 脚本。你可以根据需要调整此路径。
+
+
+总结：
+
+通过以上步骤，你可以在 GitLab CI/CD 中配置 Ansible 来通过 SSH 执行远程机器上的脚本。主要步骤包括：
+
+1. 在 GitLab CI/CD 中配置 SSH 密钥对。
+
+
+2. 使用 Ansible 在 .gitlab-ci.yml 中执行任务。
+
+
+3. 使用 Ansible Playbook 远程执行指定的脚本。
+
+
+
+这样，你就可以实现通过 GitLab CI/CD 管道，使用 Ansible 执行远程机器上的脚本任务。
+
