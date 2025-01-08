@@ -1,0 +1,92 @@
+你希望根据文件名的内容来对文件进行重命名，例如：
+
+文件名包含 shot 的文件重命名为 a.jar
+
+文件名包含 den 的文件重命名为 b.jar
+
+
+你可以在 Ansible Playbook 中使用 find 模块查找所有 .jar 文件，然后根据文件名的内容来为每个文件指定不同的目标名称。
+
+解决方案：
+
+使用 when 语句根据文件名的内容来决定如何重命名文件，并使用 regex_replace 来创建新的文件名。
+
+完整的 Playbook 示例：
+
+---
+- name: Find .jar files and copy them to the remote machine with conditional renaming
+  hosts: your_remote_hosts_group
+  tasks:
+    - name: Find all .jar files on the local machine
+      find:
+        paths: /path/to/local/directory
+        patterns: "*.jar"
+      register: found_files
+      delegate_to: localhost  # 确保find命令在本地机器上执行
+
+    - name: Copy .jar files to remote machine with conditional renaming
+      copy:
+        src: "{{ item.path }}"
+        dest: "/path/to/remote/directory/{{ item.path | basename | regex_replace('shot', 'a') | regex_replace('den', 'b') }}"
+      loop: "{{ found_files.files }}"
+      when: found_files.matched > 0  # 仅当找到文件时才执行复制
+
+解释：
+
+1. find 模块：
+
+find 模块查找指定目录下的 .jar 文件。patterns: "*.jar" 表示查找所有 .jar 文件。
+
+
+
+2. delegate_to: localhost：
+
+find 命令在 本地机器 上执行，而不是远程主机上。
+
+
+
+3. copy 模块：
+
+使用 loop 遍历所有查找到的文件。对于每个文件，item.path 包含文件的完整路径，item.path | basename 提取出文件名（不包括路径）。
+
+regex_replace('shot', 'a')：如果文件名包含 shot，会替换为 a。
+
+regex_replace('den', 'b')：如果文件名包含 den，会替换为 b。
+
+文件重命名逻辑：这两个 regex_replace 过滤器的作用是根据文件名中是否包含 shot 或 den 来为文件命名，最终生成目标文件名。
+
+
+例如：
+
+如果文件名是 myshotfile.jar，它会被重命名为 myafile.jar。
+
+如果文件名是 mydenfile.jar，它会被重命名为 mybfile.jar。
+
+如果文件名同时包含 shot 和 den（如 myshotdenfile.jar），它会被重命名为 myabfile.jar。
+
+
+
+4. loop: "{{ found_files.files }}"：
+
+遍历 found_files.files 中找到的每个文件。对于每个文件，都会根据条件进行重命名并复制到远程主机。
+
+
+
+5. when: found_files.matched > 0：
+
+只有在找到 .jar 文件时，才会执行复制任务。
+
+
+
+
+重点：
+
+使用 regex_replace 可以按需替换文件名中的特定字符串。
+
+可以根据文件名中的内容来条件性地修改文件名。
+
+
+总结：
+
+通过使用 regex_replace 和 loop，你可以在 Ansible Playbook 中查找符合条件的文件并根据文件名的内容进行重命名。在这个例子中，文件名包含 shot 或 den 的 .jar 文件会被重命名为指定的新名称。
+
