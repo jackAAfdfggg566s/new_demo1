@@ -1,0 +1,83 @@
+在 GitLab CI/CD 中，用户输入通常是通过 手动触发 pipeline 时输入自定义变量的方式来实现的。这可以通过 GitLab 的 手动 pipeline（manual pipeline）来实现。
+
+步骤 1: 允许用户在 GitLab UI 中输入参数
+
+GitLab CI/CD 支持在 手动触发 pipeline 时提供自定义的变量。这些变量可以在 .gitlab-ci.yml 文件中作为环境变量来使用。
+
+步骤 2: 设置 .gitlab-ci.yml 文件，使用 trigger 来允许用户输入
+
+你需要设置 trigger 参数来实现手动触发 pipeline 并让用户输入参数。
+
+以下是一个例子，展示了如何配置 GitLab CI/CD pipeline，并允许用户在手动触发 pipeline 时输入参数。
+
+.gitlab-ci.yml 示例
+
+stages:
+  - test
+
+run_script_with_input:
+  stage: test
+  script:
+    - echo "User input parameter 1: $USER_PARAM_1"
+    - echo "User input parameter 2: $USER_PARAM_2"
+    - sh ./your_script.sh "$USER_PARAM_1" "$USER_PARAM_2"
+  only:
+    - main
+  when: manual  # 这将使得 job 只在手动触发时运行
+  # 可选: 定义默认变量的默认值，用户可以覆盖这些值
+  variables:
+    USER_PARAM_1: "default_value_1"
+    USER_PARAM_2: "default_value_2"
+
+步骤 3: 创建 your_script.sh 脚本来接受参数
+
+在你的 GitLab 仓库中创建一个脚本 your_script.sh，它将接受这些传递的参数。
+
+your_script.sh 示例内容：
+
+#!/bin/bash
+
+# 获取传递的参数
+PARAM_1=$1
+PARAM_2=$2
+
+echo "Running script with the following parameters:"
+echo "Parameter 1: $PARAM_1"
+echo "Parameter 2: $PARAM_2"
+
+# 你可以根据传递的参数执行相应的操作
+
+步骤 4: 手动触发 Pipeline 并输入参数
+
+1. 进入 GitLab 项目页面，点击左侧菜单中的 CI / CD，然后选择 Pipelines。
+
+
+2. 在 Pipelines 页面，点击 Run pipeline 按钮。
+
+
+3. 在弹出的窗口中，你会看到可供输入的 变量，你可以在输入框中输入变量值，覆盖默认值。
+
+比如，你可以输入 USER_PARAM_1=value1 和 USER_PARAM_2=value2。
+
+
+
+4. 点击 Run pipeline 按钮，GitLab 将使用你输入的参数启动 pipeline。
+
+
+
+步骤 5: 查看 Pipeline 运行结果
+
+一旦 pipeline 开始执行，你可以在 CI / CD -> Pipelines 页面查看 pipeline 的运行情况和日志。
+
+在日志中，你会看到类似如下输出：
+
+User input parameter 1: value1
+User input parameter 2: value2
+Running script with the following parameters:
+Parameter 1: value1
+Parameter 2: value2
+
+总结：
+
+通过在 GitLab CI/CD 中配置 手动触发 pipeline，用户可以输入参数，这些参数将作为 GitLab CI/CD 变量传递给运行的 job。这样，你就能够根据用户输入的参数在 sh 脚本中进行处理。
+
