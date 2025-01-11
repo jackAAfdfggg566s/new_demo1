@@ -1,0 +1,243 @@
+AWS FIS Permissions for Simulating EKS Cluster Failures: IAM, RBAC, and Service Account Setup
+
+To simulate failures in an Amazon EKS (Elastic Kubernetes Service) cluster using AWS Fault Injection Simulator (FIS), you'll need to configure appropriate permissions across multiple layers, including IAM roles, Kubernetes RBAC (Role-Based Access Control), and Kubernetes Service Accounts. This document outlines how to set up the necessary permissions for each component.
+
+Table of Contents
+
+1. Overview
+
+
+2. IAM Role Permissions
+
+
+3. Kubernetes RBAC Setup
+
+
+4. Service Account Configuration
+
+
+5. Steps to Set Permissions
+
+
+6. Creating IAM Role for FIS Simulation
+
+
+7. Conclusion
+
+
+
+
+---
+
+1. Overview
+
+AWS Fault Injection Simulator (FIS) allows you to simulate disruptions to your AWS services, including EKS clusters. For FIS to interact with EKS and Kubernetes resources, you need to set up permissions at three main levels:
+
+IAM Role Permissions: Permissions for FIS to interact with AWS resources.
+
+Kubernetes RBAC: Permissions within the EKS cluster to allow FIS to interact with Kubernetes resources.
+
+Service Account Configuration: Mapping of IAM roles to Kubernetes service accounts to grant FIS the necessary permissions to perform actions inside the cluster.
+
+
+
+---
+
+2. IAM Role Permissions
+
+FIS requires permissions to interact with various AWS services, including EKS and EC2. To enable fault injection, configure an IAM role with the following permissions:
+
+IAM Role for FIS
+
+Trust Relationship: The IAM role should trust the fis.amazonaws.com service.
+
+Policies to Attach:
+
+AWSFISRolePolicy: Provides basic permissions for AWS FIS to interact with your AWS environment.
+
+AmazonEKS_FIS_Policy: Allows AWS FIS to interact with EKS clusters and manage resources like nodes and node groups.
+
+
+
+IAM Policies for the User/Role Running the Simulation
+
+The user or IAM role that will trigger the fault injection must have permissions to interact with EKS and other AWS services. These include:
+
+EKS Permissions:
+
+eks:DescribeCluster
+
+eks:UpdateClusterConfig
+
+eks:ListClusters
+
+eks:ListUpdates
+
+eks:ListNodegroups
+
+eks:DescribeNodegroup
+
+
+EC2 Permissions (if simulating EC2 failures):
+
+ec2:DescribeInstances
+
+ec2:TerminateInstances
+
+
+Additional Permissions (depending on the simulation):
+
+autoscaling:DescribeAutoScalingGroups
+
+iam:PassRole for FIS to assume specific roles.
+
+
+
+
+---
+
+3. Kubernetes RBAC Setup
+
+In order for FIS to interact with Kubernetes resources, you'll need to configure Kubernetes RBAC to allow access to the necessary resources.
+
+Creating the Role and RoleBinding
+
+Within the EKS cluster, you will need to define roles and bindings that allow the FIS experiment to interact with Kubernetes resources.
+
+Example RBAC roles for the simulation could include:
+
+Role (example):
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: default
+  name: fis-simulation-role
+rules:
+- apiGroups: [""]
+  resources: ["pods", "nodes", "services"]
+  verbs: ["get", "list", "watch"]
+
+RoleBinding (example):
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fis-simulation-binding
+  namespace: default
+subjects:
+- kind: ServiceAccount
+  name: fis-service-account
+  namespace: default
+roleRef:
+  kind: Role
+  name: fis-simulation-role
+  apiGroup: rbac.authorization.k8s.io
+
+
+In the above setup, the role grants FIS permissions to access pods, nodes, and services within the default namespace. You can customize this as needed for the specific resources you want to simulate failures on.
+
+
+---
+
+4. Service Account Configuration
+
+To enable FIS to execute operations within the Kubernetes cluster, you need to create a Kubernetes service account and associate it with an IAM role using an IAM OIDC (OpenID Connect) identity provider.
+
+Steps to Configure the Service Account:
+
+1. Create the Service Account: Create a service account in the desired Kubernetes namespace (e.g., default).
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fis-service-account
+  namespace: default
+
+
+2. Create an IAM Role for the Service Account: Using the IAM OIDC provider, create an IAM role that allows the service account to assume the permissions defined in the IAM policies attached to it (such as AmazonEKS_FIS_Policy).
+
+Example IAM Role Trust Policy:
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<account-id>:oidc-provider/oidc.eks.<region>.amazonaws.com/id/<eks-cluster-id>"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "oidc.eks.<region>.amazonaws.com/id/<eks-cluster-id>:sub": "system:serviceaccount:default:fis-service-account"
+        }
+      }
+    }
+  ]
+}
+
+
+3. Attach the IAM Role to the Service Account: You can use the eksctl tool or the AWS Management Console to link the IAM role to the Kubernetes service account.
+
+Example using eksctl:
+
+eksctl create iamserviceaccount \
+  --region <region> \
+  --name fis-service-account \
+  --namespace default \
+  --cluster <cluster-name> \
+  --attach-policy-arn arn:aws:iam::aws:policy/AmazonEKS_FIS_Policy \
+  --approve
+
+
+
+
+---
+
+5. Steps to Set Permissions
+
+1. Set Up IAM Role for FIS:
+
+Create the IAM role with necessary permissions (e.g., AWSFISRolePolicy and AmazonEKS_FIS_Policy).
+
+
+
+2. Create Kubernetes RBAC Role and RoleBinding:
+
+Define the necessary Kubernetes RBAC policies to allow FIS to manage resources.
+
+
+
+3. Create Service Account and IAM Role Association:
+
+Create the service account in Kubernetes and associate it with an IAM role to grant the necessary AWS permissions.
+
+
+
+4. Verify Permissions:
+
+Test the setup by running a simple fault injection experiment using AWS FIS, ensuring that the experiment can interact with both AWS resources and Kubernetes resources inside EKS.
+
+
+
+
+
+---
+
+6. Creating IAM Role for FIS Simulation
+
+Create IAM Role for FIS (as previously mentioned in IAM Role Setup section).
+
+Attach AWS Policies such as AmazonEKS_FIS_Policy, AWSFISRolePolicy.
+
+Ensure that the role is allowed to assume the trust relationship with the FIS service.
+
+
+
+---
+
+7. Conclusion
+
+By setting up the required IAM roles, Kubernetes RBAC, and Service Account permissions, you can enable AWS Fault Injection Simulator (FIS) to simulate failures in your EKS cluster. This setup ensures that FIS has the necessary permissions to interact with both AWS resources and Kubernetes resources inside the EKS cluster, helping you test and improve the resilience of your infrastructure.
+
