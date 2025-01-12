@@ -1,0 +1,146 @@
+AWS FIS Permissions for EKS Experiment: Service Account and IAM Identity Mapping
+
+When using AWS Fault Injection Simulator (AWS FIS) to simulate failures in an Amazon EKS (Elastic Kubernetes Service) cluster, it is essential to configure the correct permissions. This includes creating a Kubernetes Service Account, setting up IAM roles, and mapping them using IAM Identity Mapping. This setup ensures that AWS FIS can interact with both the AWS environment and the Kubernetes resources in the EKS cluster.
+
+This document outlines the necessary steps to configure the permissions for running FIS experiments on EKS, including creating the service account, IAM roles, and IAM identity mappings.
+
+Table of Contents
+
+1. Overview
+
+
+2. Prerequisites
+
+
+3. Service Account Setup
+
+
+4. IAM Role Setup
+
+
+5. IAM Identity Mapping
+
+
+6. Conclusion
+
+
+
+
+---
+
+1. Overview
+
+AWS FIS allows you to run controlled chaos engineering experiments, simulating failures within AWS services, including EKS clusters. For FIS to successfully interact with both AWS resources (e.g., EC2, EKS) and Kubernetes resources, you need to set up permissions through:
+
+Service Account: A Kubernetes service account is required to allow FIS to access the Kubernetes resources in the EKS cluster.
+
+IAM Role: An IAM role with appropriate policies must be created for FIS to interact with AWS services.
+
+IAM Identity Mapping: This maps the Kubernetes service account to the IAM role, enabling FIS to assume the necessary permissions to execute the experiment.
+
+
+
+---
+
+2. Prerequisites
+
+Before proceeding with the setup, ensure the following:
+
+An EKS cluster is up and running.
+
+The AWS CLI is configured on your local machine or CI/CD pipeline.
+
+You have the necessary IAM permissions to create roles and policies in your AWS account.
+
+
+
+---
+
+3. Service Account Setup
+
+AWS FIS interacts with Kubernetes resources (such as pods, nodes, etc.) through a Kubernetes Service Account. This service account will be assigned the necessary permissions via RBAC (Role-Based Access Control).
+
+Steps to Create a Service Account in EKS:
+
+1. Create the Kubernetes Service Account: You can create a service account in Kubernetes by applying the following YAML manifest:
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fis-service-account
+  namespace: default
+
+Apply the manifest with kubectl:
+
+kubectl apply -f fis-service-account.yaml
+
+
+2. RBAC Permissions for Service Account: Once the service account is created, you need to define a Kubernetes Role or ClusterRole and bind it to the service account. Here is an example of creating a ClusterRole and ClusterRoleBinding that grants permissions to manage nodes and pods:
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services"]
+    verbs: ["get", "list", "watch"]
+
+Apply the role:
+
+kubectl apply -f fis-service-account-role.yaml
+
+Next, create the ClusterRoleBinding to bind the fis-service-account with the created ClusterRole:
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fis-service-account-binding
+subjects:
+- kind: ServiceAccount
+  name: fis-service-account
+  namespace: default
+roleRef:
+  kind: ClusterRole
+  name: fis-service-account-role
+  apiGroup: rbac.authorization.k8s.io
+
+Apply the role binding:
+
+kubectl apply -f fis-service-account-binding.yaml
+
+
+
+
+---
+
+4. IAM Role Setup
+
+AWS FIS requires an IAM role to interact with AWS resources (e.g., EKS, EC2) and execute experiments. This IAM role needs to have specific policies attached to it.
+
+Steps to Create IAM Role for FIS:
+
+1. Create an IAM Role for FIS: In the AWS Management Console or using the AWS CLI, create an IAM role that allows AWS FIS to interact with your EKS cluster and other AWS resources.
+
+Example trust policy for FIS:
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "fis.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+
+
+2. Attach Policies to the IAM Role: Attach the following AWS managed policies to the IAM role:
+
+AmazonEKS_FIS_Policy (allows FIS to interact
+
+
+
+
