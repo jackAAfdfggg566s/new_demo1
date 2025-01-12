@@ -1,0 +1,190 @@
+Automating AWS FIS (Fault Injection Simulator) with JSON Files, kubectl, and Pod/Node Updates
+
+AWS Fault Injection Simulator (AWS FIS) is a managed service that allows you to simulate various failures and disruptions to test the resiliency of your infrastructure. Automating these experiments can help you streamline the process of running chaos engineering experiments. This document explains how to automate AWS FIS experiments using JSON files, kubectl commands for updating pods and nodes in your EKS cluster.
+
+Table of Contents
+
+1. Overview of AWS FIS Automation
+
+
+2. Automation Using JSON Files for FIS Experiments
+
+
+3. Using kubectl to Update Pods and Nodes
+
+
+4. Example: Automating a Fault Injection Simulation
+
+
+5. Conclusion
+
+
+
+
+---
+
+1. Overview of AWS FIS Automation
+
+AWS FIS allows you to run controlled chaos engineering experiments on AWS resources, including Amazon EKS clusters. The process typically involves defining an experiment template, running the experiment, and analyzing its impact. Automation in this context involves:
+
+Using JSON files to define experiment templates.
+
+Using kubectl to apply changes to EKS resources, such as updating pods or node groups.
+
+Automating the entire experiment lifecycle.
+
+
+By automating fault injection experiments, you can schedule and run tests consistently, improving the resilience of your applications.
+
+
+---
+
+2. Automation Using JSON Files for FIS Experiments
+
+AWS FIS allows you to define experiments using JSON files. These files describe the types of faults to simulate, the resources to target, and the actions to perform.
+
+Example of an FIS Experiment Template (JSON)
+
+Below is an example of a JSON file that defines a fault injection experiment for an EKS cluster:
+
+{
+  "experimentTemplateName": "eks-fault-injection",
+  "description": "Simulating node failure in EKS cluster",
+  "targets": {
+    "eks-nodegroup": {
+      "resourceType": "aws:eks:nodegroup",
+      "selectionMode": "ALL",
+      "resourceTags": {
+        "Environment": "Production"
+      }
+    }
+  },
+  "actions": [
+    {
+      "actionId": "aws:ec2:terminateInstances",
+      "parameters": {
+        "instanceIds": ["i-0abcd1234efgh5678"]
+      },
+      "targets": {
+        "eks-nodegroup": "eks-nodegroup"
+      },
+      "startAfter": "5m"
+    }
+  ],
+  "roleArn": "arn:aws:iam::<account-id>:role/FIS-Experiment-Role",
+  "stopConditions": [
+    {
+      "source": "aws:cloudwatch:alarm",
+      "value": "FISStopAlarm"
+    }
+  ]
+}
+
+Explanation of the JSON Template:
+
+experimentTemplateName: The name of the experiment.
+
+description: A brief description of the experiment.
+
+targets: The AWS resources that will be targeted during the experiment (e.g., EKS node groups).
+
+actions: The actions to be performed during the experiment, such as terminating EC2 instances.
+
+roleArn: The IAM role that FIS will assume to run the experiment.
+
+stopConditions: Conditions to stop the experiment, such as a CloudWatch alarm.
+
+
+Once this JSON file is defined, you can execute the experiment using AWS CLI or SDKs.
+
+
+---
+
+3. Using kubectl to Update Pods and Nodes
+
+While AWS FIS handles disruptions at the AWS resource level (such as EC2 instances, EKS node groups, etc.), you may need to use kubectl to update or manage Kubernetes resources, such as pods or node names.
+
+Updating Pods with kubectl
+
+You can automate pod updates to simulate failure conditions like draining nodes or restarting pods.
+
+To update or restart pods automatically using kubectl, you can use the following commands:
+
+1. Rolling Restart Pods: You can use kubectl rollout restart to restart the pods in a deployment.
+
+kubectl rollout restart deployment <deployment-name> -n <namespace>
+
+
+2. Delete Pods to Trigger Rescheduling: Deleting a pod causes Kubernetes to schedule a new pod in its place. This is useful for testing the resilience of your application to pod failures.
+
+kubectl delete pod <pod-name> -n <namespace>
+
+Kubernetes will automatically create a new pod to replace the deleted one.
+
+
+3. Update Node Names with kubectl: You can cordon (mark as unschedulable) or drain a node in Kubernetes to simulate node failure.
+
+Cordon Node: Prevents new pods from being scheduled on the node.
+
+kubectl cordon <node-name>
+
+Drain Node: Evicts all pods from the node and marks it unschedulable.
+
+kubectl drain <node-name> --ignore-daemonsets --delete-local-data
+
+
+
+
+
+---
+
+4. Example: Automating a Fault Injection Simulation
+
+Here’s how you can automate the entire process using a combination of AWS FIS and kubectl.
+
+Step 1: Create the FIS Experiment Template
+
+First, create a JSON file (eks-fault-injection.json) with the desired experiment configuration (as shown earlier).
+
+Step 2: Trigger the FIS Experiment
+
+Once the template is ready, you can trigger the experiment using AWS CLI:
+
+aws fis start-experiment --experiment-template-file eks-fault-injection.json
+
+This command will start the experiment and simulate the failure based on the parameters defined in the JSON file (e.g., terminating EC2 instances or node groups).
+
+Step 3: Automate Pod and Node Failures using kubectl
+
+In parallel, you can automate pod or node failures. For example, you can write a shell script that first triggers the FIS experiment and then uses kubectl to drain nodes:
+
+#!/bin/bash
+
+# Step 1: Start FIS experiment
+aws fis start-experiment --experiment-template-file eks-fault-injection.json
+
+# Step 2: Cordon and drain nodes for failure simulation
+kubectl cordon <node-name>
+kubectl drain <node-name> --ignore-daemonsets --delete-local-data
+
+# Optionally, restart pods
+kubectl rollout restart deployment <deployment-name> -n <namespace>
+
+This script triggers the fault injection experiment and then simulates additional failures by draining nodes or restarting pods.
+
+
+---
+
+5. Conclusion
+
+Automating AWS FIS fault injection experiments using JSON files and kubectl commands provides a robust way to simulate and test the resilience of your EKS cluster. With this automation, you can:
+
+Define your fault injection experiments using JSON templates.
+
+Use kubectl to automate Kubernetes-related changes, such as pod restarts or node draining.
+
+Combine both to run end-to-end chaos engineering experiments, ensuring your infrastructure can handle real-world failures effectively.
+
+
+This approach enables a consistent, repeatable process for chaos testing, ultimately improving the reliability and robustness of your applications.
+
