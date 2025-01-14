@@ -1,0 +1,35 @@
+Purpose of aws configure
+
+aws configure is a command in the AWS CLI (Command Line Interface) used to configure the credentials and settings needed to interact with AWS services. When you run this command, you are prompted to provide the following information:
+
+1. AWS Access Key ID: The access key ID used for authentication.
+
+
+2. AWS Secret Access Key: The secret key used for authentication.
+
+
+3. Default region name: The default AWS region, such as us-west-2 or ap-south-1.
+
+
+4. Default output format: The format for displaying command output, typically json, text, or table.
+
+
+
+After running aws configure, this information is stored locally in configuration files, allowing AWS CLI to use these settings for subsequent operations, thus simplifying interactions with AWS without needing to repeatedly provide credentials.
+
+Purpose of EKS kubeconfig
+
+EKS (Amazon Elastic Kubernetes Service) is AWS's managed Kubernetes service. When interacting with Kubernetes clusters in EKS, a kubeconfig file is used. The kubeconfig file contains configuration details necessary to access the Kubernetes API server. Its key purposes are:
+
+1. Connect to the Kubernetes Cluster: The kubeconfig file defines the API server endpoint, user credentials, and other necessary information for kubectl and other tools to communicate with the Kubernetes cluster.
+
+
+2. Authentication and Authorization: The file includes authentication details, such as AWS IAM roles or tokens, which are needed to authorize access to the EKS cluster and perform operations.
+
+
+3. Context Management: kubeconfig supports multiple contexts, allowing users to switch between different Kubernetes clusters and namespaces. This is useful for managing both development and production clusters.
+
+
+
+AWS provides the aws eks update-kubeconfig command to automatically generate or update the kubeconfig file, making it easier to access and interact with the EKS cluster.
+
