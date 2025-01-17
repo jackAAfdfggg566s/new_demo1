@@ -1,0 +1,39 @@
+Here is the updated list with Shell scripting for automating performance testing and resilience testing:
+
+1. AWS FIS: AWS Fault Injection Simulator helps you test and improve the resilience of your applications by simulating real-world failures, such as automating the triggering of experiments through CI/CD pipelines.
+
+
+2. AWS CLI: AWS Command Line Interface allows you to interact with AWS services and manage resources from the command line, including managing and configuring AWS services like FIS and CloudWatch.
+
+
+3. kubectl: kubectl is the command-line tool used for interacting with and managing Kubernetes clusters, such as retrieving information about pods and other Kubernetes resources.
+
+
+4. Gatling: Gatling is a powerful open-source load testing tool designed for testing the performance of web applications, including Java-based applications, by simulating heavy traffic and measuring performance metrics.
+
+
+5. CloudWatch: Amazon CloudWatch provides monitoring and observability for AWS cloud resources and applications, such as collecting and visualizing logs and metrics from various services.
+
+
+6. GitLab CI/CD: GitLab CI/CD automates the build, test, and deployment processes in the software development lifecycle, such as triggering AWS FIS experiments as part of a continuous delivery pipeline.
+
+
+7. GitLab: GitLab is a web-based platform for code collaboration, version control, and DevOps, enabling teams to manage repositories, track issues, and collaborate on development projects.
+
+
+8. Java Performance Testing (Gatling): Gatling can also be used for Java performance testing, simulating large-scale traffic to test Java-based web applications and measuring their performance under various conditions.
+
+
+9. Macen: Macen is a testing and monitoring tool used to assess the performance of applications across different environments, especially in microservices architectures.
+
+
+10. Scala Plugin: The Scala Plugin for IntelliJ IDEA or other IDEs enables efficient development of Scala applications, including testing and performance tuning, particularly useful for working with tools like Gatling for load testing.
+
+
+11. Python: Python can be used to process and analyze JSON files, including calculating latency statistics and other performance metrics by parsing large volumes of JSON data.
+
+
+12. Shell Scripting: Shell scripts can be used for automating performance testing and resilience testing, such as orchestrating the execution of performance testing tools (e.g., Gatling) or triggering resilience testing experiments (e.g., AWS FIS) in a continuous testing pipeline, making it easier to run tests and gather results automatically.
+
+
+
