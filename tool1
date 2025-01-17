@@ -1,0 +1,24 @@
+You're correct! Here's the updated description:
+
+1. AWS FIS: AWS Fault Injection Simulator helps you test and improve the resilience of your applications by simulating real-world failures, such as automating the triggering of experiments through CI/CD pipelines.
+
+
+2. AWS CLI: AWS Command Line Interface allows you to interact with AWS services and manage resources from the command line, including managing and configuring AWS services like FIS and CloudWatch.
+
+
+3. kubectl: kubectl is the command-line tool used for interacting with and managing Kubernetes clusters, such as retrieving information about pods and other Kubernetes resources.
+
+
+4. Gatling: Gatling is a powerful open-source load testing tool designed for testing the performance of web applications by simulating heavy traffic and measuring performance metrics.
+
+
+5. CloudWatch: Amazon CloudWatch provides monitoring and observability for AWS cloud resources and applications, such as collecting and visualizing logs and metrics from various services.
+
+
+6. GitLab CI/CD: GitLab CI/CD automates the build, test, and deployment processes in the software development lifecycle, such as triggering AWS FIS experiments as part of a continuous delivery pipeline.
+
+
+7. GitLab: GitLab is a web-based platform for code collaboration, version control, and DevOps, enabling teams to manage repositories, track issues, and collaborate on development projects.
+
+
+
