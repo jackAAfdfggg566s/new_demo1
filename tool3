@@ -1,0 +1,2 @@
+You're right! To clarify, Maven is primarily a build automation tool, which includes compiling code, managing dependencies, and packaging the application. While its core function is to automate the build process, it also includes testing, deployment, and other aspects of project management.
+
