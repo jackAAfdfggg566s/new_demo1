@@ -1,0 +1,12 @@
+Here’s the updated version incorporating your new details:
+
+
+---
+
+This document outlines how our FIS experiments can be triggered through pipelines. First, we call the two functions, xxxx, to configure the AWS and EKS environment information. Once the environment is set up, we run the corresponding script and pass the necessary parameters to initiate the FIS experiment. The table below lists the pipeline names along with the required parameters for each, providing a clear reference for setting up and triggering the experiments.
+
+
+---
+
+This version should reflect the steps more accurately.
+
