@@ -1,0 +1,103 @@
+IAM Role and Trust Policy Relationship
+
+When working with AWS Identity and Access Management (IAM), understanding the relationship between an IAM Role and its associated Trust Policy is crucial for granting specific permissions and allowing resources to assume roles. Below is a breakdown of how an IAM Role and Trust Policy work together, and how they should be defined.
+
+1. IAM Role Overview
+
+An IAM Role is an AWS resource that allows users, applications, or services to assume specific permissions temporarily. IAM roles can be assumed by trusted entities such as IAM users, AWS services, or external identities (like federated users). The IAM role defines what actions are allowed or denied on AWS resources.
+
+A role can be used for a variety of purposes, such as granting an EC2 instance permissions to interact with other AWS services or enabling an Amazon EKS ServiceAccount to assume an IAM role for access to AWS resources.
+
+2. Trust Policy Overview
+
+A Trust Policy is an important element of an IAM Role. It defines the trusted entities (who or what can assume the role) and establishes the relationship between the role and those entities. This policy is attached to the IAM role at the time of creation.
+
+The Trust Policy is written in JSON format and contains one or more statements that define Principal entities, which can be:
+
+AWS services (e.g., EC2, Lambda, EKS)
+
+IAM Users
+
+Federated users (e.g., users from an external identity provider)
+
+
+A Trust Policy effectively defines who can assume the role and under what conditions.
+
+3. Relationship Between IAM Role and Trust Policy
+
+The IAM Role defines what actions are allowed on AWS resources, while the Trust Policy defines who can assume that role. The two work together to ensure that:
+
+Only trusted entities can assume the role.
+
+The role's permissions can be accessed only by entities that match the conditions specified in the Trust Policy.
+
+
+Example: IAM Role and Trust Policy for Amazon EKS
+
+When using Amazon EKS (Elastic Kubernetes Service), IAM roles are often used in conjunction with Kubernetes ServiceAccounts to enable workloads running on EKS to assume IAM roles and access AWS resources (such as S3 buckets, DynamoDB tables, etc.).
+
+For instance, if you have a ServiceAccount in EKS that needs access to an S3 bucket, you need to create an IAM Role and set up the Trust Policy to allow the EKS service to assume the role.
+
+4. Example: Creating an IAM Role and Trust Policy
+
+Here is an example of creating an IAM Role with a Trust Policy:
+
+IAM Role Definition:
+
+This defines the permissions for the role (e.g., access to S3).
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::example-bucket"
+    }
+  ]
+}
+
+Trust Policy Definition:
+
+This Trust Policy allows an EKS ServiceAccount to assume the IAM role.
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::aws:policy/service-role/AmazonEKSServicePolicy"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "eks.amazonaws.com:sub": "system:serviceaccount:default:example-service-account"
+        }
+      }
+    }
+  ]
+}
+
+5. Explanation of Trust Policy
+
+The Principal in this case is a Federated entity, specifying that the role can be assumed by an entity that uses Web Identity (like a ServiceAccount in EKS).
+
+The Action specifies the action sts:AssumeRoleWithWebIdentity, which means the entity can assume the role using a web identity token (a service account token in the case of EKS).
+
+The Condition ensures that only the specific ServiceAccount (example-service-account) in the default namespace of the Kubernetes cluster can assume the role.
+
+
+6. Trust Policy Best Practices
+
+Principals: Always specify the principal (the trusted entity) carefully to ensure that only trusted users or services can assume the role.
+
+Conditions: Use conditions within the Trust Policy to restrict the circumstances under which the role can be assumed, such as restricting based on user identity, source IP, or time.
+
+Least Privilege: The IAM Role should follow the principle of least privilege, meaning it should grant only the minimum permissions necessary to accomplish the task.
+
+
+7. Conclusion
+
+The IAM Role grants permissions to perform actions on AWS resources, while the Trust Policy specifies who or what is allowed to assume that role. Together, they enable secure, controlled access to resources in AWS. When working with AWS services like EKS, mapping roles to Kubernetes ServiceAccounts via Trust Policies provides secure and scalable management of permissions for workloads running in the cluster.
+
