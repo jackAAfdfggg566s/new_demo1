@@ -1,0 +1,97 @@
+如果你想在 GitLab CI/CD 管道中使用 Ansible Playbook 来将文件从虚拟机 (VM) 拷贝到 GitLab，可以按以下方式修改管道配置：
+
+前提条件：
+
+在 GitLab Runner 上安装了 Ansible。
+
+可以通过 SSH 密钥访问 VM。
+
+你需要有一个 Ansible Playbook 来执行文件复制操作。
+
+
+示例 .gitlab-ci.yml 文件：
+
+stages:
+  - copy_files
+
+copy_files_job:
+  stage: copy_files
+  image: python:3.8  # 使用带 Python 的镜像（Ansible 需要 Python）
+  before_script:
+    - apt-get update && apt-get install -y sshpass ansible  # 安装 SSH 客户端和 Ansible
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa  # 设置私钥（作为 GitLab CI/CD 密钥变量）
+    - chmod 600 ~/.ssh/id_rsa
+    - echo "$VM_HOST" >> ~/.ssh/known_hosts  # 将 VM 的 SSH 密钥添加到 known_hosts
+    
+    # 动态创建 Ansible 清单文件
+    - echo "[vm]" > inventory.ini
+    - echo "$VM_HOST" >> inventory.ini
+    
+    # 创建一个简单的 Ansible Playbook 用于拷贝文件
+    - |
+      echo "
+      ---
+      - name: Copy files from VM to GitLab
+        hosts: vm
+        tasks:
+          - name: Copy files from VM to local directory
+            ansible.builtin.copy:
+              src: /path/to/your/files
+              dest: /path/to/your/gitlab/repository/
+              mode: '0644'
+      " > playbook.yml
+    
+    # 运行 Ansible Playbook
+    - ansible-playbook -i inventory.ini playbook.yml
+  only:
+    - main  # 仅在 main 分支触发该任务（可选）
+
+解释：
+
+1. image: python:3.8：使用包含 Python 的 Docker 镜像，Ansible 需要 Python 作为运行环境。
+
+
+2. 安装 Ansible：before_script 部分会安装 Ansible 和 sshpass（如果没有安装的话）。
+
+
+3. SSH 私钥：在 CI/CD 管道中将私钥 ($SSH_PRIVATE_KEY) 添加到 SSH 配置中，以便 GitLab Runner 可以通过 SSH 认证连接到 VM。
+
+
+4. Ansible 清单：动态生成一个包含 VM 主机名/IP 地址 ($VM_HOST) 的清单文件。
+
+
+5. Playbook：在管道中创建一个简单的 Ansible Playbook，执行 copy 任务，将文件从 VM 拷贝到 GitLab 存储库。你可以根据需要修改 src 和 dest 路径。
+
+
+6. 运行 Playbook：使用 ansible-playbook 命令运行 Playbook，执行文件复制操作。
+
+
+
+Ansible Playbook 说明：
+
+---
+- name: Copy files from VM to GitLab
+  hosts: vm
+  tasks:
+    - name: Copy files from VM to local directory
+      ansible.builtin.copy:
+        src: /path/to/your/files  # VM 上的源文件或目录
+        dest: /path/to/your/gitlab/repository/  # GitLab runner 上的目标目录
+        mode: '0644'  # 设置文件权限
+
+运行流程：
+
+1. 准备工作：在管道中设置私钥和 SSH 访问配置，以便 GitLab CI/CD Runner 可以连接到你的 VM。
+
+
+2. 创建清单和 Playbook：动态生成 Ansible 清单文件并编写 Playbook 来执行文件复制。
+
+
+3. 执行 Playbook：运行 Ansible Playbook，执行文件从 VM 拷贝到 GitLab。
+
+
+
+这样，你就可以在 GitLab CI/CD 管道中通过 Ansible 实现文件从 VM 到 GitLab 的自动复制。
+
