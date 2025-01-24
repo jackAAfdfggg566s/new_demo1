@@ -1,0 +1,51 @@
+To copy files from a VM to GitLab using GitLab CI/CD pipeline, you can use the following general approach:
+
+1. SSH into the VM: You will need SSH access to the VM where the files are located.
+
+
+2. Use scp or rsync in the pipeline: You can configure the GitLab pipeline to use scp or rsync to transfer the files from the VM to a specific location in your GitLab repository or server.
+
+
+
+Here’s an example of a GitLab CI/CD pipeline configuration to copy files from a VM to GitLab:
+
+.gitlab-ci.yml example:
+
+stages:
+  - copy_files
+
+copy_files_job:
+  stage: copy_files
+  script:
+    - apt-get update && apt-get install -y openssh-client  # Install SSH client if not available
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa  # Set your private key to access VM
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H $VM_HOST >> ~/.ssh/known_hosts  # Add VM's SSH key to known hosts
+    - scp -r user@$VM_HOST:/path/to/your/files /path/to/your/gitlab/repository/
+  only:
+    - main  # Trigger the job only for the main branch (optional)
+
+Key Points:
+
+$SSH_PRIVATE_KEY: Set this as a secret CI/CD variable in your GitLab project settings (this is your private SSH key).
+
+$VM_HOST: Set this as another secret CI/CD variable containing the IP address or hostname of the VM.
+
+scp command: This copies files from the VM to the GitLab repository.
+
+
+Steps:
+
+1. Ensure SSH access: Ensure that the SSH private key for the VM is securely added to GitLab CI/CD variables.
+
+
+2. Install SSH client: The pipeline script installs the SSH client on the runner (if needed) to allow the use of scp.
+
+
+3. Use scp to copy the files: The scp command copies files from the VM to the GitLab environment.
+
+
+
+This setup should copy files from your VM into your GitLab repository during the pipeline execution.
+
