@@ -1,0 +1,92 @@
+如果你想要在远端机器上执行命令来 压缩文件，然后将压缩后的文件传输到 GitLab CI/CD Runner 机器，首先可以在 Ansible Playbook 中使用 command 或 shell 模块来执行压缩命令。
+
+例如，假设你希望在远端机器上将一个目录或文件压缩为 .tar.gz 格式，然后将其传输到 GitLab CI/CD Runner。以下是修改后的 Playbook，步骤包括：
+
+1. 在远端机器上压缩文件。
+
+
+2. 使用 fetch 模块将压缩后的文件传输到 GitLab CI/CD Runner。
+
+
+
+修改后的 Playbook 示例：
+
+---
+- name: Compress files on VM and fetch to GitLab Runner
+  hosts: vm
+  tasks:
+    - name: Compress files on VM into a tar.gz archive
+      command:
+        cmd: tar -czf /path/to/your/files.tar.gz /path/to/your/files  # 压缩命令
+
+    - name: Fetch the compressed tar.gz file to GitLab Runner
+      ansible.builtin.fetch:
+        src: /path/to/your/files.tar.gz  # 压缩后的文件
+        dest: /path/to/your/gitlab/repository/  # GitLab Runner 上的目标目录
+        flat: yes  # 防止创建文件夹结构
+
+    - name: Debug output
+      debug:
+        msg: "Files have been compressed and copied to /path/to/your/gitlab/repository/"
+
+关键步骤解释：
+
+1. 压缩文件：
+
+在远端机器上使用 command 模块执行压缩命令。比如，tar -czf /path/to/your/files.tar.gz /path/to/your/files 这条命令会将 /path/to/your/files 目录压缩成一个 .tar.gz 文件，保存到 /path/to/your/files.tar.gz。
+
+
+
+2. 将压缩文件传输到 GitLab CI/CD Runner：
+
+使用 fetch 模块将压缩后的文件 /path/to/your/files.tar.gz 从远端机器传输到 GitLab CI/CD Runner 机器上的目标目录 /path/to/your/gitlab/repository/。通过 flat: yes 选项，文件将直接放入目标目录，而不会创建额外的目录结构。
+
+
+
+3. 调试输出：
+
+使用 debug 模块确认文件已经被压缩并成功拷贝到 GitLab Runner。
+
+
+
+
+在 GitLab CI/CD 运行时检查文件：
+
+1. 检查文件是否被正确拷贝到 GitLab CI/CD Runner：
+
+在 GitLab CI/CD Runner 机器中，目标目录 /path/to/your/gitlab/repository/ 应该包含压缩后的文件 files.tar.gz。你可以使用 ls 命令查看：
+
+ls /path/to/your/gitlab/repository/
+
+
+
+2. 解压文件（如果需要）：
+
+如果你希望在 GitLab CI/CD 机器上解压文件（例如解压到 Git 仓库中），可以使用 tar 命令解压：
+
+tar -xzvf /path/to/your/gitlab/repository/files.tar.gz -C /path/to/your/gitlab/repository/
+
+
+
+3. 提交文件到 GitLab 仓库：
+
+如果文件已经被正确拷贝到 GitLab Runner 机器上并解压，可以继续通过 Git 提交这些文件到 GitLab 仓库：
+
+git add .
+git commit -m "Add compressed files from VM"
+git push origin main  # 或其他分支
+
+
+
+
+结论：
+
+在远端机器（VM）上压缩文件后，使用 fetch 将压缩文件传输到 GitLab CI/CD Runner。
+
+使用 command 模块执行压缩操作，并确保目标路径正确设置。
+
+通过 git 将压缩文件或解压后的文件提交到 GitLab 仓库。
+
+
+这就完成了从 VM 压缩文件并将其上传到 GitLab 仓库的整个流程。
+
