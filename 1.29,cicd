@@ -1,0 +1,87 @@
+要在 GitLab CI/CD 流水线中使用 Ansible 压缩远程 VM 上的文件夹，并将其 fetch 到 GitLab，你可以按以下步骤进行配置：
+
+步骤概述：
+
+1. 使用 GitLab CI/CD 配置文件 (.gitlab-ci.yml) 来定义流水线。
+
+
+2. 在流水线中使用 Ansible 任务来压缩远程 VM 上的文件夹。
+
+
+3. 将压缩文件从远程 VM 拉取到 GitLab。
+
+
+
+示例 .gitlab-ci.yml 配置：
+
+stages:
+  - compress
+  - fetch
+
+variables:
+  REMOTE_HOST: "remote_vm_ip"
+  REMOTE_USER: "your_user"
+  REMOTE_DIR: "/path/to/remote/folder"
+  LOCAL_ARCHIVE_PATH: "remote_folder.tar.gz"
+
+compress_folder:
+  stage: compress
+  script:
+    - echo "Compressing remote folder on $REMOTE_HOST"
+    - ansible-playbook -i inventory compress_folder.yml
+
+fetch_file:
+  stage: fetch
+  script:
+    - echo "Fetching compressed file from remote VM to GitLab"
+    - scp $REMOTE_USER@$REMOTE_HOST:/path/to/remote/$LOCAL_ARCHIVE_PATH ./ # Fetch the file
+    - echo "File fetched successfully"
+  only:
+    - main  # or your desired branch
+
+详细步骤：
+
+1. 准备 inventory 文件： 这是一个 Ansible 配置文件，用于定义远程服务器的信息。例如：
+
+[remote_vms]
+remote_vm_ip ansible_ssh_user=your_user ansible_ssh_private_key_file=~/.ssh/id_rsa
+
+
+2. 创建 Ansible Playbook (compress_folder.yml)： 这个 Playbook 会在远程 VM 上压缩指定的文件夹。
+
+---
+- name: Compress folder on remote VM
+  hosts: remote_vms
+  become: yes
+  tasks:
+    - name: Compress the folder
+      command: tar -czf /path/to/remote/remote_folder.tar.gz -C /path/to/remote folder_name
+
+
+3. 配置 GitLab CI/CD： 在 .gitlab-ci.yml 文件中，我们定义了两个阶段：
+
+compress 阶段：使用 Ansible 压缩远程 VM 上的文件夹。
+
+fetch 阶段：通过 SCP 将压缩的文件拉取到 GitLab CI/CD 服务器。
+
+
+
+
+执行流程：
+
+1. 在 compress 阶段，GitLab CI/CD 通过 Ansible Playbook 在远程 VM 上压缩指定的文件夹。
+
+
+2. 在 fetch 阶段，GitLab 使用 SCP 从远程 VM 上获取压缩文件。
+
+
+
+其他注意事项：
+
+确保 GitLab Runner 具有访问远程 VM 的权限（如通过 SSH 密钥认证）。
+
+在 Ansible 和 SCP 步骤中使用的路径需要根据实际情况调整。
+
+
+这个流程能够完成压缩远程 VM 文件夹并将其拉取到 GitLab 的需求。
+
