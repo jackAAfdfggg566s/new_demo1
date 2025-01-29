@@ -1,0 +1,79 @@
+在 Ansible 中，fetch 模块是可以用来操作文件夹的，但它的功能有一些限制。fetch 模块的主要目的是从远程主机拉取文件，并将其保存到本地系统中。对于文件夹操作，fetch 模块本身只支持单个文件的下载，不能直接递归地拉取整个文件夹。
+
+使用 Ansible fetch 操作单个文件
+
+fetch 模块的常见用法是下载远程主机上的单个文件。示例如下：
+
+- name: Fetch a file from the remote host
+  fetch:
+    src: /path/to/remote/file.txt
+    dest: /path/to/local/destination/
+
+递归拉取文件夹
+
+如果你需要操作文件夹并将其内容从远程主机拉取到本地，fetch 模块本身并不支持递归。你可以使用 ansible.builtin.command 或 ansible.builtin.shell 模块配合 tar 或其他工具来处理文件夹，并通过 fetch 拉取文件。
+
+方案 1: 使用 tar 打包文件夹
+
+一种常见的方法是首先在远程主机上使用 tar 命令将文件夹压缩成一个文件，然后用 fetch 拉取该压缩文件。以下是一个示例 Playbook：
+
+- name: Fetch a folder from the remote host
+  hosts: remote_vms
+  tasks:
+    - name: Create a tarball of the folder on the remote host
+      command: tar -czf /tmp/remote_folder.tar.gz -C /path/to remote_folder
+
+    - name: Fetch the tarball to the local machine
+      fetch:
+        src: /tmp/remote_folder.tar.gz
+        dest: /path/to/local/destination/
+        flat: yes  # Ensures that the file is copied directly to the destination without creating the parent directory structure
+
+    - name: Extract the tarball locally
+      local_action: command tar -xzf /path/to/local/destination/remote_folder.tar.gz -C /path/to/local/destination/
+
+在这个示例中：
+
+1. 首先使用 tar 压缩远程主机上的文件夹。
+
+
+2. 使用 fetch 模块将压缩后的文件（tar 文件）从远程主机下载到本地。
+
+
+3. 最后，在本地解压该 tar 文件。
+
+
+
+方案 2: 使用 synchronize 模块
+
+ansible.builtin.synchronize 模块可以更高效地同步远程和本地文件夹，它类似于 rsync，并且支持递归复制文件夹。
+
+示例：
+
+- name: Synchronize remote folder to local system
+  hosts: remote_vms
+  tasks:
+    - name: Synchronize entire folder
+      synchronize:
+        src: /path/to/remote/folder/
+        dest: /path/to/local/destination/
+        recursive: yes
+
+在这个示例中：
+
+synchronize 模块将整个远程文件夹递归地同步到本地系统。
+
+recursive: yes 确保了文件夹内容的递归复制。
+
+
+总结：
+
+fetch 模块适合用于单个文件的拉取，但不支持直接递归拉取文件夹。
+
+要处理整个文件夹，可以先使用 tar 压缩文件夹，再使用 fetch 拉取压缩包。
+
+如果需要递归地同步文件夹，可以使用 synchronize 模块。
+
+
+如果你需要更灵活且高效的操作文件夹，建议使用 synchronize 模块，它支持递归复制文件夹，比 fetch 更适合这种任务。
+
