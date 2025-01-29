@@ -1,0 +1,50 @@
+在 Ansible Playbook 中使用 tar czf 命令时，-C 选项指定了一个工作目录，但是，如果你将压缩输出定向到标准输出（使用 -，即 -czf -），压缩文件的内容将不会写入一个文件，而是输出到标准输出流中。
+
+示例：
+
+- name: Compress a directory into a tar.gz file
+  hosts: remote_vms
+  tasks:
+    - name: Create a compressed tar file using tar command
+      command: tar czf - -C /path/to/source directory_name > /path/to/destination/archive.tar.gz
+
+在这个命令中：
+
+-C /path/to/source：指定要压缩的目录的父目录。
+
+directory_name：是你要压缩的目录名称。
+
+czf -：表示将压缩内容输出到标准输出。
+
+> /path/to/destination/archive.tar.gz：将标准输出重定向到指定的路径 /path/to/destination/archive.tar.gz，因此压缩文件会保存在该路径。
+
+
+解释：
+
+tar czf - 表示将压缩内容输出到标准输出（-），而不是保存到文件中。如果你不将其重定向到文件，压缩结果将丢失。
+
+-C 选项让 tar 在指定的目录 /path/to/source 中查找 directory_name，并将其打包并压缩。
+
+
+常见的压缩文件路径：
+
+如果你指定了正确的输出路径（如 > /path/to/destination/archive.tar.gz），压缩文件会出现在那个位置。
+
+如果没有重定向到文件而只用 tar czf -C ...，则不会生成文件，而是输出到标准输出（终端或 Ansible 的控制台日志中）。
+
+
+完整示例 Playbook：
+
+- name: Compress a directory into a tar.gz file
+  hosts: remote_vms
+  tasks:
+    - name: Create a compressed tar.gz file
+      command: tar czf - -C /path/to/source directory_name > /path/to/destination/archive.tar.gz
+
+总结：
+
+在 Ansible Playbook 中使用 tar czf 并加上 -C 选项时，如果你希望压缩文件存储到某个路径，必须使用重定向（>）将标准输出保存为文件。
+
+如果你不使用重定向而直接使用 tar czf -，压缩内容会输出到标准输出流，而不会保存为文件。
+
+
