@@ -1,0 +1,56 @@
+如果你想在 GitLab CI/CD 中在 GitLab Agent 机器上运行 Python 脚本，你可以通过 GitLab CI 配置文件 .gitlab-ci.yml 来实现，直接在 Agent 机器上执行脚本。假设你已经在 Agent 机器上安装了 GitLab Runner，并且配置了相应的环境，以下是一个简单的例子：
+
+示例：在 GitLab Agent 机器上运行 Python 脚本
+
+stages:
+  - run_script
+
+run_python_script:
+  stage: run_script
+  script:
+    - echo "正在 GitLab Agent 机器上运行 Python 脚本..."
+    - python3 /path/to/script/my_script.py  # 在 Agent 机器上运行 Python 脚本
+  only:
+    - main  # 这个配置表示只有在 main 分支时才会执行
+
+解释：
+
+1. stages: 定义了 CI/CD 的阶段，这里我们只有一个阶段叫做 run_script。
+
+
+2. run_python_script: 这个作业属于 run_script 阶段。
+
+
+3. script:
+
+echo "正在 GitLab Agent 机器上运行 Python 脚本..."：输出一条消息，表示脚本即将运行。
+
+python3 /path/to/script/my_script.py：在 GitLab Agent 机器上执行 Python 脚本。你需要将脚本路径 /path/to/script/my_script.py 替换为实际的 Python 脚本路径。
+
+
+
+4. only: 这个配置确保只有在 main 分支有变更时才会执行该任务。你可以根据需要调整这个配置（比如针对不同的分支或标签）。
+
+
+
+注意事项：
+
+1. GitLab Runner 安装：确保在 GitLab Agent 机器上安装了 GitLab Runner，并且 Runner 被配置为执行任务。通常，GitLab Runner 会自动识别并运行作业。
+
+
+2. Python 环境：确保 GitLab Agent 机器上已经安装了 Python，或者你可以设置虚拟环境来运行该脚本。
+
+
+3. 权限问题：确保 GitLab Runner 在 Agent 机器上有权限执行该 Python 脚本，并且脚本的访问权限设置正确。
+
+
+
+直接运行 Python 脚本的方式：
+
+如果 GitLab Runner 已经在 Agent 机器上安装并且配置好了，在 GitLab CI/CD 作业中可以直接运行 Python 脚本，而不需要使用 SSH 等远程连接方式。这种方法适用于 GitLab Runner 本身就在 Agent 机器上运行的情况。
+
+
+---
+
+通过这种方式，你可以轻松地在 GitLab Agent 机器上运行 Python 脚本，并将其集成到你的 CI/CD 流程中。
+
