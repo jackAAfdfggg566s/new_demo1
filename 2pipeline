@@ -1,0 +1,120 @@
+在 GitLab CI/CD 中，如果你需要使用两个 pipeline（即让一个 pipeline 触发另一个 pipeline），你可以使用 GitLab CI 的 pipeline trigger 功能。这允许你在一个 pipeline 中触发另一个 pipeline，并且可以指定何时触发以及如何传递信息（如 artifact、变量等）。以下是两种常见的方式来使用两个 pipeline。
+
+1. 在一个 pipeline 中触发另一个 pipeline
+
+通过在 .gitlab-ci.yml 文件中使用 trigger 关键字，可以让一个 pipeline 触发另一个 pipeline。你可以控制触发的方式、分支、项目等。
+
+示例：主 pipeline 触发子 pipeline
+
+stages:
+  - build
+  - trigger_next_pipeline
+
+# 第一个 Job：构建
+build_job:
+  stage: build
+  script:
+    - echo "Building project..."
+    - echo "This is the artifact content" > artifact.txt
+  artifacts:
+    paths:
+      - artifact.txt  # 保存 artifact
+
+# 第二个 Job：触发子 pipeline
+trigger_next_pipeline:
+  stage: trigger_next_pipeline
+  script:
+    - echo "Triggering the next pipeline..."
+  trigger:
+    project: your-namespace/your-project  # 子项目的名称
+    branch: main  # 子项目的分支
+    strategy: depend  # 等待子 pipeline 完成
+
+解释：
+
+1. trigger 关键字：这是一个 GitLab CI 的特性，它会触发指定项目的 pipeline。strategy: depend 选项意味着父 pipeline 会等待子 pipeline 完成后才会继续。
+
+
+2. project：你可以指定要触发的项目（如另一个 GitLab 项目）。如果触发的是同一个项目，可以省略该字段。
+
+
+3. branch：指定触发的分支。你可以选择触发主分支或者其他特定分支。
+
+
+4. strategy: depend：表示当前 pipeline 会等待子 pipeline 完成后再继续执行。如果不使用这个选项，主 pipeline 会在子 pipeline 被触发后立即继续执行。
+
+
+
+2. 在 GitLab 中使用 trigger 和 Artifact 结合
+
+如果你想在第一个 pipeline 中传递 artifact 到第二个 pipeline，可以使用 artifact 的传递功能。
+
+示例：父 pipeline 上传 Artifact 给子 pipeline
+
+假设你有一个构建阶段，它生成了某些文件（如 artifact.txt），然后你希望将这个文件传递给下游的 pipeline。
+
+stages:
+  - build
+  - trigger_next_pipeline
+
+# 第一个 Job：构建并保存 artifact
+build_job:
+  stage: build
+  script:
+    - echo "Building project..."
+    - echo "This is the artifact content" > artifact.txt
+  artifacts:
+    paths:
+      - artifact.txt  # 保存 artifact
+    expire_in: 1 hour  # 设置 artifact 过期时间
+
+# 第二个 Job：触发子 pipeline，传递 artifact
+trigger_next_pipeline:
+  stage: trigger_next_pipeline
+  script:
+    - echo "Triggering the next pipeline and passing artifact..."
+  trigger:
+    project: your-namespace/your-project  # 子项目的名称
+    branch: main  # 子项目的分支
+    strategy: depend  # 等待子 pipeline 完成
+  dependencies:
+    - build_job  # 确保 artifact 从 build_job 中传递
+
+3. 使用 GitLab API 触发下游 Pipeline
+
+除了通过 .gitlab-ci.yml 使用 trigger，你还可以通过 GitLab API 手动触发 pipeline，通常这种方式用于更复杂的流程控制。可以使用 curl 或其他工具发送 API 请求触发下游 pipeline。
+
+示例：使用 GitLab API 触发子 pipeline
+
+trigger_next_pipeline:
+  stage: trigger_next_pipeline
+  script:
+    - echo "Triggering next pipeline via API..."
+    - |
+      curl --request POST --form "token=YOUR_TRIGGER_TOKEN" \
+           --form "ref=main" \
+           https://gitlab.example.com/api/v4/projects/YOUR_PROJECT_ID/trigger/pipeline
+
+YOUR_TRIGGER_TOKEN：你可以在 GitLab 项目的 CI/CD 设置 中找到或创建一个触发器令牌。
+
+YOUR_PROJECT_ID：子项目的 ID，可以在 GitLab 项目的 设置 -> 高级设置 中找到。
+
+
+4. 手动触发下游 pipeline
+
+如果你希望能够手动触发另一个 pipeline，可以在 GitLab 项目设置中创建一个 Pipeline Trigger，然后使用该触发器的 token 来启动下游 pipeline。
+
+5. 总结
+
+1. trigger 关键字：在 .gitlab-ci.yml 中使用 trigger 可以让一个 pipeline 触发另一个 pipeline，并可以控制它运行的分支和其他设置。
+
+
+2. 传递 artifact：通过 dependencies 关键字，可以确保一个 job 将其 artifact 传递给另一个 job，确保下游 pipeline 获取到这些文件。
+
+
+3. API 触发：可以通过 GitLab API 手动触发另一个 pipeline，适用于更复杂的场景。
+
+
+
+通过这种方式，你可以在 GitLab CI/CD 中实现跨 pipeline 的任务协调，充分利用 artifact 和 trigger 功能来实现自动化的流水线流程。
+
