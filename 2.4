@@ -1,0 +1,156 @@
+为了处理不同的状态（state）对应不同的远程机器，您可以在 Ansible Playbook 中使用 host 变量动态设置目标机器的主机组或 IP 地址。您可以通过 inventory 或者 GitLab CI/CD 中传递的变量来控制不同状态对应的远程机器。
+
+解决方案
+
+1. 动态设置远程主机
+在 Playbook 中，你可以使用 Ansible inventory 或直接通过 hosts 动态设置目标机器。具体的机器可以通过传递的 state 变量来决定。
+
+
+2. 创建动态主机组
+假设不同的 state 对应不同的主机组，或者根据远程机器的 IP 地址或名称来动态选择。
+
+
+
+1. Playbook 示例：动态设置 hosts
+
+copy_files.yml:
+
+---
+- name: Copy files from remote machines to GitLab Agent
+  hosts: "{{ state_hosts }}"
+  vars:
+    # 默认状态，可以通过外部传入来动态修改
+    state: "state1"  # 默认是 state1，可以在运行时通过 GitLab CI 传入
+
+  tasks:
+    - name: Copy files for State 1
+      ansible.builtin.fetch:
+        src: /path/to/remote/file1
+        dest: /path/to/local/destination/
+        flat: yes
+      when: state == "state1"
+
+    - name: Copy files for State 2
+      ansible.builtin.fetch:
+        src: /path/to/remote/file2
+        dest: /path/to/local/destination/
+        flat: yes
+      when: state == "state2"
+
+    - name: Copy files for State 3
+      ansible.builtin.fetch:
+        src: /path/to/remote/file3
+        dest: /path/to/local/destination/
+        flat: yes
+      when: state == "state3"
+
+    - name: Copy files for State 4
+      ansible.builtin.fetch:
+        src: /path/to/remote/file4
+        dest: /path/to/local/destination/
+        flat: yes
+      when: state == "state4"
+
+    - name: Copy files for State 5
+      ansible.builtin.fetch:
+        src: /path/to/remote/file5
+        dest: /path/to/local/destination/
+        flat: yes
+      when: state == "state5"
+
+    - name: Copy files for State 6
+      ansible.builtin.fetch:
+        src: /path/to/remote/file6
+        dest: /path/to/local/destination/
+        flat: yes
+      when: state == "state6"
+
+2. 传递 state_hosts 变量
+
+在 GitLab CI/CD 配置文件 中，你可以为每个状态传递相应的 state_hosts 变量。每个 state 对应的远程机器可以是不同的主机组、IP 地址或主机名。
+
+.gitlab-ci.yml
+
+stages:
+  - deploy
+
+deploy_state1:
+  stage: deploy
+  script:
+    - ansible-playbook copy_files.yml --extra-vars "state=state1 state_hosts=remote_state1"
+  only:
+    - state1_branch
+
+deploy_state2:
+  stage: deploy
+  script:
+    - ansible-playbook copy_files.yml --extra-vars "state=state2 state_hosts=remote_state2"
+  only:
+    - state2_branch
+
+deploy_state3:
+  stage: deploy
+  script:
+    - ansible-playbook copy_files.yml --extra-vars "state=state3 state_hosts=remote_state3"
+  only:
+    - state3_branch
+
+deploy_state4:
+  stage: deploy
+  script:
+    - ansible-playbook copy_files.yml --extra-vars "state=state4 state_hosts=remote_state4"
+  only:
+    - state4_branch
+
+deploy_state5:
+  stage: deploy
+  script:
+    - ansible-playbook copy_files.yml --extra-vars "state=state5 state_hosts=remote_state5"
+  only:
+    - state5_branch
+
+deploy_state6:
+  stage: deploy
+  script:
+    - ansible-playbook copy_files.yml --extra-vars "state=state6 state_hosts=remote_state6"
+  only:
+    - state6_branch
+
+3. Ansible Inventory 文件
+
+你可以通过定义 inventory 文件，来配置每个状态对应的机器。每个 state_hosts 对应不同的远程主机组。
+
+示例：inventory.ini
+
+[remote_state1]
+192.168.1.101 ansible_ssh_user=your_user ansible_ssh_private_key_file=/path/to/private/key
+
+[remote_state2]
+192.168.1.102 ansible_ssh_user=your_user ansible_ssh_private_key_file=/path/to/private/key
+
+[remote_state3]
+192.168.1.103 ansible_ssh_user=your_user ansible_ssh_private_key_file=/path/to/private/key
+
+[remote_state4]
+192.168.1.104 ansible_ssh_user=your_user ansible_ssh_private_key_file=/path/to/private/key
+
+[remote_state5]
+192.168.1.105 ansible_ssh_user=your_user ansible_ssh_private_key_file=/path/to/private/key
+
+[remote_state6]
+192.168.1.106 ansible_ssh_user=your_user ansible_ssh_private_key_file=/path/to/private/key
+
+4. 结合 inventory.ini 使用
+
+在执行 ansible-playbook 时，你可以指定 inventory.ini 文件，通过 --extra-vars 传递 state_hosts 变量，动态选择要操作的主机。
+
+ansible-playbook -i inventory.ini copy_files.yml --extra-vars "state=state1 state_hosts=remote_state1"
+
+5. 总结
+
+通过这种方式，您只需要一个 Playbook，并且可以根据传入的 state 和 state_hosts 变量来动态选择对应的远程机器和文件操作。每个 state 代表不同的状态，您通过 GitLab CI/CD 中的变量来控制哪个远程主机进行文件拷贝操作。
+
+这种方式不仅避免了为每个状态创建多个 Playbook，还可以根据不同的状态灵活选择目标机器，使得 CI/CD 配置更加简洁和易于维护。
+
+如果您有任何其他问题，请随时告诉我！
+
