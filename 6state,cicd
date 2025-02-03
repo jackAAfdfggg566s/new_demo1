@@ -1,0 +1,106 @@
+明白了！你希望每台机器只负责拷贝自己对应的文件，并且它们的状态是独立的。也就是说，每台机器根据其状态，拷贝文件到 GitLab，但是它们的操作不会互相影响。你可以通过 Ansible 的 when 条件来实现这种根据状态的拷贝操作。
+
+需求：
+
+1. 每台机器根据不同的 state 来决定是否执行文件拷贝。
+
+
+2. 每个机器只拷贝自己的文件，不同机器之间不会交叉拷贝。
+
+
+3. 使用同一个 Playbook 来管理所有机器的操作。
+
+
+
+解决方案：
+
+你可以通过在 inventory 文件中给每台机器指定一个不同的 state 变量，或者使用 group_vars 来管理每台机器的拷贝状态。
+
+示例步骤：
+
+1. 在 inventory 中定义每台机器的状态
+
+假设每台机器有一个 state 变量，表示其拷贝状态，可以在 inventory 文件或通过 group_vars 进行定义。
+
+[remote_machines]
+machine1 ansible_host=192.168.1.1 ansible_user=your_user state=state1
+machine2 ansible_host=192.168.1.2 ansible_user=your_user state=state2
+machine3 ansible_host=192.168.1.3 ansible_user=your_user state=state3
+machine4 ansible_host=192.168.1.4 ansible_user=your_user state=state4
+machine5 ansible_host=192.168.1.5 ansible_user=your_user state=state5
+machine6 ansible_host=192.168.1.6 ansible_user=your_user state=state6
+
+2. Playbook 示例
+
+根据每台机器的 state 变量来判断是否需要执行文件拷贝任务。通过 when 语句来判断是否执行该任务。
+
+---
+- name: Conditionally copy files based on state
+  hosts: remote_machines
+  tasks:
+    - name: Copy file from machine1
+      ansible.builtin.copy:
+        src: /path/to/file/on/machine1
+        dest: /path/to/gitlab/target1
+      when: state == 'state1'
+      delegate_to: gitlab_host  # 将文件复制到 GitLab 服务器
+
+    - name: Copy file from machine2
+      ansible.builtin.copy:
+        src: /path/to/file/on/machine2
+        dest: /path/to/gitlab/target2
+      when: state == 'state2'
+      delegate_to: gitlab_host
+
+    - name: Copy file from machine3
+      ansible.builtin.copy:
+        src: /path/to/file/on/machine3
+        dest: /path/to/gitlab/target3
+      when: state == 'state3'
+      delegate_to: gitlab_host
+
+    - name: Copy file from machine4
+      ansible.builtin.copy:
+        src: /path/to/file/on/machine4
+        dest: /path/to/gitlab/target4
+      when: state == 'state4'
+      delegate_to: gitlab_host
+
+    - name: Copy file from machine5
+      ansible.builtin.copy:
+        src: /path/to/file/on/machine5
+        dest: /path/to/gitlab/target5
+      when: state == 'state5'
+      delegate_to: gitlab_host
+
+    - name: Copy file from machine6
+      ansible.builtin.copy:
+        src: /path/to/file/on/machine6
+        dest: /path/to/gitlab/target6
+      when: state == 'state6'
+      delegate_to: gitlab_host
+
+3. inventory 文件中的 state 变量
+
+在这个例子中，每台机器有一个 state 变量。例如，machine1 只有在 state == 'state1' 时才会执行拷贝操作，machine2 在 state == 'state2' 时才会拷贝文件，其他机器同理。
+
+4. GitLab 服务器配置
+
+确保你已经在 inventory 文件中配置了 GitLab 服务器，并且 delegate_to 会将文件复制到 GitLab 服务器：
+
+[gitlab]
+gitlab_host ansible_host=192.168.1.100 ansible_user=gitlab_user
+
+运行 Playbook：
+
+运行 Playbook 时，Ansible 会根据 state 变量的值决定是否执行相应的文件拷贝任务。每台机器只会在它自己对应的 state 下执行拷贝操作。
+
+ansible-playbook -i inventory your_playbook.yml
+
+总结：
+
+使用 when 语句，你可以为每台机器指定一个 state，并根据状态控制是否执行拷贝操作。
+
+这样，每台机器只会执行与自己对应的拷贝任务，确保它们只拷贝自己的文件到 GitLab。
+
+
