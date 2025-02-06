@@ -1,0 +1,85 @@
+在 GitLab CI/CD pipeline 中，输入参数可以通过 trigger 或 manual job 来设置，并在运行时通过界面输入，但 GitLab 本身并不直接支持在 pipeline 执行过程中动态输入内容（像传统的交互式 read 命令一样）。但是，使用 GitLab CI/CD 提供的一些功能可以实现类似的效果。
+
+有两种主要方法可以在 GitLab pipeline 中实现交互式输入或在运行时输入参数：
+
+1. 使用 manual jobs 和 input 参数（GitLab 14.4+）
+
+GitLab 14.4 引入了 input 参数的支持，使得你可以在 manual job 中设置输入项，允许用户在运行时输入值。
+
+示例：
+
+stages:
+  - build
+  - deploy
+
+build:
+  script:
+    - echo "Building the project..."
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying the project with environment $ENV"
+  when: manual
+  variables:
+    ENV: "staging"
+  trigger:
+    project: myproject/repo
+    strategy: depend
+  input:
+    - name: "Environment"
+      description: "Choose the environment to deploy"
+      options:
+        - staging
+        - production
+
+在这个示例中，deploy 阶段是一个手动执行的任务，并且有一个 input 字段，允许在运行时选择参数，如 Environment。
+
+2. 使用 CI/CD 环境变量和 manual triggers
+
+在 GitLab CI 中，你可以使用 manual jobs 来手动触发某些操作，并且在触发时通过 Pipeline UI 输入环境变量。
+
+例如，你可以手动触发某个 job，并在 UI 中输入或选择环境变量的值。
+
+示例：
+
+stages:
+  - build
+  - deploy
+
+variables:
+  DEPLOY_ENV: "staging"
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying to $DEPLOY_ENV"
+  when: manual
+  only:
+    - main
+
+在 GitLab UI 中，手动触发该 job 时，可以选择不同的环境变量值来定制部署环境。虽然不完全是通过输入框进行交互，但这种方式提供了灵活的手动控制。
+
+3. 使用 GitLab API 触发带参数的 Pipeline
+
+你也可以通过 GitLab 的 API 来触发 pipeline，并在触发时指定一些参数。例如，使用 trigger API 来启动 pipeline，并传递参数。
+
+例如，通过 curl 调用 API 触发 pipeline，并传递自定义参数：
+
+curl --request POST \
+  --form "token=YOUR_TRIGGER_TOKEN" \
+  --form "ref=main" \
+  --form "variables[DEPLOY_ENV]=production" \
+  "https://gitlab.example.com/api/v4/projects/PROJECT_ID/trigger/pipeline"
+
+总结：
+
+GitLab 14.4+ 引入了 input 参数功能，可让你在运行时输入选择项，适用于 manual job。
+
+Manual Jobs 提供了通过 GitLab UI 选择和输入参数的方式，虽然不是完全的交互式输入，但可以根据需要设置环境变量。
+
+GitLab API 允许在外部脚本或工具中使用自定义的参数触发 pipeline。
+
+
+希望这些方法能帮助你在 GitLab pipeline 中实现运行时输入参数的功能。
+
