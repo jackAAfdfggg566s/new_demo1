@@ -1,0 +1,104 @@
+在 GitLab CI/CD 配置中，如果你有多个相似的 job 或 state 只是某些参数不同，可以通过以下方法来使其更加模块化、简洁和可维护：
+
+1. 使用 GitLab CI 的 extends 关键字
+
+GitLab CI/CD 支持使用 extends 来继承和重用已有的配置。这可以帮助你减少重复代码，并在多个 job 中共享相似的配置，只需要在不同的地方调整不同的参数。
+
+示例：
+
+# 定义一个基础的 job 配置
+.base_job_template:
+  script:
+    - echo "Running job with parameter $PARAM"
+
+# 使用 extends 继承这个基础模板，并传入不同的参数
+job_1:
+  extends: .base_job_template
+  variables:
+    PARAM: "value_1"
+
+job_2:
+  extends: .base_job_template
+  variables:
+    PARAM: "value_2"
+
+job_3:
+  extends: .base_job_template
+  variables:
+    PARAM: "value_3"
+
+在这个例子中，job_1, job_2, 和 job_3 都继承了 .base_job_template 的配置，并分别通过 variables 修改了参数。
+
+2. 使用 before_script 和 after_script 共享逻辑
+
+如果多个 job 有相同的预处理或后处理操作，可以将这些操作提取到 before_script 和 after_script 中。
+
+示例：
+
+before_script:
+  - echo "Starting job"
+
+job_1:
+  script:
+    - echo "Job 1 execution"
+  after_script:
+    - echo "Job 1 finished"
+
+job_2:
+  script:
+    - echo "Job 2 execution"
+  after_script:
+    - echo "Job 2 finished"
+
+这样，每个 job 都会在执行前和执行后运行共享的步骤。
+
+3. 使用模板
+
+如果你有一些复杂的逻辑，考虑将它们提取到外部文件中，并通过 include 语句引入这些文件，这样就可以在多个项目中复用相同的 CI/CD 配置。
+
+示例：
+
+include:
+  - project: 'your-group/your-repo'
+    file: '/templates/base-job.yml'
+
+job_1:
+  extends: .base_job
+  variables:
+    PARAM: "value_1"
+
+4. 动态生成 Jobs
+
+如果不同的 job 或 state 只有微小的区别，可以利用 YAML 的锚点和别名来实现配置复用。
+
+示例：
+
+.base_job: &base_job
+  script:
+    - echo "Running job with parameter $PARAM"
+
+job_1:
+  <<: *base_job
+  variables:
+    PARAM: "value_1"
+
+job_2:
+  <<: *base_job
+  variables:
+    PARAM: "value_2"
+
+通过这种方式，job_1 和 job_2 共享相同的配置，只需要通过 variables 修改不同的参数。
+
+总结：
+
+使用 extends 重用基础配置。
+
+通过 before_script 和 after_script 提取通用的逻辑。
+
+使用模板文件来管理重复的代码。
+
+利用 YAML 的锚点和别名进一步简化配置。
+
+
+通过这些方法，你可以在 GitLab CI/CD 中实现更灵活和可维护的配置。
+
