@@ -1,0 +1,92 @@
+Sure! Here's the presentation in English:
+
+
+---
+
+Slide 1: Introduction to Ansible Playbooks
+
+Ansible Playbook is a key component of Ansible automation tool, used to define tasks and configuration management. It allows you to write simple, readable configuration files to automate server management, application deployment, and other tasks.
+
+Ansible: An open-source automation tool for configuration management, application deployment, and task execution.
+
+Playbook: Written in YAML (human-readable format), it defines a series of tasks that describe how operations should be performed on target hosts.
+
+
+
+---
+
+Slide 2: Structure of Ansible Playbook
+
+1. Hosts: Defines the target hosts or host groups.
+
+
+2. Tasks: Defines specific actions to be performed (such as installing software, starting services, etc.).
+
+
+3. Variables: Defines parameters and variables, which can be used in tasks.
+
+
+4. Handlers: Operations triggered when a task results in a change.
+
+
+
+
+---
+
+Slide 3: Ansible Playbook Example
+
+Example: Install and Start Apache Service
+
+---
+- name: Install and start Apache
+  hosts: web_servers
+  become: yes
+  tasks:
+    - name: Install Apache
+      yum:
+        name: httpd
+        state: present
+
+    - name: Start Apache service
+      service:
+        name: httpd
+        state: started
+
+hosts: Specifies the target hosts (web_servers).
+
+become: Grants elevated privileges (i.e., using sudo).
+
+tasks: Defines two tasks: installing Apache and starting the service.
+
+
+
+---
+
+Slide 4: Key Concepts of Ansible Playbooks
+
+Idempotency: Tasks can be executed multiple times and always produce the same result.
+
+Variable Support: Playbooks support variables, enabling reuse across different environments.
+
+Conditionals and Loops: Supports conditional execution and loops to increase flexibility.
+
+
+
+---
+
+Slide 5: Benefits of Ansible Playbooks
+
+Simple and Readable: Written in YAML format, making it easy to understand and write.
+
+Efficient Automation: Automates configuration and deployment tasks, reducing manual intervention.
+
+Scalable: Can be extended to multiple hosts and supports complex workflows.
+
+Cross-Platform Support: Works with Linux, Windows, and other operating systems.
+
+
+
+---
+
+This presentation introduces Ansible Playbooks, explains their structure, and provides an example. Let me know if you need further details or additional slides!
+
