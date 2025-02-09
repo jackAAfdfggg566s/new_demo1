@@ -1,0 +1,250 @@
+Here is a PowerPoint outline for introducing key concepts of GitLab CI/CD, such as state, script, when, artifacts, before_scripts, and runners.
+
+
+---
+
+Slide 1: Introduction to GitLab CI/CD
+
+GitLab CI/CD: A powerful continuous integration and continuous delivery (CI/CD) system.
+
+It automates the process of building, testing, and deploying code.
+
+Pipelines are defined in the .gitlab-ci.yml file.
+
+Jobs within the pipeline can be customized with various settings.
+
+
+
+---
+
+Slide 2: Key Concepts in GitLab CI/CD
+
+1. Stages: Define the logical steps of the CI/CD pipeline (e.g., build, test, deploy).
+
+
+2. Jobs: Units of work executed within each stage.
+
+
+3. GitLab Runner: Executes jobs and manages the pipeline.
+
+
+4. Artifacts: Files that are saved and passed between jobs.
+
+
+
+
+---
+
+Slide 3: Job state and script
+
+1. state:
+
+Defines the condition when a job will run, like specific branches or tags.
+
+Uses conditions like only, except, rules, etc.
+
+
+Example:
+
+job_name:
+  script:
+    - echo "This job runs on master branch"
+  only:
+    - master
+
+
+2. script:
+
+The core section where you define the commands to run during the job.
+
+It is a list of shell commands that will be executed in the job.
+
+
+Example:
+
+job_name:
+  script:
+    - echo "Running build"
+    - mvn clean install
+
+
+
+
+---
+
+Slide 4: when keyword
+
+The when keyword defines when a job should run in a pipeline.
+
+It allows you to specify when a job should be executed, for example, only when certain conditions are met.
+
+
+Possible values for when:
+
+on_success (default): The job runs when previous jobs are successful.
+
+on_failure: The job runs only if previous jobs fail.
+
+manual: The job will run manually, triggered by the user.
+
+always: The job runs regardless of success or failure.
+
+
+Example:
+
+deploy:
+  script:
+    - deploy.sh
+  when: manual
+
+
+---
+
+Slide 5: Artifacts in GitLab CI/CD
+
+Artifacts are files that are created during the job execution and can be saved to be used later by other jobs.
+
+Common use cases: Save build files, logs, test results, etc.
+
+Artifacts are defined using the artifacts keyword in the .gitlab-ci.yml file.
+
+
+Example:
+
+build:
+  script:
+    - mvn clean install
+  artifacts:
+    paths:
+      - target/*.jar
+    expire_in: 1 week
+
+paths: Defines which files to save as artifacts.
+
+expire_in: Defines how long the artifacts will be kept.
+
+
+
+---
+
+Slide 6: before_script in GitLab CI/CD
+
+before_script is a set of commands that will run before the script section in the job.
+
+This is useful for setting up environments, installing dependencies, or preparing the system for the main job.
+
+
+Example:
+
+before_script:
+  - echo "Setting up environment"
+  - apt-get install -y curl
+
+job_name:
+  script:
+    - echo "Running tests"
+    - pytest tests/
+
+before_script can be defined globally in the pipeline or within specific jobs.
+
+
+
+---
+
+Slide 7: GitLab Runners
+
+A GitLab Runner is a lightweight, multi-platform application used to run CI/CD jobs.
+
+It communicates with GitLab CI to execute tasks and report results.
+
+Types of runners:
+
+Shared Runners: Available to all projects on GitLab.
+
+Specific Runners: Configured to run jobs for a specific project or group.
+
+
+
+Example of a runner configuration:
+
+[[runners]]
+  name = "my-runner"
+  url = "https://gitlab.com/"
+  token = "my-token"
+  executor = "docker"
+  [runners.custom_build_dir]
+  [runners.cache]
+
+Executor defines the environment in which the job runs (e.g., docker, shell, kubernetes).
+
+
+
+---
+
+Slide 8: Putting It All Together
+
+Example of a .gitlab-ci.yml file with key elements:
+
+before_script:
+  - echo "Preparing environment"
+
+stages:
+  - build
+  - test
+  - deploy
+
+build:
+  stage: build
+  script:
+    - echo "Building the application"
+    - mvn clean install
+  artifacts:
+    paths:
+      - target/*.jar
+
+test:
+  stage: test
+  script:
+    - echo "Running tests"
+    - mvn test
+  when: on_success
+
+deploy:
+  stage: deploy
+  script:
+    - echo "Deploying the application"
+    - ./deploy.sh
+  when: manual
+  only:
+    - master
+
+before_script is used to set up environment dependencies.
+
+artifacts is used to pass the build file from the build job to the test job.
+
+when: manual in the deploy job triggers deployment only when manually initiated.
+
+
+
+---
+
+Slide 9: Summary
+
+state: Determines when a job runs (e.g., on success, failure, manual).
+
+script: Contains the actual commands to run for the job.
+
+when: Controls the execution timing (e.g., on_success, manual).
+
+artifacts: Allows you to pass files between jobs or store important files.
+
+before_script: Runs commands before the job's script starts, for setup tasks.
+
+GitLab Runners: Execute jobs in various environments, either shared or specific.
+
+
+
+---
+
+This PowerPoint structure covers all the important aspects of GitLab CI/CD jobs and includes examples for each concept. You can now create a PPT file using these slides or modify it as needed. Let me know if you'd like further assistance!
+
