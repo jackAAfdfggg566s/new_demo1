@@ -1,0 +1,100 @@
+Here's a breakdown of how the slide would look in a PPT format:
+
+
+---
+
+Slide 7: Ansible Inventory & Basic Commands
+
+
+---
+
+Ansible Inventory
+
+Static Inventory:
+
+A simple text file listing hosts and groups.
+
+Example:
+
+[webservers]
+web1.example.com
+web2.example.com
+
+[dbservers]
+db1.example.com
+db2.example.com
+
+
+Dynamic Inventory:
+
+Uses scripts or APIs to dynamically generate host lists.
+
+Example command (AWS dynamic inventory):
+
+ansible -i ec2.py all -m ping
+
+
+Inventory Variables:
+
+Define host/group-specific variables.
+
+Example:
+
+[webservers]
+web1.example.com ansible_ssh_user=admin
+
+
+
+
+---
+
+Ansible Basic Commands
+
+1. ansible Command: Executes an ad-hoc task.
+
+Example: Ping all hosts.
+
+ansible all -m ping
+
+
+
+2. ansible-playbook Command: Runs a playbook.
+
+Example: Run the playbook site.yml.
+
+ansible-playbook site.yml
+
+
+
+3. ansible-galaxy Command: Manages roles from Ansible Galaxy.
+
+Example: Install an Nginx role.
+
+ansible-galaxy install geerlingguy.nginx
+
+
+
+4. ansible-pull Command: Pulls and runs a playbook from a repository.
+
+Example:
+
+ansible-pull -U https://github.com/username/repo.git
+
+
+
+5. ansible-inventory Command: Lists or inspects the inventory.
+
+Example: Display inventory in JSON format.
+
+ansible-inventory --list
+
+
+
+
+
+---
+
+This slide combines Ansible Inventory and Basic Commands, making it easy to understand their usage and integration. You can now create a PowerPoint slide based on this content.
+
+If you'd like, I can also help you create a PPT file. Just let me know!
+
