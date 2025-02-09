@@ -1,0 +1,96 @@
+Sure! Here's the presentation in English:
+
+
+---
+
+Slide 1: Introduction to CI/CD
+
+CI/CD (Continuous Integration / Continuous Delivery) is a set of practices and tools in modern software development aimed at automating the build, test, and deployment processes.
+
+Continuous Integration (CI): Frequently merging code into the main branch to catch errors early and ensure code quality.
+
+Continuous Delivery (CD): Automating the software release process, ensuring that every update is ready for quick, safe deployment to production.
+
+
+
+---
+
+Slide 2: CI/CD Workflow
+
+1. Code Commit: Developers commit code to the version control system (like Git).
+
+
+2. Automated Build: CI tools automatically trigger the build process.
+
+
+3. Automated Testing: Unit tests, integration tests, etc., are run automatically.
+
+
+4. Automated Deployment: Once tests pass, the application is automatically deployed to the production or staging environment.
+
+
+
+
+---
+
+Slide 3: GitLab CI/CD Workflow
+
+1. GitLab Repository: Code is hosted in GitLab.
+
+
+2. .gitlab-ci.yml Configuration File: Defines the CI/CD workflow, specifying build, test, and deploy tasks.
+
+
+3. GitLab Runner: The agent that executes the CI/CD tasks.
+
+
+4. CI/CD Pipeline: A series of jobs that perform tasks like build, test, and deploy.
+
+
+
+
+---
+
+Slide 4: GitLab CI/CD Configuration Example
+
+.gitlab-ci.yml Example:
+
+stages:
+  - build
+  - test
+  - deploy
+
+build_job:
+  stage: build
+  script:
+    - echo "Building the project..."
+
+test_job:
+  stage: test
+  script:
+    - echo "Running tests..."
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo "Deploying to production..."
+
+
+---
+
+Slide 5: Benefits of GitLab CI/CD
+
+Increased Development Efficiency: Automated build and test processes reduce manual work.
+
+Reduced Risk of Errors: Frequent integration and automated testing help catch issues early.
+
+Faster Delivery: Faster deployment of new features to users.
+
+Version Control: GitLab's version control and pipeline make team collaboration more efficient.
+
+
+
+---
+
+This presentation covers the basic concepts of CI/CD, the GitLab CI/CD workflow, and how to configure a simple pipeline. Let me know if you'd like more details or further expansions on any part!
+
