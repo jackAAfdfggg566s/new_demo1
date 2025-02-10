@@ -1,0 +1,232 @@
+GitLab CI/CD: Pushing Files to Nexus - Presentation Script
+
+
+---
+
+1. Introduction
+
+GitLab CI/CD is a powerful tool for automating the process of building, testing, and deploying applications. One common task in CI/CD pipelines is to upload build artifacts, such as JAR files, to a repository like Nexus for storage, versioning, and sharing.
+
+In this presentation, we will cover how to use GitLab CI/CD to push a JAR file to Nexus and how to configure the pom.xml to allow Maven to interact with Nexus.
+
+
+---
+
+2. What is Nexus?
+
+Nexus is a repository manager that stores and distributes software components. It helps to manage dependencies for software projects and allows sharing of artifacts, such as libraries and JAR files, among different teams or applications.
+
+In a typical CI/CD pipeline, the built artifacts (like JAR files) are pushed to Nexus so that they can be used in later stages, such as in production deployments.
+
+
+---
+
+3. GitLab CI/CD Pipeline Overview
+
+A typical GitLab CI/CD pipeline for pushing a JAR file to Nexus involves the following steps:
+
+1. Build the Project: Compile the source code and generate a JAR file.
+
+
+2. Push Artifact to Nexus: After the build is successful, push the generated JAR file to Nexus repository.
+
+
+3. Maven Configuration: Ensure Maven is set up correctly in your pom.xml to push the artifacts to Nexus.
+
+
+
+We'll break down each of these steps.
+
+
+---
+
+4. Configuring pom.xml for Nexus Deployment
+
+To push your artifact (e.g., JAR file) to Nexus, you must configure your pom.xml to interact with Nexus. This involves setting up the distributionManagement and repositories sections for Nexus deployment.
+
+Example of a pom.xml configuration:
+
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    
+    <modelVersion>4.0.0</modelVersion>
+    
+    <groupId>com.example</groupId>
+    <artifactId>my-app</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <distributionManagement>
+        <repository>
+            <id>nexus-releases</id>
+            <url>https://nexus.example.com/repository/releases/</url>
+        </repository>
+        <snapshotRepository>
+            <id>nexus-snapshots</id>
+            <url>https://nexus.example.com/repository/snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+    <repositories>
+        <repository>
+            <id>nexus-releases</id>
+            <url>https://nexus.example.com/repository/releases/</url>
+        </repository>
+        <repository>
+            <id>nexus-snapshots</id>
+            <url>https://nexus.example.com/repository/snapshots/</url>
+        </repository>
+    </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>nexus-releases</id>
+            <url>https://nexus.example.com/repository/releases/</url>
+        </pluginRepository>
+    </pluginRepositories>
+
+    <!-- Maven Plugin Configuration for Deployment -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-deploy-plugin</artifactId>
+                <version>3.0.0-M1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>deploy</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
+Explanation of Key Elements:
+
+distributionManagement: This section defines the Nexus repository where Maven will push the artifacts.
+
+nexus-releases: The repository for stable releases.
+
+nexus-snapshots: The repository for snapshot versions.
+
+
+repositories: Defines the repositories where Maven will download dependencies from, if they are not locally available.
+
+pluginRepositories: Defines repositories for Maven plugins, such as the deploy plugin used to push artifacts to Nexus.
+
+maven-deploy-plugin: This plugin automates the process of pushing your build artifact (e.g., JAR file) to Nexus.
+
+
+
+---
+
+5. GitLab CI/CD Pipeline to Push Artifacts to Nexus
+
+Now let's create a GitLab CI/CD pipeline to automate the process of building and pushing the JAR file to Nexus. Below is an example .gitlab-ci.yml file that defines the pipeline.
+
+stages:
+  - build
+  - deploy
+
+# Build the project using Maven
+build:
+  stage: build
+  image: maven:3.8.1-jdk-11
+  script:
+    - mvn clean install
+
+# Push the JAR file to Nexus
+deploy:
+  stage: deploy
+  image: maven:3.8.1-jdk-11
+  script:
+    - mvn deploy -DskipTests
+  only:
+    - master
+
+Explanation:
+
+stages: The pipeline has two stages: build and deploy.
+
+build: This job uses the Maven Docker image to compile the project and generate the JAR file (mvn clean install).
+
+deploy: This job uses the mvn deploy command to push the generated JAR file to the Nexus repository. The -DskipTests option is used to skip tests during the deployment.
+
+This job is only triggered on the master branch, ensuring that only stable versions are deployed to Nexus.
+
+
+
+
+---
+
+6. Secure Nexus Authentication in GitLab CI
+
+To authenticate GitLab with Nexus securely, you need to configure credentials in the .gitlab-ci.yml file. It’s important not to expose your credentials in the file itself. Instead, use GitLab's CI/CD secrets to securely manage your Nexus credentials.
+
+1. Go to GitLab -> Project Settings -> CI / CD -> Variables.
+
+
+2. Add variables for the Nexus credentials (e.g., NEXUS_USERNAME and NEXUS_PASSWORD).
+
+
+3. Modify the pom.xml to include the credentials using Maven's settings.
+
+
+
+Example settings.xml (used in your .gitlab-ci.yml):
+
+<servers>
+    <server>
+        <id>nexus-releases</id>
+        <username>${env.NEXUS_USERNAME}</username>
+        <password>${env.NEXUS_PASSWORD}</password>
+    </server>
+    <server>
+        <id>nexus-snapshots</id>
+        <username>${env.NEXUS_USERNAME}</username>
+        <password>${env.NEXUS_PASSWORD}</password>
+    </server>
+</servers>
+
+In your .gitlab-ci.yml, ensure you pass the credentials:
+
+deploy:
+  stage: deploy
+  image: maven:3.8.1-jdk-11
+  script:
+    - mvn deploy -DskipTests
+  only:
+    - master
+  variables:
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+
+
+---
+
+7. Conclusion
+
+In summary, GitLab CI/CD can be easily configured to build your application and push the artifacts (like JAR files) to a Nexus repository. The key steps involve:
+
+1. Configuring the pom.xml to define the Nexus repository and Maven deployment plugin.
+
+
+2. Defining a CI/CD pipeline in .gitlab-ci.yml to automate the build and deployment process.
+
+
+3. Using secure credentials to authenticate with Nexus.
+
+
+
+By automating the deployment process, you ensure that your artifacts are consistently and securely pushed to Nexus, improving the efficiency and reliability of your software development lifecycle.
+
+
+---
+
+Questions and Discussion:
+
+Feel free to ask any questions or share your experiences with integrating Nexus and GitLab CI/CD!
+
