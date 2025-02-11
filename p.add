@@ -1,0 +1,45 @@
+Here's a concise slide outline for your PowerPoint presentation, focused on using Ansible to modify the configuration of 100 machines:
+
+
+---
+
+Slide Title: Managing 100 Machines with Ansible
+
+Introduction:
+
+Goal: Modify configurations across 100 machines simultaneously.
+
+Tool: Ansible - a powerful automation tool for managing multiple systems.
+
+
+Steps:
+
+1. Prepare Inventory: Create an inventory file listing the 100 machines.
+
+
+2. Write Playbook: Develop an Ansible playbook defining the configuration changes (e.g., editing /etc/hostname).
+
+
+3. Execute Playbook: Run the playbook to apply changes across all machines.
+
+
+
+Benefits:
+
+Scalability: Easily manage hundreds of machines.
+
+Efficiency: Apply changes in parallel, reducing manual effort.
+
+Consistency: Ensure uniform configuration across all systems.
+
+
+Conclusion:
+
+Ansible streamlines configuration management, even for large-scale environments.
+
+
+
+---
+
+This slide presents the key points succinctly for your audience.
+
