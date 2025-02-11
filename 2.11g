@@ -1,0 +1,165 @@
+明白了，你希望用户通过手动触发来选择执行哪些任务，但又不希望界面上出现太多的手动触发选项，导致界面复杂。通常，GitLab CI/CD 提供了 when: manual 来让作业手动触发，但如果你有多个远程机器和多个脚本，可能会导致每个作业都有手动触发选项，造成选择框太多。
+
+为了解决这个问题，有几种优化方式，让用户在手动触发时仍然能够选择执行哪些任务，同时减少界面的复杂性。
+
+1. 将任务分组，减少选项
+
+将任务分组到阶段（stages）中，或者根据功能分组，可以减少用户在手动触发时需要选择的选项。这样，用户只需要选择更少的作业。
+
+示例：
+
+假设你有 6 台机器和 3 种脚本，用户可能只希望选择某一组机器和脚本来执行。
+
+.gitlab-ci.yml：
+
+stages:
+  - deploy_group1
+  - deploy_group2
+
+# Group 1: Deploy on host1, host2, host3
+deploy_group1:
+  stage: deploy_group1
+  script:
+    - echo "Deploying script1.sh on host1"
+    - ssh host1 "bash -s" < script1.sh
+    - echo "Deploying script1.sh on host2"
+    - ssh host2 "bash -s" < script1.sh
+    - echo "Deploying script1.sh on host3"
+    - ssh host3 "bash -s" < script1.sh
+  when: manual  # User can trigger this manually
+
+# Group 2: Deploy on host4, host5, host6
+deploy_group2:
+  stage: deploy_group2
+  script:
+    - echo "Deploying script2.sh on host4"
+    - ssh host4 "bash -s" < script2.sh
+    - echo "Deploying script2.sh on host5"
+    - ssh host5 "bash -s" < script2.sh
+    - echo "Deploying script2.sh on host6"
+    - ssh host6 "bash -s" < script2.sh
+  when: manual  # User can trigger this manually
+
+在这个例子中，用户手动触发时将只会看到两个选项：deploy_group1 或 deploy_group2，而不是分别选择每台机器和每个脚本。
+
+2. 使用手动选择参数（variables）来精简选择项
+
+你可以通过 GitLab CI 的 variables 以及 when: manual 来让用户在触发时选择要执行的脚本或机器。通过设置一些参数（例如脚本或机器的选择），可以让用户输入或选择执行的任务。
+
+示例：
+
+通过使用 GitLab 的 CI/CD 环境变量，用户可以在手动触发时选择执行不同的脚本。你可以定义一个变量，并通过该变量来决定哪些任务会被执行。
+
+.gitlab-ci.yml：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - |
+      if [ "$HOST" == "host1" ]; then
+        echo "Deploying script1.sh on host1"
+        ssh host1 "bash -s" < script1.sh
+      elif [ "$HOST" == "host2" ]; then
+        echo "Deploying script2.sh on host2"
+        ssh host2 "bash -s" < script2.sh
+      fi
+  when: manual
+  variables:
+    HOST: "host1"  # Default value
+
+在这个例子中，用户手动触发时会有一个输入框来选择 HOST 变量的值，用户可以选择 host1、host2 等，然后执行相应的脚本。
+
+3. 分层触发，逐步选择
+
+你可以通过多级手动触发来引导用户选择不同的选项。第一级让用户选择需要的脚本，第二级让用户选择机器，最后触发对应的任务。
+
+例如：
+
+第一级作业：选择脚本
+
+第二级作业：选择机器
+
+
+示例：
+
+.gitlab-ci.yml：
+
+stages:
+  - select_script
+  - deploy
+
+# First stage: Select which script to deploy
+select_script:
+  stage: select_script
+  script:
+    - echo "Please select which script to deploy"
+  when: manual
+  allow_failure: false
+
+# Second stage: Deploy the selected script to hosts
+deploy_script1:
+  stage: deploy
+  script:
+    - echo "Deploying script1.sh to hosts"
+    - ssh host1 "bash -s" < script1.sh
+    - ssh host2 "bash -s" < script1.sh
+  when: manual
+  only:
+    - master
+  dependencies:
+    - select_script
+
+deploy_script2:
+  stage: deploy
+  script:
+    - echo "Deploying script2.sh to hosts"
+    - ssh host1 "bash -s" < script2.sh
+    - ssh host2 "bash -s" < script2.sh
+  when: manual
+  only:
+    - master
+  dependencies:
+    - select_script
+
+通过这种方式，用户首先触发 select_script 作业来选择要执行的脚本，然后可以选择触发 deploy_script1 或 deploy_script2，每个作业只涉及一个脚本，减少了界面上的选择项。
+
+4. 创建一个总的触发脚本
+
+你还可以创建一个总的触发器脚本来允许用户在一个页面选择所有的任务。
+
+示例：
+
+.gitlab-ci.yml：
+
+stages:
+  - trigger
+
+trigger_tasks:
+  stage: trigger
+  script:
+    - echo "Choose which script and hosts to deploy to"
+    - bash trigger_deploy.sh $SCRIPT $HOSTS
+  when: manual
+
+在 trigger_deploy.sh 脚本中，你可以写逻辑来根据传递的参数（如 SCRIPT 和 HOSTS）来控制哪些任务会被执行。例如，用户只需选择一个脚本和主机组合，脚本会自动执行任务，而不需要手动选择所有的组合。
+
+总结：
+
+1. 按功能分组任务，将任务按机器或脚本分组，以减少用户需要选择的选项数量。
+
+
+2. 使用 variables 让用户选择执行的机器和脚本，避免过多的手动选择。
+
+
+3. 分级触发作业，让用户逐步选择任务，避免界面上有太多选项。
+
+
+4. 创建总的触发器脚本，允许用户在一个页面选择任务，进一步简化操作界面。
+
+
+
+这些方法能够有效减少用户手动触发时需要选择的项，从而使 GitLab CI/CD 的界面更加简洁和易于管理。
+
