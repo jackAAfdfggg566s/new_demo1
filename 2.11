@@ -1,0 +1,153 @@
+如果你有多个远程机器和多个脚本需要执行，确实会导致 GitLab CI/CD 中有大量的手动触发状态（state）。这种情况常见于需要对多台机器运行不同的脚本，比如在分布式环境下执行任务。
+
+为了解决这个问题并简化 GitLab CI/CD 管道，您可以采取以下几种优化方式：
+
+1. 动态分配作业（jobs）
+
+通过使用 GitLab CI 的动态作业生成，可以为不同的机器和脚本动态创建作业，而不需要为每个机器和脚本组合手动创建单独的作业。这样可以减少重复的代码和手动触发的状态。
+
+这可以通过 matrix 或 parallel 等方式来实现。
+
+2. 使用 matrix 和 parallel 来自动化分配任务
+
+通过 matrix 配置或并行执行（parallel），你可以将多个任务组合成一个更简洁的流程，而不是为每台机器和每个脚本创建单独的作业。
+
+使用 matrix 来自动化任务
+
+如果每台机器都需要执行相同的脚本，只是参数或目标机器不同，可以使用 matrix 来自动生成多个作业。
+
+例如，如果你有 3 种脚本（script1.sh、script2.sh、script3.sh），并且在 6 台远程机器上执行它们（每台机器都需要运行所有 3 个脚本），那么可以使用如下方式：
+
+stages:
+  - deploy
+
+matrix:
+  - SCRIPT: "script1.sh"
+    HOSTS: "host1 host2 host3 host4 host5 host6"
+  - SCRIPT: "script2.sh"
+    HOSTS: "host1 host2 host3 host4 host5 host6"
+  - SCRIPT: "script3.sh"
+    HOSTS: "host1 host2 host3 host4 host5 host6"
+
+deploy:
+  stage: deploy
+  script:
+    - for HOST in $HOSTS; do
+        echo "Running $SCRIPT on $HOST"
+        ssh $HOST "bash -s" < $SCRIPT;
+      done
+
+3. 使用 trigger 来分配任务
+
+你可以将这些作业拆分成多个子管道，并使用 GitLab 的 trigger 机制来触发不同的子任务。这会将工作分配给不同的子管道，从而简化主管道。
+
+主管道 (.gitlab-ci.yml)：
+
+stages:
+  - deploy
+
+trigger_deploy:
+  stage: deploy
+  trigger:
+    project: 'group/project'
+    branch: 'main'
+    strategy: depend
+
+子管道（deploy.yml）：
+
+stages:
+  - deploy
+
+deploy_host1:
+  stage: deploy
+  script:
+    - echo "Deploying on host1"
+    - ssh host1 "bash -s" < script1.sh
+    - ssh host1 "bash -s" < script2.sh
+
+deploy_host2:
+  stage: deploy
+  script:
+    - echo "Deploying on host2"
+    - ssh host2 "bash -s" < script1.sh
+    - ssh host2 "bash -s" < script2.sh
+
+deploy_host3:
+  stage: deploy
+  script:
+    - echo "Deploying on host3"
+    - ssh host3 "bash -s" < script1.sh
+    - ssh host3 "bash -s" < script2.sh
+
+在这个例子中，主管道只触发一个子管道，而子管道会根据每个机器的配置执行相应的脚本。
+
+4. 通过循环简化多个作业
+
+如果每个远程机器都执行相同的脚本，但每个机器的执行是独立的，您可以通过 for 循环将这些作业整合成一个作业，而不是为每台机器手动创建单独的作业。
+
+示例：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - |
+      for HOST in host1 host2 host3 host4 host5 host6; do
+        for SCRIPT in script1.sh script2.sh script3.sh; do
+          echo "Running $SCRIPT on $HOST"
+          ssh $HOST "bash -s" < $SCRIPT;
+        done
+      done
+
+5. 动态生成作业
+
+通过使用 GitLab CI 的 include 配置，您可以将所有的脚本配置和机器配置拆分成多个文件并进行动态加载。例如，您可以把每台机器的执行配置放到单独的文件中。
+
+示例：
+
+hosts.yml：
+
+host1:
+  - script1.sh
+  - script2.sh
+  - script3.sh
+host2:
+  - script1.sh
+  - script2.sh
+  - script3.sh
+
+主 .gitlab-ci.yml：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - |
+      for HOST in $(cat hosts.yml | grep -o 'host[0-9]*'); do
+        for SCRIPT in $(cat hosts.yml | grep $HOST | awk '{print $2}'); do
+          echo "Running $SCRIPT on $HOST"
+          ssh $HOST "bash -s" < $SCRIPT;
+        done
+      done
+
+总结
+
+1. 使用 matrix 来根据机器和脚本的组合动态创建作业，减少了代码重复和手动触发的工作量。
+
+
+2. 使用 trigger 来将复杂的作业分解为多个子管道。
+
+
+3. 通过循环和动态生成作业 来简化手动创建多个作业的需求，尤其是在相似任务上。
+
+
+4. 拆分配置文件，如使用 include 来动态加载远程机器和脚本配置，进一步提高灵活性和可维护性。
+
+
+
+这些方法有助于减少手动触发的作业数量，使 GitLab CI/CD 管道更加简洁、自动化、易于管理。
+
