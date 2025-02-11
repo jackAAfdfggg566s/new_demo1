@@ -1,0 +1,163 @@
+在 GitLab CI/CD 中，您可以通过 GitLab CI 的手动触发作业 (when: manual) 来让用户选择任务，但 GitLab 并不直接提供一个下拉框供用户选择选项（例如选择脚本或机器）。然而，您可以利用 CI/CD 环境变量 和 GitLab Web UI 输入框 来让用户在触发作业时选择不同的选项。
+
+GitLab CI 本身并没有提供原生的“下拉框”功能，但是您可以通过以下方法模拟类似的功能：
+
+1. 通过 GitLab Web UI 的输入框选择参数（CI/CD variables）
+
+用户可以通过 CI/CD variables 的方式在手动触发时输入参数，模拟选择下拉框。
+
+步骤：
+
+1. 在 .gitlab-ci.yml 中定义 manual 作业，并在作业中使用 variables。
+
+
+2. 用户在触发作业时可以填写这些变量的值，模拟选择框的效果。
+
+
+
+示例：
+
+假设您想让用户在触发作业时选择要执行的脚本，可以通过传递一个变量（如 SCRIPT）来完成。
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - |
+      if [ "$SCRIPT" == "script1" ]; then
+        echo "Running script1.sh"
+        ssh host1 "bash -s" < script1.sh
+      elif [ "$SCRIPT" == "script2" ]; then
+        echo "Running script2.sh"
+        ssh host2 "bash -s" < script2.sh
+      elif [ "$SCRIPT" == "script3" ]; then
+        echo "Running script3.sh"
+        ssh host3 "bash -s" < script3.sh
+      fi
+  when: manual
+  variables:
+    SCRIPT: "script1"  # Default value
+
+用户触发作业时的操作：
+
+1. 当用户手动触发作业时，GitLab 会提示用户输入变量值（如 SCRIPT）。这里您可以将 SCRIPT 设置为 script1、script2 或 script3。
+
+
+2. 在 GitLab CI/CD 的触发作业界面，GitLab 会显示一个文本框让用户输入 SCRIPT 变量的值，但这不是一个下拉框。
+
+
+
+2. 通过 GitLab Web UI 的 "Manual Trigger with Variables" 设置参数
+
+在 GitLab Web UI 手动触发作业时，用户可以通过选择不同的变量值来“模拟”下拉框的效果。
+
+操作步骤：
+
+1. 在 GitLab 中进入 CI/CD Pipelines 页面。
+
+
+2. 选择一个已经存在的手动作业（带有 when: manual 的作业）。
+
+
+3. 在 Run Pipeline 对话框中，您可以定义 CI/CD variables，这些变量将作为参数传递给您的作业。
+
+
+4. 用户可以输入对应的值，类似于下拉框的选择。
+
+
+
+用户界面示例：
+
+当用户点击“手动触发”时，GitLab 会显示一个对话框，用户可以在 变量 区域看到输入框，填写不同的脚本名称（例如 script1, script2, script3），然后触发该作业。
+
+3. 通过 GitLab CI/CD Environment 设置默认值
+
+如果您希望用户选择的变量有固定的值，可以将该变量的默认值设置为 GitLab CI/CD 环境变量。通过这种方式，您可以提供默认值，但用户仍然可以在手动触发时修改这些值。
+
+示例：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - |
+      if [ "$SCRIPT" == "script1" ]; then
+        echo "Running script1.sh"
+        ssh host1 "bash -s" < script1.sh
+      elif [ "$SCRIPT" == "script2" ]; then
+        echo "Running script2.sh"
+        ssh host2 "bash -s" < script2.sh
+      elif [ "$SCRIPT" == "script3" ]; then
+        echo "Running script3.sh"
+        ssh host3 "bash -s" < script3.sh
+      fi
+  when: manual
+  variables:
+    SCRIPT: "script1"  # Default value
+    HOST: "host1"      # Default value
+
+4. 外部解决方案（如通过 GitLab API）
+
+如果您需要更复杂的用户界面，例如提供图形化的下拉框，可以通过 GitLab API 自定义一些外部解决方案，来创建一个更加复杂的触发器系统，但这需要额外的开发工作。
+
+5. 通过 GitLab CI/CD  only/except 筛选不同任务
+
+如果选择非常明确，您还可以通过 only 或 except 配置将作业筛选为仅在特定条件下触发，而不需要手动选择任务。
+
+示例：
+
+stages:
+  - deploy
+
+deploy_script1:
+  stage: deploy
+  script:
+    - ssh host1 "bash -s" < script1.sh
+  when: manual
+  only:
+    variables:
+      - $SCRIPT == "script1"
+
+deploy_script2:
+  stage: deploy
+  script:
+    - ssh host2 "bash -s" < script2.sh
+  when: manual
+  only:
+    variables:
+      - $SCRIPT == "script2"
+
+deploy_script3:
+  stage: deploy
+  script:
+    - ssh host3 "bash -s" < script3.sh
+  when: manual
+  only:
+    variables:
+      - $SCRIPT == "script3"
+
+用户可以手动触发某个作业（例如 deploy_script1），而该作业仅在 SCRIPT=script1 时触发。
+
+总结：
+
+虽然 GitLab CI/CD 本身不提供直接的下拉框选项，您仍然可以通过以下方法简化用户输入：
+
+1. 使用 环境变量 和 手动触发作业，让用户在 GitLab UI 中输入参数，模拟选择框的效果。
+
+
+2. 通过 CI/CD variables 让用户手动输入不同的脚本名称或主机，选择性地执行不同任务。
+
+
+3. 提供默认值，但允许用户根据需要修改这些变量。
+
+
+4. 通过 API 或 自定义外部工具，实现更加复杂的用户交互（如果需要）。
+
+
+
+这些方法能有效减少手动触发作业时的复杂性，并为用户提供一定的灵活性。
+
