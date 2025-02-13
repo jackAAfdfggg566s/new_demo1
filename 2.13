@@ -1,0 +1,84 @@
+在 GitLab CI/CD 中，默认情况下，job 是按顺序执行的，只要前一个 job 完成后，后一个 job 会自动执行。但是，要确保后续的 process job 能在 generate job 完成后执行并读取保存的 artifact 文件，我们需要确保以下几点：
+
+1. Job 的顺序：GitLab 会根据 stages 来决定 job 的执行顺序，process job 会在 generate job 完成之后执行。
+
+
+2. 确保生成的 artifact 被传递到后续的 job：通过 artifacts 保证文件在 job 之间传递。
+
+
+3. 没有失败：如果 generate job 失败，process job 不会被执行。
+
+
+
+完整的 .gitlab-ci.yml 配置，确保 generate 完成后，process 立即运行
+
+在以下示例中，generate job 会生成文件并保存为 artifact，process job 会在 generate 完成后立即执行，读取该文件。
+
+示例 .gitlab-ci.yml 文件：
+
+stages:
+  - generate
+  - process
+
+# 引入模板
+include:
+  - template: template.yml
+
+# 生成文件的 job
+generate:
+  stage: generate
+  script:
+    - echo "Starting file generation"
+  extends: .generate_file  # 从模板继承
+
+# 处理文件的 job
+process:
+  stage: process
+  script:
+    - echo "Reading and processing the file from template..."
+    - cat output.txt
+    - VALUE=$(cat output.txt)
+    - echo "The value from the file is: $VALUE"
+  dependencies:
+    - generate  # 确保 process 在 generate 完成后运行，并获取生成的 artifact
+
+解释：
+
+1. stages：定义了两个阶段，generate 和 process，process 会在 generate 完成后运行。
+
+
+2. extends: .generate_file：在 generate job 中，我们使用了 extends 来引用模板定义的内容，该模板会生成 output.txt 文件并保存为 artifact。
+
+
+3. dependencies：在 process job 中，我们显式地使用 dependencies 来确保 process job 会等待 generate job 完成，并能够访问 generate job 的 artifact 文件。process job 会从 generate job 中获取 output.txt 文件。
+
+
+
+关键点：
+
+dependencies：dependencies 字段明确指定当前 job 需要等待哪些 job 完成，并从这些 job 中获取其生成的 artifacts。process job 依赖于 generate job，因此 process 会在 generate 完成后自动执行。
+
+artifacts：generate job 会通过 artifacts 配置将 output.txt 文件传递给后续的 job，即 process。
+
+
+备注：
+
+如果 generate job 成功完成，process job 会自动执行。如果 generate job 失败，process job 不会执行。
+
+如果 process 需要更多的文件或其他 dependencies，你可以根据需要进一步指定。
+
+
+流程：
+
+1. generate job 生成 output.txt 并保存为 artifact。
+
+
+2. process job 在 generate job 完成后运行，并读取 output.txt 内容。
+
+
+3. process job 输出读取到的文件内容。
+
+
+
+通过这种方式，你可以确保在 generate 完成后，process job 会直接运行，并且能够读取生成的文件。
+
