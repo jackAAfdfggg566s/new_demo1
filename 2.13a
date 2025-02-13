@@ -1,0 +1,67 @@
+在 GitLab CI/CD 中，默认情况下，process 阶段的 job 是不会自动运行的，因为 GitLab 会按照 stages 中的顺序依次执行 job，但是 每个 job 都是独立的，需要依赖某些条件才能执行，尤其是在你使用 手动触发（when: manual） 的情况下。
+
+1. when: manual 的行为：
+
+when: manual 会使 job 变成 手动触发，也就是说，GitLab 会等待你手动点击执行按钮，而不会自动执行。
+
+所以，如果 process job 使用了 when: manual，它不会自动运行，即使 generate job 已经执行完毕。
+
+
+2. 如何确保 job 顺序执行？
+
+如果你希望 process 在 generate 执行后自动运行，可以使用 needs 来明确指定 job 之间的执行顺序。这样，即使你手动触发了 generate，process 也会在 generate 完成后自动运行。
+
+3. 使用 needs 确保自动执行
+
+你可以通过 needs 指定 process job 依赖于 generate job，这样 process 会在 generate 完成后自动执行，无论 generate 是否是手动触发的。
+
+示例：
+
+stages:
+  - generate
+  - process
+
+# generate job：手动触发
+generate:
+  stage: generate
+  script:
+    - echo "This is a test value from template" > output.txt
+  artifacts:
+    paths:
+      - output.txt  # 保存生成的文件作为 artifact
+  when: manual  # 手动触发
+
+# process job：自动运行，依赖于 generate 完成
+process:
+  stage: process
+  script:
+    - echo "Reading the parameter from the file..."
+    - PARAM=$(cat output.txt)  # 读取 output.txt 文件中的参数
+    - echo "The parameter is: $PARAM"
+  needs:
+    - job: generate  # 确保 process 在 generate 完成后执行
+  when: on_success  # 自动触发，依赖于 generate 执行成功
+
+解释：
+
+generate job：使用 when: manual，表示 generate 需要手动触发才能开始执行。
+
+process job：
+
+使用 needs 确保 process job 在 generate 完成后执行。
+
+when: on_success：表示 process 会在 generate 成功完成后自动执行，而无需手动干预。
+
+
+
+总结：
+
+1. 如果你希望 process 在 generate 完成后自动执行，即使 generate 是手动触发的，你需要使用 needs 来确保依赖关系，并且使用 when: on_success 来自动触发 process job。
+
+
+2. 仅仅使用 when: manual 会使 process 变成手动触发，因此如果你希望自动运行，needs 是必不可少的。
+
+
+
+希望这个解答能帮助你解决问题，如果有更多问题，请随时提问！
+
