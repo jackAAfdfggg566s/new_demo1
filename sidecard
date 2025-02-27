@@ -1,0 +1,107 @@
+下面是一个具体的例子，假设你有一个名为 my-app-pod 的 Pod，其中包含一个主容器和一个 sidecar 容器，命名为 my-sidecar-container。这个 Pod 位于 default 命名空间中。
+
+1. 查看所有 Pod 的详细信息
+
+首先，查看 default 命名空间中的所有 Pod，并确认你的 Pod 存在：
+
+kubectl get pods -n default
+
+输出示例：
+
+NAME             READY   STATUS    RESTARTS   AGE
+my-app-pod       2/2     Running   0          5m
+another-pod      1/1     Running   0          10m
+
+可以看到 my-app-pod 正在运行。
+
+2. 查看特定 Pod 的详细信息
+
+接下来，查看 my-app-pod 中的所有容器（包括主容器和 sidecar 容器）：
+
+kubectl describe pod my-app-pod -n default
+
+输出示例：
+
+Name:           my-app-pod
+Namespace:      default
+Priority:       0
+Node:           ip-192-168-1-1.ec2.internal/192.168.1.1
+Start Time:     Tue, 27 Feb 2025 10:00:00 +0000
+Labels:         app=my-app
+Annotations:    <none>
+Status:         Running
+IP:             192.168.1.100
+Containers:
+  my-main-container:
+    Container ID:   docker://12345abcd...
+    Image:          my-main-image:v1
+    Port:           80/TCP
+    Host Port:      0/TCP
+    State:          Running
+    Started:        Tue, 27 Feb 2025 10:00:10 +0000
+    Ready:          True
+    Restart Count:  0
+  my-sidecar-container:
+    Container ID:   docker://67890efgh...
+    Image:          my-sidecar-image:v1
+    Port:           8080/TCP
+    Host Port:      0/TCP
+    State:          Running
+    Started:        Tue, 27 Feb 2025 10:00:11 +0000
+    Ready:          True
+    Restart Count:  0
+Conditions:
+  Type              Status
+  Initialized       True
+  Ready             True
+  ContainersReady   True
+  PodScheduled      True
+Volumes:
+  <volume-info>
+QoS Class:       BestEffort
+Node-Selectors:  <none>
+Tolerations:     <none>
+Events:
+  Type    Reason     Age   From                    Message
+  ----    ------     ----  ----                    -------
+  Normal  Scheduled  5m    default-scheduler       Successfully assigned default/my-app-pod to ip-192-168-1-1.ec2.internal
+  Normal  Pulling    5m    kubelet, ip-192-168-1-1  Pulling image "my-main-image:v1"
+  Normal  Pulled     5m    kubelet, ip-192-168-1-1  Successfully pulled image "my-main-image:v1"
+  Normal  Started    5m    kubelet, ip-192-168-1-1  Started container my-main-container
+  Normal  Pulling    5m    kubelet, ip-192-168-1-1  Pulling image "my-sidecar-image:v1"
+  Normal  Pulled     5m    kubelet, ip-192-168-1-1  Successfully pulled image "my-sidecar-image:v1"
+  Normal  Started    5m    kubelet, ip-192-168-1-1  Started container my-sidecar-container
+
+在这个输出中，你可以看到 my-app-pod 中有两个容器：my-main-container（主容器）和 my-sidecar-container（sidecar 容器）。
+
+3. 查看 sidecar 容器的日志
+
+如果你想查看 sidecar 容器的日志，可以使用以下命令：
+
+kubectl logs my-app-pod -c my-sidecar-container -n default
+
+输出示例：
+
+2025-02-27 10:00:12 - Sidecar container started.
+2025-02-27 10:00:15 - Processing request.
+
+这将显示 my-sidecar-container 容器的日志。
+
+4. 查看 Pod 中所有容器的日志
+
+如果你不确定容器的名称，或者想查看 Pod 中所有容器的日志，可以使用以下命令：
+
+kubectl logs my-app-pod -n default --all-containers=true
+
+输出示例：
+
+my-main-container:
+2025-02-27 10:00:10 - Main container started.
+my-sidecar-container:
+2025-02-27 10:00:12 - Sidecar container started.
+2025-02-27 10:00:15 - Processing request.
+
+这将显示 my-app-pod 中所有容器（包括主容器和 sidecar 容器）的日志。
+
+通过这些命令，你可以轻松地查看 EKS 中的 sidecar 容器及其相关信息。如果你有更多具体的问题或进一步的要求，欢迎告诉我！
+
