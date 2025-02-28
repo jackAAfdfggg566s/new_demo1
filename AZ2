@@ -1,0 +1,96 @@
+以下是一个 Bash 脚本示例，它可以根据 Availability Zone (AZ)、命名空间 (Namespace) 和 标签 (Label) 来查找 Kubernetes 集群中符合条件的 Pod。
+
+脚本：find_pods_by_az_and_label.sh
+
+#!/bin/bash
+
+# 检查是否传入了必需的参数
+if [ "$#" -lt 3 ]; then
+    echo "Usage: $0 <availability-zone> <namespace> <label-selector>"
+    echo "Example: $0 us-east-1a default app=frontend"
+    exit 1
+fi
+
+# 从命令行参数中获取 AZ、命名空间和标签
+AZ=$1
+NAMESPACE=$2
+LABEL_SELECTOR=$3
+
+# 获取在特定 AZ 中的节点
+echo "Getting nodes in AZ: $AZ"
+NODES=$(kubectl get nodes --selector=failure-domain.beta.kubernetes.io/zone=$AZ -o custom-columns=":metadata.name")
+
+if [ -z "$NODES" ]; then
+    echo "No nodes found in AZ $AZ."
+    exit 1
+fi
+
+# 打印所有节点
+echo "Found the following nodes in AZ $AZ:"
+echo "$NODES"
+
+# 获取在特定节点上运行的 Pods
+echo "Getting pods in namespace '$NAMESPACE' with label selector '$LABEL_SELECTOR' on these nodes:"
+
+# 遍历每个节点并获取该节点上的 Pod
+for NODE in $NODES; do
+    echo "Checking Pods on node: $NODE"
+    kubectl get pods -n $NAMESPACE --selector=$LABEL_SELECTOR --field-selector spec.nodeName=$NODE
+done
+
+脚本说明：
+
+1. 参数输入：
+
+第一个参数：Availability Zone (AZ)，用于过滤节点。
+
+第二个参数：Namespace，用于指定需要查找的命名空间。
+
+第三个参数：Label Selector，用于根据标签选择 Pod。
+
+
+
+2. 获取节点：
+
+使用 kubectl get nodes --selector=failure-domain.beta.kubernetes.io/zone=$AZ 获取在指定 AZ 下的所有节点。
+
+
+
+3. 获取 Pods：
+
+遍历每个节点，使用 kubectl get pods 命令根据节点名、命名空间和标签选择器过滤 Pods。
+
+
+
+
+使用示例：
+
+假设你要查找 us-east-1a 区域内的 default 命名空间中带有标签 app=frontend 的所有 Pod，使用以下命令：
+
+./find_pods_by_az_and_label.sh us-east-1a default app=frontend
+
+输出示例：
+
+Getting nodes in AZ: us-east-1a
+Found the following nodes in AZ us-east-1a:
+ip-10-0-0-123.ec2.internal
+ip-10-0-1-234.ec2.internal
+Checking Pods on node: ip-10-0-0-123.ec2.internal
+NAME          READY   STATUS    RESTARTS   AGE   IP           NODE                                NOMINATED NODE   READINESS GATES
+frontend-pod  1/1     Running   0          5d    10.244.1.2   ip-10-0-0-123.ec2.internal           <none>           <none>
+Checking Pods on node: ip-10-0-1-234.ec2.internal
+NAME          READY   STATUS    RESTARTS   AGE   IP           NODE                                NOMINATED NODE   READINESS GATES
+frontend-pod2 1/1     Running   0          5d    10.244.2.3   ip-10-0-1-234.ec2.internal           <none>           <none>
+
+注意事项：
+
+该脚本假设你已经配置好 kubectl 和 AWS CLI，能够访问你的 Kubernetes 集群。
+
+确保在执行脚本之前已经对脚本文件赋予执行权限：
+
+
+chmod +x find_pods_by_az_and_label.sh
+
+该脚本仅适用于单一的 AZ。如果你需要处理多个 AZ，可以进一步修改脚本以支持多个 AZ 的查询。
+
+
