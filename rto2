@@ -1,0 +1,115 @@
+了解了，既然是通过 AWS FIS（故障注入模拟）触发的故障，那么故障发生时间的获取可以更为直接，因为您可以通过 AWS FIS 的日志和事件来跟踪故障的具体时间点。
+
+通过 AWS FIS 触发的故障事件
+
+AWS FIS 提供了故障注入实验的功能，用于模拟生产环境中的故障并测试系统的响应能力。在 AWS FIS 中，您可以模拟各种类型的故障，例如 RDS 实例重启、实例停止、故障转移等。
+
+获取开始时间（故障发生时间点）
+
+如果您是通过 AWS FIS 创建并执行了故障注入实验，您可以通过以下方式获取 开始时间 和 故障发生时间。
+
+1. 查看 AWS FIS 实验的状态和事件
+
+AWS FIS 会在执行故障注入实验时记录相关事件信息，包括故障开始和故障结束的时间。这些信息可以帮助您定位 故障发生的时间点。
+
+步骤：
+
+1. 登录 AWS 管理控制台。
+
+
+2. 导航到 AWS FIS 控制台。
+
+
+3. 在 FIS 实验 部分，选择您正在进行的故障注入实验。
+
+
+4. 查看 实验日志 或 实验事件，您可以找到实验开始、故障注入以及其他事件的时间。
+
+
+
+获取实验详细信息：
+
+如果您想通过 AWS CLI 获取实验的详细信息，可以使用 describe-experiment 命令：
+
+aws fis describe-experiment --experiment-id <experiment-id>
+
+<experiment-id>：替换为您的 AWS FIS 实验 ID。
+
+
+该命令会返回实验的详细信息，包括实验的 开始时间 和 结束时间，从而帮助您获取故障发生的时间。
+
+2. 通过 AWS CloudWatch 事件日志分析故障时间
+
+如果您使用 AWS FIS 执行了故障注入，您可以通过 CloudWatch 事件来查看与故障相关的事件，特别是当 FIS 触发了实例的重启或故障转移时。
+
+例如，您可以查找是否有与 FIS 相关的事件，特别是与 RDS 实例重启或故障转移相关的事件。
+
+您可以使用 aws events 命令查询 CloudWatch 事件：
+
+aws events describe-rule --name <rule-name>
+
+<rule-name>：替换为相关 CloudWatch 事件规则的名称。
+
+
+通过 CloudWatch，您可以查看 FIS 实验所触发的事件，并通过时间戳确定故障发生的时间。
+
+3. 查看 FIS 日志
+
+AWS FIS 会记录每个实验的详细日志，记录故障注入的时间点和实验结果。可以通过 AWS CloudTrail 或 FIS 的日志来获取详细信息。
+
+查询 CloudTrail 日志：
+
+您也可以通过 CloudTrail 查找 AWS FIS 的 API 调用记录，确认故障注入的具体时间。例如，FIS 会触发一些操作，比如停止/启动 RDS 实例，您可以查找这些操作的时间点。
+
+aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventSource,AttributeValue=fis.amazonaws.com --max-results 5
+
+这会列出最近的 FIS 操作记录，您可以查看事件的时间，进一步推测故障发生的时间。
+
+4. 结合 AWS FIS 实验时间与 RDS 事件日志
+
+通过结合 AWS FIS 实验的时间（故障开始时间）与 RDS 事件日志 中的 a new write writer was promoted 和 db instance restarted 事件的时间，您可以获得一个相对准确的故障发生时间点。
+
+查看 RDS 事件：
+
+aws rds describe-events --source-type db-instance --source-identifier <db-instance-id> --max-items 10
+
+输出示例：
+
+{
+    "Events": [
+        {
+            "SourceIdentifier": "your-db-instance-id",
+            "SourceType": "db-instance",
+            "Message": "A new write writer was promoted",
+            "EventCategories": ["Failover"],
+            "Date": "2025-03-02T12:10:00Z"
+        },
+        {
+            "SourceIdentifier": "your-db-instance-id",
+            "SourceType": "db-instance",
+            "Message": "DB instance restarted",
+            "EventCategories": ["Availability"],
+            "Date": "2025-03-02T12:10:01Z"
+        }
+    ]
+}
+
+通过 FIS 实验日志 和 RDS 事件日志 结合，您可以推断出 故障发生的时间点，通常故障发生在 a new write writer was promoted 事件前几秒。
+
+总结：
+
+1. FIS 实验日志 和 CloudWatch 事件日志 是确定故障发生时间的关键。FIS 会记录实验的执行时间，以及实验触发的故障的详细信息。
+
+
+2. 使用 AWS CLI 命令查看 FIS 实验的详细信息，如实验开始和结束时间。
+
+
+3. 结合 RDS 事件日志 和 FIS 实验，可以帮助确定故障发生的时间点。
+
+
+4. 通过 CloudTrail 查询 FIS 的 API 调用，进一步确认故障的准确时间。
+
+
+
+通过这些步骤，您应该能够准确地获取 故障发生的时间点 和 开始时间。如果您有其他问题或需要进一步澄清，请继续提问！
+
