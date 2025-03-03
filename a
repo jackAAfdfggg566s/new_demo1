@@ -1,0 +1,123 @@
+要构建一个 RDS 大盘（dashboard），并获取 老主实例 和 新主实例 信息，通常是为了监控 数据库主从切换 或 自动故障转移。通过 AWS 提供的一些工具和 API，您可以跟踪 RDS 实例的状态变化，并根据这些数据在大盘中显示老主和新主的切换情况。
+
+下面是几种常见方法，用于获取 老主实例 和 新主实例 的信息，并展示在监控大盘上。
+
+1. 使用 CloudWatch Logs 和 CloudWatch Metrics
+
+AWS 提供了 CloudWatch Logs 和 CloudWatch Metrics，可以帮助您监控 RDS 实例的状态变化，识别 主实例切换，并显示在大盘上。
+
+1.1 配置 RDS 事件通知
+
+首先，确保 RDS 实例启用了事件通知，这样您可以在故障转移或其他重要事件发生时收到通知。
+
+在 AWS 管理控制台中，选择 RDS 服务。
+
+选择您的 RDS 实例。
+
+配置 事件订阅，选择感兴趣的事件类型，例如：failover、DB instance restarted、DB instance promotion 等。
+
+配置 SNS 通知，让您的系统或管理员在 RDS 主实例切换时收到通知。
+
+
+1.2 监控 CloudWatch Metrics
+
+RDS 实例的 CloudWatch Metrics 提供了各种指标，包括实例的状态、CPU 使用率、内存、存储等。您可以监控以下几个指标来帮助识别主实例的切换：
+
+DBInstanceIdentifier：RDS 实例的唯一标识符。
+
+DBInstanceStatus：实例状态，如 available、failed、restoring、rebooting 等。
+
+PromotionStatus：如果是只读副本，检查其是否已经被提升为主实例。
+
+
+1.3 通过 CloudWatch Logs 获取事件
+
+可以通过 CloudWatch Logs Insights 来查询并过滤相关事件。例如，如果您启用了 RDS 的日志记录，可以查询 failover 和 promotion 事件，并通过日志信息判断 老主实例 和 新主实例。
+
+fields @timestamp, @message
+| filter @message like /failover|promotion/
+| sort @timestamp desc
+
+此查询可以帮助您提取关于实例切换的事件信息。
+
+1.4 CloudWatch Dashboard 创建
+
+在 CloudWatch 中创建一个自定义 Dashboard，显示 RDS 实例的状态、CPU 使用率、存储和其他指标。在此大盘上，您可以使用 CloudWatch Metrics 来监控主实例的切换。
+
+进入 CloudWatch 控制台，选择 Dashboards。
+
+创建一个新的 Dashboard，并添加 RDS 相关的 指标，例如 DBInstanceStatus 或 DBInstanceIdentifier，以及其他您关注的指标。
+
+通过设置图表、文本、数字等组件，将关键数据展示出来。
+
+
+2. 通过 RDS API 或 AWS SDK 获取主实例信息
+
+您可以使用 AWS SDK 或 CLI 查询 RDS 实例的状态和拓扑信息，获取 老主实例 和 新主实例 的信息。
+
+2.1 通过 AWS CLI 获取 RDS 实例信息
+
+使用 AWS CLI 查询 RDS 实例信息，并根据 PromotionStatus 判断是否为主实例。
+
+aws rds describe-db-instances --query 'DBInstances[].[DBInstanceIdentifier,DBInstanceStatus,PromotionStatus]' --output table
+
+此命令将列出所有 RDS 实例的信息，并显示 DBInstanceIdentifier（实例 ID）、DBInstanceStatus（状态）和 PromotionStatus（是否已提升为主实例）。
+
+2.2 使用 AWS SDK（如 Python Boto3）
+
+您可以通过 AWS SDK（例如 Boto3）来编程获取 RDS 实例的状态。
+
+import boto3
+
+rds = boto3.client('rds')
+
+# 获取所有 RDS 实例的信息
+response = rds.describe_db_instances()
+
+for instance in response['DBInstances']:
+    db_instance_identifier = instance['DBInstanceIdentifier']
+    db_instance_status = instance['DBInstanceStatus']
+    promotion_status = instance.get('PromotionStatus', 'N/A')  # 只读副本可能没有该字段
+
+    print(f"Instance: {db_instance_identifier}, Status: {db_instance_status}, Promotion Status: {promotion_status}")
+
+这段代码将列出所有 RDS 实例的标识符、状态和是否已提升为主实例的信息。
+
+2.3 获取故障转移（Failover）事件
+
+在 RDS Events 中查找是否有 Failover 事件，这通常表示主实例发生了故障转移。
+
+aws rds describe-events --source-type db-instance --source-id <DBInstanceIdentifier> --start-time <StartTime> --end-time <EndTime> --query 'Events[].[EventTime,Message]' --output table
+
+此命令可以显示特定 RDS 实例的事件，您可以筛选出故障转移相关的事件信息，帮助确定 老主实例 和 新主实例。
+
+3. 可视化 RDS 实例信息
+
+在 CloudWatch Dashboard 或 Grafana 中，您可以通过获取 RDS 的 CloudWatch Metrics、事件和 API 数据，构建一个实时监控面板，显示以下内容：
+
+RDS 实例状态：当前主实例的状态。
+
+主实例切换事件：通过日志或事件监控来显示主实例切换的历史记录。
+
+新主实例信息：展示当前的主实例信息，以及该实例的 CPU 使用率、内存、存储等指标。
+
+老主实例信息：展示上一个主实例的信息，可能通过历史日志来显示。
+
+
+总结：
+
+1. CloudWatch Logs 和 CloudWatch Metrics：用于监控 RDS 实例的状态变化、故障转移和主实例提升事件。
+
+
+2. AWS CLI 或 SDK：可以通过 API 获取 RDS 实例的状态信息，帮助识别老主和新主。
+
+
+3. 事件订阅：配置 RDS 事件订阅，接收故障转移和主实例提升的通知。
+
+
+4. 可视化：通过 CloudWatch Dashboards 或 Grafana 展示主实例切换、故障转移等信息。
+
+
+
+通过这些方法，您可以获取并展示 老主实例 和 新主实例 的信息，创建实时监控大盘，帮助您跟踪 RDS 实例的状态变化和故障转移情况。
+
