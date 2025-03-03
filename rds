@@ -1,0 +1,82 @@
+在 Amazon RDS 中，Writer 实例是负责处理写操作（如插入、更新、删除等）的主实例，而 Reader 实例是副本实例，主要用于处理只读操作。如果你有多个 RDS 实例，可能会有一个主实例和多个只读副本，通常情况下，你可以通过以下几种方式来确定哪个实例是 Writer（主实例）：
+
+1. 通过 AWS 管理控制台
+
+在 AWS 管理控制台中，你可以查看 RDS 实例的详细信息，来判断哪个实例是 Writer。
+
+1. 登录到 AWS 管理控制台。
+
+
+2. 导航到 RDS 服务。
+
+
+3. 在左侧的导航栏中，点击 Databases（数据库）。
+
+
+4. 在数据库列表中，查找你的 RDS 实例。
+
+
+5. 查看实例的 Role 列：
+
+如果实例是 Writer（主实例），则在 Role 字段会显示为 primary 或 writer。
+
+如果实例是 Reader（只读副本），则显示为 replica。
+
+
+
+
+2. 通过 AWS CLI
+
+你也可以使用 AWS CLI 来查询 RDS 实例的角色信息。运行以下命令可以查看 RDS 实例的角色：
+
+aws rds describe-db-instances --query "DBInstances[*].{DBInstanceIdentifier:DBInstanceIdentifier,Role:DBInstanceRole}" --output table
+
+在输出中，你将看到每个实例的角色信息， Role 会显示为 primary（Writer）或 replica（Reader）。
+
+3. 通过 RDS API (DescribeDBInstances)
+
+你可以使用 AWS SDK 或直接调用 RDS API 的 DescribeDBInstances 接口来获取实例的详细信息，检查实例的 DBInstanceRole 属性。
+
+示例请求：
+
+{
+  "DBInstanceIdentifier": "your-db-instance-id"
+}
+
+返回的结果中会包含 DBInstanceRole，你可以根据该值判断是否为 Writer 实例。
+
+4. 通过连接字符串判断
+
+对于 Aurora RDS（MySQL 或 PostgreSQL），你可以通过连接到集群的 端点 来确定哪个实例是 Writer。Aurora 集群有两个端点：
+
+Cluster Endpoint：始终指向 Writer 实例。
+
+Reader Endpoint：指向一个或者多个 Reader 实例。
+
+
+如果你连接到 Cluster Endpoint，那么连接的实例一定是 Writer 实例。
+
+示例：
+
+Writer 的连接字符串：<cluster-endpoint>:3306（MySQL）。
+
+Reader 的连接字符串：<reader-endpoint>:3306（MySQL）。
+
+
+5. 通过 CloudWatch Metrics
+
+如果你已经配置了 CloudWatch 监控，你可以查看 RDS 实例的 CPUUtilization、DiskWriteOps、DatabaseConnections 等指标。通常，Writer 实例的 CPU 和写入操作会比 Reader 实例高，因为它处理所有写请求。尽管这不是直接判断的方法，但它可以帮助你识别哪个实例可能是 Writer。
+
+总结：
+
+通过 AWS 控制台：直接查看实例的角色字段。
+
+通过 AWS CLI：使用 describe-db-instances 命令查看实例角色。
+
+通过连接字符串：如果是 Aurora，Cluster Endpoint 连接的是 Writer。
+
+通过 CloudWatch：查看 CPU 和磁盘写入操作等指标，间接判断哪个实例可能是 Writer。
+
+
+这些方法可以帮助你轻松地识别哪个实例是 Writer。
+
