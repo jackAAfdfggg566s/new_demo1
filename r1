@@ -1,0 +1,58 @@
+如果在 AWS 控制台 中，RDS Aurora 集群的实例的角色显示为 writer，但使用 AWS CLI 时，角色显示为 none，可能存在以下几个原因：
+
+1. Aurora 集群的角色信息显示方式不同
+
+在 AWS 控制台 中，Aurora 集群中的 Writer 实例会被明确标识为 writer，而副本实例会被标识为 reader。然而，使用 AWS CLI 查询时，可能因为某些原因，CLI 无法返回角色，尤其是对于正在运行中的实例，或者是某些 API 输出没有正确反映角色。
+
+
+2. 检查是否查询正确的实例
+
+确保你正在查询 Aurora 集群，而不是单独的 RDS 实例。Aurora 集群的实例在 AWS 控制台 中显示 writer 或 reader，但是 CLI 输出的角色可能显示为 none，因为它未正确识别为 writer 或 reader，或者没有副本实例。
+
+你可以检查当前查询的实例是否属于 Aurora 集群：
+
+aws rds describe-db-instances --query "DBInstances[*].{DBInstanceIdentifier:DBInstanceIdentifier, DBClusterIdentifier:DBClusterIdentifier}" --output table
+
+这将列出所有实例及其所属的集群。确保你的实例属于 Aurora 集群。
+
+3. 角色查询的问题
+
+有时，DBInstanceRole 的查询输出可能不完全反映 Aurora 集群中的角色，尤其是如果你的 Aurora 集群配置中没有配置副本实例（Reader）。在这种情况下，CLI 返回 none 可能是因为集群只有一个 Writer 实例。
+
+你可以查看以下命令的结果，确认 Aurora Writer Endpoint 是否指向你的 Writer 实例：
+
+aws rds describe-db-clusters --query "DBClusters[*].{DBClusterIdentifier:DBClusterIdentifier, WriterEndpoint:Endpoint}" --output table
+
+如果输出显示 Writer Endpoint 的地址，表明这个实例是 Writer（主实例）。
+
+4. 使用 describe-db-clusters 获取 Writer 实例信息
+
+你可以通过 describe-db-clusters 查询 Aurora 集群的详细信息，其中会列出集群的 Writer Endpoint。Writer Endpoint 会指向主实例（Writer）。
+
+aws rds describe-db-clusters --query "DBClusters[*].{DBClusterIdentifier:DBClusterIdentifier, Writer:Endpoint, ReaderEndpoint:ReaderEndpoint}" --output table
+
+该命令返回集群标识符以及 Writer 和 Reader 的端点。Writer 端点会指向主实例。
+
+5. 确认集群状态
+
+有时，CLI 可能不会正确显示角色，尤其是在集群状态不正常时。你可以通过以下命令查看 Aurora 集群的状态，确保集群正常工作：
+
+aws rds describe-db-clusters --query "DBClusters[*].{DBClusterIdentifier:DBClusterIdentifier, Status:Status}" --output table
+
+如果集群的状态显示为 available，则表示集群正常，CLI 应该能够正确返回角色信息。
+
+6. CLI 输出与控制台差异
+
+需要注意的是，AWS 控制台和 CLI 有时会在显示内容上有所差异。CLI 可能在返回某些信息时没有完全反映出控制台中的详细状态，尤其是在集群配置或角色分配尚未完全生效时。
+
+总结
+
+如果 AWS 控制台 中显示为 writer，并且集群状态正常，那么这个实例应该是 Writer。
+
+通过 describe-db-clusters 查看集群的 Writer Endpoint，你可以确认哪个实例是 Writer。
+
+DBInstanceRole 显示为 none 可能是因为 Aurora 集群的配置问题，或者没有正确配置副本实例，导致无法识别角色。
+
+
+如果上述方法依然没有解决问题，建议联系 AWS 支持团队，确认 Aurora 集群配置或 API 输出的问题。
+
