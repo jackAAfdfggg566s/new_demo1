@@ -1,0 +1,49 @@
+如果你正在使用 Amazon Aurora 并且想要通过 AWS CLI 确定哪个实例是 Writer 实例，可以使用 describe-db-clusters 命令来查看 Aurora 集群的信息，包括 Writer 实例的详细信息。
+
+查看 Aurora 集群 Writer 实例的命令：
+
+aws rds describe-db-clusters --query "DBClusters[*].{ClusterIdentifier:DBClusterIdentifier, Writer:Endpoint}" --output table
+
+解释：
+
+describe-db-clusters：获取 Aurora 集群的信息。
+
+--query "DBClusters[*].{ClusterIdentifier:DBClusterIdentifier, Writer:Endpoint}"：筛选出集群标识符和 Writer 实例的 Endpoint。
+
+--output table：以表格形式显示结果。
+
+
+这个命令会返回 Aurora 集群的 ClusterIdentifier 和 Writer 实例的端点信息。Writer 实例是 Aurora 集群中的主实例，负责处理写操作。
+
+示例输出：
+
++---------------------+---------------------------+
+| ClusterIdentifier   | Writer                    |
++---------------------+---------------------------+
+| my-aurora-cluster   | my-aurora-cluster.cluster-ro-1234567890.us-east-1.rds.amazonaws.com |
++---------------------+---------------------------+
+
+在这个输出中，Writer 显示的是主实例的 Endpoint（Writer 实例的地址）。
+
+查看所有 Aurora 实例的角色（包括 Writer 和 Reader）：
+
+如果你想查看集群中所有实例的角色（例如哪个是 Writer，哪个是 Reader），可以使用 describe-db-instances 命令：
+
+aws rds describe-db-instances --query "DBInstances[*].{DBInstanceIdentifier:DBInstanceIdentifier, DBInstanceRole:DBInstanceRole}" --output table
+
+输出示例：
+
++-----------------------+-------------------+
+| DBInstanceIdentifier  | DBInstanceRole    |
++-----------------------+-------------------+
+| my-aurora-instance-1  | writer            |
+| my-aurora-instance-2  | reader            |
++-----------------------+-------------------+
+
+解释：
+
+DBInstanceRole 字段会显示 writer（主实例）或者 reader（副本实例）。
+
+
+通过这些命令，你可以清楚地看到 Aurora 集群中的主实例（Writer）以及副本实例（Reader）。
+
