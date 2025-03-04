@@ -1,0 +1,69 @@
+如果你使用 CloudWatch 查询 ReplicaLag 数据时，返回结果为空 (datapoint 为空)，可以通过脚本来检查数据点是否为空并处理这种情况。
+
+场景
+
+当你使用 aws cloudwatch get-metric-statistics 查询数据时，可能会遇到 datapoint 为空的情况。这通常是因为在查询的时间段内，没有数据点（例如没有复制延迟记录）。
+
+检查 datapoint 是否为空
+
+你可以在脚本中使用 jq 来检查返回的 JSON 中是否包含数据点，并进行相应的处理。以下是如何判断 datapoint 是否为空并根据返回结果采取不同的操作。
+
+示例脚本
+
+#!/bin/bash
+
+# 设置 Aurora 实例标识符和时间范围
+INSTANCE_ID="your-db-instance-identifier"
+START_TIME=$(date -d '1 hour ago' --utc +%FT%TZ)
+END_TIME=$(date --utc +%FT%TZ)
+
+# 使用 AWS CLI 查询 CloudWatch 数据
+RESULT=$(aws cloudwatch get-metric-statistics \
+    --namespace AWS/RDS \
+    --metric-name ReplicaLag \
+    --dimensions Name=DBInstanceIdentifier,Value=$INSTANCE_ID \
+    --statistics Average \
+    --start-time $START_TIME \
+    --end-time $END_TIME \
+    --period 60 \
+    --output json)
+
+# 检查是否有 datapoint
+DATAPOINTS=$(echo $RESULT | jq '.Datapoints')
+
+# 如果 datapoint 为空
+if [[ "$DATAPOINTS" == "[]" || -z "$DATAPOINTS" ]]; then
+    echo "No data points available for ReplicaLag in the specified time range."
+else
+    # 输出结果
+    echo "ReplicaLag data points:"
+    echo $DATAPOINTS | jq .
+fi
+
+脚本说明：
+
+1. AWS CLI 查询 CloudWatch 数据：
+
+通过 aws cloudwatch get-metric-statistics 查询指定 Aurora 实例的 ReplicaLag。
+
+查询的时间范围是过去一小时。
+
+
+
+2. 判断 datapoint 是否为空：
+
+使用 jq 解析返回的 JSON 并提取 .Datapoints 字段。
+
+如果 Datapoints 为空或 null，则说明在指定的时间范围内没有数据点。
+
+
+
+3. 输出处理：
+
+如果没有数据点，脚本输出一条提示信息：No data points available for ReplicaLag。
+
+如果有数据点，脚本输出 ReplicaLag 的统计数据。
+
+
+
+
