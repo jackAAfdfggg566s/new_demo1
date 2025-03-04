@@ -1,0 +1,93 @@
+明白了，您的需求是：您有多个 Aurora 实例，并且想要通过传入这些实例名来判断哪个是 Writer 实例。假设我们有一个数组保存了多个实例名，并且想要使用一个函数来判断哪个实例是 Writer 实例。您可以利用 CloudWatch 查询这些实例的 ReplicaLag，如果某个实例的 ReplicaLag 为 null 或者没有数据点，那么该实例就是 Writer 实例。
+
+目标：
+
+有多个实例名（例如，存放在一个数组中）。
+
+通过一个函数，查询这些实例的 ReplicaLag。
+
+如果返回非空数据点，则判断为 Reader 实例，如果为空，则为 Writer 实例。
+
+
+脚本实现：
+
+1. 实例名数组：假设实例名存放在一个数组中。
+
+
+2. 函数：编写一个函数，判断传入的实例是否为 Writer 实例。
+
+
+3. 返回值判断：如果 ReplicaLag 为 null 或没有数据点，那么返回 Writer 实例。
+
+
+
+完整脚本示例：
+
+#!/bin/bash
+
+# 设置 CloudWatch 查询参数
+START_TIME=$(date -d '1 hour ago' --utc +%FT%TZ)
+END_TIME=$(date --utc +%FT%TZ)
+
+# 定义判断实例是否为 Writer 实例的函数
+check_writer_instance() {
+    INSTANCE_ID=$1
+
+    # 使用 AWS CLI 查询 CloudWatch 数据
+    RESULT=$(aws cloudwatch get-metric-statistics \
+        --namespace AWS/RDS \
+        --metric-name ReplicaLag \
+        --dimensions Name=DBInstanceIdentifier,Value=$INSTANCE_ID \
+        --statistics Average \
+        --start-time $START_TIME \
+        --end-time $END_TIME \
+        --period 60 \
+        --output json)
+
+    # 获取 datapoint 数据
+    DATAPOINTS=$(echo $RESULT | jq '.Datapoints')
+
+    # 如果 datapoint 为空或 null，认为该实例为 Writer 实例
+    if [[ "$DATAPOINTS" == "[]" || -z "$DATAPOINTS" ]]; then
+        echo "$INSTANCE_ID is the Writer instance"
+        return 0  # 返回 0 表示是 Writer 实例
+    else
+        echo "$INSTANCE_ID is the Reader instance"
+        return 1  # 返回 1 表示是 Reader 实例
+    fi
+}
+
+# 实例名数组
+INSTANCE_NAMES=("instance1" "instance2" "instance3")
+
+# 遍历实例名数组，检查每个实例
+for INSTANCE in "${INSTANCE_NAMES[@]}"; do
+    check_writer_instance $INSTANCE
+    if [ $? -eq 0 ]; then
+        # 如果返回 0，表示找到了 Writer 实例
+        break
+    fi
+done
+
+代码解释：
+
+1. check_writer_instance 函数：该函数接收一个实例名作为参数，并使用 AWS CLI 查询 ReplicaLag 的 CloudWatch 数据。如果 datapoint 为 null 或为空，那么说明该实例是 Writer 实例。
+
+aws cloudwatch get-metric-statistics：查询指定实例的 ReplicaLag 数据。
+
+jq：用于解析查询结果并提取 datapoint。
+
+
+如果 datapoint 为空，函数会输出该实例为 Writer 实例，并返回 0；如果 datapoint 有数据，则认为该实例是 Reader 实例，并返回 1。
+
+
+2. 实例名数组：数组 INSTANCE_NAMES 存储了多个实例名。您可以根据实际情况调整。
+
+
+3. 遍历实例名数组：通过循环遍历数组中的每个实例名，调用 check_writer_instance 函数进行判断。
+
+
+4. **`if [ $? -eq 0 ]
+
+
+
