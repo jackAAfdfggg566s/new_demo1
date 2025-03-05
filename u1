@@ -1,0 +1,79 @@
+如果 CloudWatch 返回的是 "1m 30s" 这样的格式，而不是时间戳，那可能是因为 engineUptime 解析的是持续时间（Duration）而不是绝对时间戳。
+
+
+---
+
+可能的原因
+
+1. CloudWatch 指标返回的值是时间间隔（如 1m 30s），而不是时间戳。
+
+
+2. TIME() - m1 需要 m1 是 Unix 时间戳（秒），但你的 m1 可能是一个时间间隔格式。
+
+
+
+
+---
+
+解决方案
+
+方法 1：转换时间格式
+
+如果 m1 是返回 时间间隔（Duration），你需要把它转换成秒数，然后才能计算 TIME() - m1。可以尝试 SECONDS(m1)：
+
+"metrics": [
+    [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "your-db-instance", { "id": "m1" } ],
+    [ { "expression": "SECONDS(m1)", "label": "Last Update Time (seconds)", "id": "e1" } ],
+    [ { "expression": "TIME() - e1", "label": "Time Since Last Update (seconds)", "id": "e2" } ]
+]
+
+SECONDS(m1)：把 1m 30s 转换成 90（秒）。
+
+然后 TIME() - e1 才能正确计算时间差。
+
+
+
+---
+
+方法 2：检查 CloudWatch 指标
+
+进入 CloudWatch Console → Metrics → RDS，看看 DatabaseConnections 或你使用的其他指标，是否返回 时间戳（而不是持续时间）。
+
+如果 DatabaseConnections 不能提供时间戳，你可能需要换一个 可以提供时间戳的指标（如 CPUUtilization、ReadIOPS）。
+
+
+
+---
+
+方法 3：手动解析时间格式
+
+如果 SECONDS(m1) 不工作，你可以手动解析 "1m 30s" 这样的格式：
+
+"metrics": [
+    [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "your-db-instance", { "id": "m1" } ],
+    [ { "expression": "m1 / 60", "label": "Last Update Time (minutes)", "id": "e1" } ],
+    [ { "expression": "TIME() - (e1 * 60)", "label": "Time Since Last Update (seconds)", "id": "e2" } ]
+]
+
+这里 m1 / 60 是将返回值转换成分钟，然后再乘回秒数。
+
+这样 TIME() - e1 * 60 仍然可以计算时间差。
+
+
+
+---
+
+下一步
+
+1. 先确认 m1 的真实值（是时间戳？还是 1m 30s 这样的时间间隔？）。
+
+
+2. 试 SECONDS(m1) 看能不能解析。
+
+
+3. 如果不行，看看 CloudWatch 里有没有可以直接提供时间戳的指标（比如 TIMESTAMP(m1)）。
+
+
+
+如果还是不行，可以提供更具体的信息（比如你的 m1 指标叫什么、具体返回什么值），我可以帮你找更合适的解决方案！
+
