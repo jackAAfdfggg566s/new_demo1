@@ -1,0 +1,36 @@
+GitLab Agent 运行 date -d "1 hour ago" 报错，可能的原因有以下几种：
+
+1. 环境变量导致 date 解析失败
+
+GitLab Runner 可能运行在 Alpine Linux（一个轻量级发行版），它使用的是 busybox 版 date，不支持 -d 选项。
+
+解决方案 1：使用 busybox 兼容的命令
+
+date -u -Iseconds -r $(( $(date +%s) - 3600 ))
+
+或者：
+
+date -u -Iseconds -r $(expr $(date +%s) - 3600)
+
+2. 确保 date 来自 GNU coreutils（如果 Runner 允许）
+
+如果你希望使用 GNU 版 date，可以尝试安装 coreutils：
+
+apk add coreutils
+
+然后使用：
+
+date -d "1 hour ago"
+
+如果 GitLab Runner 运行在 Debian/Ubuntu，可以改用：
+
+apt update && apt install -y coreutils
+
+3. 使用 TZ 变量手动调整时间
+
+如果不想安装额外软件，也可以用 TZ 手动调整时区：
+
+TZ=UTC date --date='1 hour ago'
+
+如果你能提供 Runner 运行的具体环境（比如 cat /etc/os-release），可以进一步优化解决方案。
+
