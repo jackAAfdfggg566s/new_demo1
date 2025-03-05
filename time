@@ -1,0 +1,57 @@
+当你看到 "Invalid date 1 hour ago" 错误时，通常是由于日期格式错误或 AWS CLI 无法正确解析日期字符串。AWS CLI 需要日期时间使用 ISO 8601 格式（YYYY-MM-DDTHH:mm:ssZ），而且日期需要是 UTC 时间。
+
+如果你希望使用相对时间（例如“1小时前”），可以使用 date 命令（适用于 Linux 和 macOS）动态生成时间，并将其传递给 AWS CLI。
+
+解决方法：获取 "1 小时前" 的日期并传递给 AWS CLI
+
+1. 使用 date 命令来计算“1 小时前”
+
+date 命令可以用来计算相对时间（例如，“1 小时前”）并将其格式化为 ISO 8601 格式。
+
+
+
+示例命令：
+
+aws cloudwatch get-metric-statistics \
+    --metric-name "CPUUtilization" \
+    --namespace "AWS/EC2" \
+    --statistics "Average" \
+    --start-time "$(date -u -d '1 hour ago' +'%Y-%m-%dT%H:%M:%SZ')" \
+    --end-time "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+    --period 3600 \
+    --region us-east-1
+
+解释：
+
+date -u -d '1 hour ago' +'%Y-%m-%dT%H:%M:%SZ'：计算“1 小时前”的时间，并将其格式化为 ISO 8601 格式。-u 选项确保时间是 UTC 时间，+ 后面的格式指定了日期时间格式。
+
+$(...)：命令替换，表示获取 date 命令的输出并将其作为 --start-time 或 --end-time 参数传递给 AWS CLI。
+
+--start-time 和 --end-time 都要求传入符合 ISO 8601 格式的日期，且使用 UTC 时间（以 Z 结尾）。
+
+
+注意事项：
+
+date 命令的不同平台：上述命令在 Linux 和 macOS 上有效。对于 Windows 系统，你可能需要使用 PowerShell 来实现类似功能。
+
+确保时区一致：AWS CloudWatch 使用 UTC 时间，所以一定要确保你传递的时间是 UTC 格式。
+
+
+在 Windows 系统中（PowerShell 示例）：
+
+如果你在 Windows 系统上使用 AWS CLI，可以使用 PowerShell 来获取“1 小时前”的时间：
+
+$startTime = (Get-Date).AddHours(-1).ToString("yyyy-MM-ddTHH:mm:ssZ")
+$endTime = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+
+aws cloudwatch get-metric-statistics `
+    --metric-name "CPUUtilization" `
+    --namespace "AWS/EC2" `
+    --statistics "Average" `
+    --start-time $startTime `
+    --end-time $endTime `
+    --period 3600 `
+    --region us-east-1
+
+这样，你就可以在 AWS CLI 中正确传递相对时间。
+
