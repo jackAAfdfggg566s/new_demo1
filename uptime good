@@ -1,0 +1,70 @@
+在 Amazon CloudWatch 中，使用 JSON 方式 来创建 CloudWatch Dashboard (大盘) 时，可以通过 表达式 (Math Expression) 计算当前时间与 RDS 上次更新时间的差值。以下是一个示例 JSON 结构：
+
+JSON 示例
+
+{
+    "widgets": [
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "your-db-instance" ],
+                    [ { "expression": "TIME() - m1", "label": "Time Since Last Update (seconds)", "id": "e1" } ]
+                ],
+                "period": 60,
+                "stat": "Maximum",
+                "region": "us-east-1",
+                "title": "Time Difference (Current Time - RDS Last Update)"
+            }
+        }
+    ]
+}
+
+
+---
+
+解析 JSON 逻辑
+
+1. "metrics" 部分
+
+第一行 ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "your-db-instance"] 代表 RDS 监控的 DatabaseConnections 指标，这里假设你用此指标的时间戳作为 RDS 的更新时间。
+
+第二行 {"expression": "TIME() - m1", "label": "Time Since Last Update (seconds)", "id": "e1"}:
+
+TIME() 获取当前时间的时间戳（秒级）。
+
+m1 代表 DatabaseConnections 指标的最新时间戳。
+
+TIME() - m1 计算当前时间与 RDS 该指标最后更新的时间差（秒）。
+
+
+
+
+2. "period": 60
+
+代表数据周期，这里设为 60 秒。
+
+
+
+3. "region": "us-east-1"
+
+你需要修改成你 RDS 所在的 AWS 区域。
+
+
+
+4. "title": "Time Difference (Current Time - RDS Last Update)"
+
+这是 CloudWatch Dashboard 上的图表标题。
+
+
+
+
+
+---
+
+**如何
+
