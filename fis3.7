@@ -1,0 +1,191 @@
+在 AWS Fault Injection Simulator（AWS FIS） 中，模拟 RDS Writer 网络断开 可以通过以下方式实现：
+
+
+---
+
+📌 方案 1：模拟网络丢包或延迟（VPC NACL） ✅ （推荐）
+
+> 适用场景：测试应用在 网络连接受阻（但 RDS 仍然运行）时的恢复能力。
+
+
+
+步骤
+
+1. 创建 AWS FIS 试验模板：
+
+操作类型：aws:ec2:disrupt-network-traffic
+
+目标：选择 RDS Writer 所在的子网
+
+参数：
+
+trafficType: ingress（阻断进入 RDS 的流量）
+
+startPort: 3306（MySQL）或 5432（PostgreSQL）
+
+endPort: 3306 / 5432
+
+duration: 60（影响时间，单位秒）
+
+
+
+
+2. 执行实验：
+
+该操作会临时阻断 RDS 的网络访问。
+
+观察应用是否能处理连接中断，并自动重连。
+
+
+
+
+示例 AWS FIS JSON
+
+{
+    "description": "Block network traffic to RDS Writer to simulate network failure",
+    "targets": {
+        "rdsSubnet": {
+            "resourceType": "aws:ec2:subnet",
+            "resourceArns": ["arn:aws:ec2:us-east-1:123456789012:subnet/subnet-abc123"]
+        }
+    },
+    "actions": {
+        "networkDisrupt": {
+            "actionId": "aws:ec2:disrupt-network-traffic",
+            "parameters": {
+                "trafficType": "ingress",
+                "startPort": "5432",
+                "endPort": "5432",
+                "duration": "60"
+            },
+            "targets": {
+                "Subnet": "rdsSubnet"
+            }
+        }
+    },
+    "stopConditions": [],
+    "roleArn": "arn:aws:iam::123456789012:role/AWSFISRole"
+}
+
+🔹 适用 RDS 类型：适用于 所有 RDS（MySQL、PostgreSQL、SQL Server）。
+🔹 优势：RDS 仍在运行，只模拟网络中断，测试应用的故障恢复能力。
+
+
+---
+
+📌 方案 2：修改 RDS 安全组（Security Group）
+
+> 适用场景：手动阻止 特定 IP（应用服务器） 访问 RDS。
+
+
+
+步骤
+
+1. 找到 RDS Writer 实例的 Security Group
+
+
+2. 创建 AWS FIS 试验模板：
+
+操作类型：aws:ec2:modify-security-group
+
+目标：修改 Security Group 规则，暂时阻止所有流量（或仅限于应用服务器）
+
+参数：
+
+cidr: 0.0.0.0/0（阻断所有流量）或 你的应用服务器 IP
+
+protocol: TCP
+
+fromPort: 3306（MySQL）或 5432（PostgreSQL）
+
+toPort: 3306 / 5432
+
+duration: 60（单位秒）
+
+
+
+
+
+示例 AWS FIS JSON
+
+{
+    "description": "Modify RDS Security Group to block access",
+    "targets": {
+        "rdsSG": {
+            "resourceType": "aws:ec2:security-group",
+            "resourceArns": ["arn:aws:ec2:us-east-1:123456789012:security-group/sg-abc123"]
+        }
+    },
+    "actions": {
+        "modifySG": {
+            "actionId": "aws:ec2:modify-security-group",
+            "parameters": {
+                "cidr": "0.0.0.0/0",
+                "protocol": "TCP",
+                "fromPort": "5432",
+                "toPort": "5432",
+                "duration": "60"
+            },
+            "targets": {
+                "SecurityGroup": "rdsSG"
+            }
+        }
+    },
+    "stopConditions": [],
+    "roleArn": "arn:aws:iam::123456789012:role/AWSFISRole"
+}
+
+🔹 适用 RDS 类型：所有 RDS
+🔹 适用情况：如果 RDS 没有在 VPC NACL 里单独管理流量，可以直接修改 Security Group。
+
+
+---
+
+📌 方案 3：临时修改 RDS 子网路由（高风险）
+
+> 适用场景：模拟更严重的网络故障（断开整个子网的互联网访问）。
+
+
+
+步骤
+
+1. 找到 RDS Writer 实例的子网
+
+
+2. 修改该子网的 Route Table
+
+把 0.0.0.0/0 的目标指向 无效的目标（比如删除默认网关）
+
+
+
+3. 执行实验
+
+
+4. 实验结束后恢复原始路由
+
+
+
+⚠️ 风险提示：如果 RDS 在该子网内，可能会影响 RDS 的整体访问，不推荐用于生产环境。
+
+
+---
+
+🎯 选择最佳方案
+
+
+---
+
+✅ 下一步
+
+1. 如果只是想测试应用的自动重连，推荐 aws:ec2:disrupt-network-traffic。
+
+
+2. 如果要更精确地控制特定服务器的访问，推荐 aws:ec2:modify-security-group。
+
+
+3. 如果想模拟极端情况（整个 RDS 网络断开），可以尝试 Route Table 修改，但慎用。
+
+
+
+如果你能提供更具体的架构（RDS 类型、VPC 结构、应用连接方式等），我可以帮你优化实验方案！
+
