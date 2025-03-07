@@ -1,0 +1,173 @@
+如果你的应用连接的是 RDS Proxy，而你想模拟 Proxy 和 RDS Writer 之间的连接断开，可以使用以下几种方法：
+
+
+---
+
+✅ 方案 1：直接在 Proxy 层面断开
+
+> 适用于：完全切断 RDS Proxy → RDS Writer 连接，而不影响应用和 Proxy 之间的连接。
+
+
+
+📌 方法 1：在 RDS Proxy 后端移除 Writer
+
+1. 进入 AWS RDS 控制台 → RDS Proxy
+
+
+2. 选择你的 Proxy，然后进入 Target groups（目标组）
+
+
+3. 手动移除 Writer 实例，观察应用是否能自动切换到 Read Replica（如果配置了读流量）
+
+
+4. 等待 1-2 分钟后重新添加 Writer
+
+
+
+📌 效果： ✅ 应用还能连接 Proxy，但 Proxy 无法访问 RDS Writer，导致查询失败或超时。
+✅ 适用于测试应用在数据库不可用时的行为（如重试机制）。
+
+
+---
+
+✅ 方案 2：阻止 RDS Proxy 访问 RDS Writer
+
+> 适用于：精确屏蔽 Proxy → Writer 的流量，而不影响 Proxy 和应用之间的连接。
+
+
+
+📌 方法 1：修改 RDS Security Group
+
+1. 找到 RDS Writer 的 Security Group
+
+进入 AWS RDS 控制台，选择你的 RDS Writer 实例
+
+找到 Security Group，记下其 ID（如 sg-abc123）
+
+
+
+2. 临时阻止 Proxy 访问
+
+进入 EC2 控制台 → Security Groups
+
+选择 RDS Writer 的 Security Group
+
+在 Inbound rules（入站规则） 中，找到允许 RDS Proxy 访问的规则（通常是 3306 或 5432）
+
+删除 这条规则或 改成一个不存在的 IP（如 192.168.1.1/32）
+
+
+
+3. 等待几秒钟，Proxy 会断开与 Writer 的连接
+
+
+4. 测试应用是否能自动恢复
+
+
+5. 恢复 Security Group 规则，重新允许 Proxy 访问
+
+
+
+📌 效果： ✅ RDS Proxy 不能连接 RDS Writer，但应用仍然可以连接 Proxy。
+✅ 适用于测试 Proxy 处理数据库故障的能力（如自动重连、Failover）。
+
+
+---
+
+✅ 方案 3：使用 AWS FIS 断开 Proxy 到 Writer 的连接
+
+> 适用于：自动化测试 RDS Proxy 连接故障，适合 CI/CD 或 Chaos Engineering。
+
+
+
+📌 AWS FIS 配置
+
+1. 创建 AWS FIS 实验，选择 aws:ec2:disrupt-network-traffic
+
+
+2. 目标：选择 RDS Writer 的 EC2 实例（Aurora 也是基于 EC2）
+
+
+3. 参数：
+
+trafficType: ingress（阻止入站流量）
+
+cidr: Proxy 的私有 IP
+
+duration: 60（影响 60 秒）
+
+
+
+
+JSON 配置
+
+{
+    "description": "Simulate RDS Proxy losing connection to Writer",
+    "targets": {
+        "rdsWriter": {
+            "resourceType": "aws:ec2:instance",
+            "resourceArns": ["arn:aws:ec2:us-east-1:123456789012:instance/i-0abcd1234efgh5678"]
+        }
+    },
+    "actions": {
+        "blockProxyConnection": {
+            "actionId": "aws:ec2:disrupt-network-traffic",
+            "parameters": {
+                "trafficType": "ingress",
+                "cidr": "10.0.1.100/32",  
+                "duration": "60"
+            },
+            "targets": {
+                "Instance": "rdsWriter"
+            }
+        }
+    },
+    "stopConditions": [],
+    "roleArn": "arn:aws:iam::123456789012:role/AWSFISRole"
+}
+
+📌 效果： ✅ RDS Proxy 访问 RDS Writer 失败，但应用仍然可以访问 Proxy。
+✅ 适用于自动化混沌工程测试。
+
+
+---
+
+✅ 方案 4：强制 RDS Proxy 触发 Failover
+
+> 适用于：测试 Proxy 在 Writer 失效时是否能自动切换到新的 Writer。
+
+
+
+📌 方法 1：手动 Failover
+
+如果你使用的是 Amazon Aurora，你可以手动触发 Failover：
+
+1. 进入 AWS RDS 控制台 → Aurora Cluster
+
+
+2. 选择 Failover，强制切换 Writer
+
+
+
+📌 效果： ✅ Proxy 连接会短暂中断，直到新 Writer 生效。
+✅ 适用于测试应用是否能自动适应 Failover。
+
+
+---
+
+🎯 总结：选择最佳方案
+
+
+---
+
+⏭️ 你的下一步
+
+如果你想手动快速测试 → 方案 1 或 2（移除 Proxy Target / 修改 Security Group）。
+
+如果你想做自动化故障测试 → 方案 3（AWS FIS）。
+
+如果你想测试 Failover 处理 → 方案 4（手动切换 RDS Writer）。
+
+
+你具体用的是 Aurora 还是普通 RDS？ 以及 是否有 Read Replica？ 这样我可以给你更具体的建议！
+
