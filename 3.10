@@ -1,0 +1,87 @@
+为了确保 EKS 只断开 RDS 主实例的连接（不影响备实例），可以采用 精确的 IP 过滤规则，而不是直接屏蔽 3306 端口的所有流量。具体方法如下：
+
+
+---
+
+方法：精准屏蔽 RDS 主实例的 IP
+
+1. 获取当前 RDS 主实例的 IP
+
+在 AWS RDS/Aurora 中，可以通过 DNS 解析当前主实例的 IP：
+
+nslookup your-db-cluster.cluster-xyz.us-east-1.rds.amazonaws.com
+
+或者：
+
+dig +short your-db-cluster.cluster-xyz.us-east-1.rds.amazonaws.com
+
+你会得到类似：
+
+192.168.1.10  # 这就是当前 RDS 主实例的 IP
+
+
+---
+
+2. 在 EKS Worker Node 上屏蔽 RDS 主实例
+
+在 FIS 中，使用 aws:ssm:send-command 运行 iptables 规则，只屏蔽 当前 RDS 主实例的 IP，而不影响 RDS 备实例：
+
+{
+  "documentName": "AWS-RunShellScript",
+  "parameters": {
+    "commands": [
+      "RDS_PRIMARY_IP=$(nslookup your-db-cluster.cluster-xyz.us-east-1.rds.amazonaws.com | awk '/Address/ {print $2}' | tail -n1)",
+      "iptables -A OUTPUT -d $RDS_PRIMARY_IP -p tcp --dport 3306 -j DROP"
+    ]
+  }
+}
+
+说明：
+
+nslookup 解析当前 RDS 主实例的 IP
+
+iptables 只针对 主实例的 IP 进行屏蔽，不影响 RDS 备实例
+
+
+
+---
+
+3. 恢复连接
+
+在 FIS 运行时间结束后，执行以下命令恢复网络：
+
+{
+  "commands": [
+    "RDS_PRIMARY_IP=$(nslookup your-db-cluster.cluster-xyz.us-east-1.rds.amazonaws.com | awk '/Address/ {print $2}' | tail -n1)",
+    "iptables -D OUTPUT -d $RDS_PRIMARY_IP -p tcp --dport 3306 -j DROP"
+  ]
+}
+
+
+---
+
+4. 监控 EKS 应用行为
+
+1. CloudWatch Logs 查看 EKS Pod 的数据库连接错误日志
+
+
+2. 确保应用的数据库连接池 (e.g., HikariCP) 处理断开情况
+
+
+3. 观察 RDS 备实例是否被应用自动切换
+
+
+
+
+---
+
+最终效果
+
+✅ EKS 只能访问 RDS 备实例，无法访问 RDS 主实例
+✅ EKS 应用的高可用性、自动故障恢复能力得到测试
+✅ RDS 备实例仍然可用，确保业务不中断
+
+如果你的 RDS 是 Aurora 集群，你可以结合 aws:rds:failover-db-cluster 来自动 切换主实例，测试应用的完整高可用流程。
+
+你觉得这样的方法可行吗？或者你有什么特殊的环境需求？
+
