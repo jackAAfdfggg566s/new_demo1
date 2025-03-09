@@ -1,0 +1,77 @@
+1. iptables 命令的 Target (目标) 是谁？
+
+iptables -A OUTPUT -d <RDS主实例IP> -p tcp --dport 3306 -j DROP
+
+Target 是 EKS Worker Node，也就是运行 EKS Pod 的 EC2 实例。
+
+这个命令会在 EKS Worker Node 上运行，从而阻止该节点上的 Pod 访问 RDS 主实例。
+
+
+
+---
+
+2. iptables 命令会在哪里运行？
+
+aws:ssm:send-command 允许在 EKS Worker Node（EC2 实例） 上执行命令。
+
+AWS FIS 实验会通过 SSM Agent 在 EKS Worker Node 上运行 iptables 命令。
+
+
+
+---
+
+3. 如何确保命令在 EKS Worker Node 上运行？
+
+在 AWS FIS 创建实验模板时：
+
+1. 选择 Action 类型: aws:ssm:send-command
+
+
+2. 选择 Target (目标)
+
+目标类型：EC2 Instances
+
+过滤条件：
+
+{
+  "filters": [
+    {
+      "path": "tag:eks-node",
+      "values": ["true"]
+    }
+  ]
+}
+
+这样可以确保 只在 EKS Worker Nodes 上运行命令
+
+
+
+3. 运行 SSM 命令
+
+{
+  "documentName": "AWS-RunShellScript",
+  "parameters": {
+    "commands": [
+      "RDS_PRIMARY_IP=$(nslookup your-db-cluster.cluster-xyz.us-east-1.rds.amazonaws.com | awk '/Address/ {print $2}' | tail -n1)",
+      "iptables -A OUTPUT -d $RDS_PRIMARY_IP -p tcp --dport 3306 -j DROP"
+    ]
+  }
+}
+
+
+
+
+---
+
+4. 这样做的效果
+
+EKS Worker Node 上的所有 Pod 都无法访问 RDS 主实例（但仍然可以访问 RDS 备实例）。
+
+不会影响 EKS Cluster 本身的其他网络功能。
+
+
+
+---
+
+你觉得这种方式符合你的需求吗？还是你有特殊的 EKS 网络配置？
+
