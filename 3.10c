@@ -1,0 +1,119 @@
+在 AWS 托管的 EKS 节点（如 Fargate 或托管节点组） 上，无法直接运行 iptables 命令，因为：
+
+1. Fargate 节点没有 root 访问权限，也不能使用 iptables。
+
+
+2. 托管节点组 (Managed Node Group) 虽然是 EC2 实例，但 AWS 管理其生命周期，默认没有 SSM Agent。
+
+
+3. 无法在 AWS 托管控制平面上运行 shell 命令，因为它是一个 AWS 托管的 Kubernetes 组件。
+
+
+
+
+---
+
+可行的替代方案
+
+方案 1：使用 Kubernetes Network Policy
+
+如果你使用的是 AWS VPC CNI，可以使用 Kubernetes Network Policy 阻止 EKS Pod 访问 RDS 主实例。
+
+步骤
+
+1. 安装 Calico（如果未启用 Network Policy）
+
+kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+
+2. 创建 NetworkPolicy
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: block-rds-primary
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: <RDS_PRIMARY_IP>/32
+      ports:
+        - protocol: TCP
+          port: 3306
+
+
+3. 应用策略
+
+kubectl apply -f block-rds-primary.yaml
+
+
+
+效果:
+✅ EKS Pod 无法访问 RDS 主实例，但仍然可以访问 Read Replica。
+❌ 需要 Calico 或 Cilium，原生 AWS VPC CNI 不支持 NetworkPolicy。
+
+
+---
+
+方案 2：修改 RDS 安全组
+
+如果你的 EKS 集群使用了 固定的 VPC CIDR，可以临时修改 RDS Security Group 规则，只允许 RDS 备实例的流量，阻止主实例访问。
+
+步骤
+
+1. 找到 RDS 主实例的 Private IP
+
+nslookup your-db-cluster.cluster-xyz.us-east-1.rds.amazonaws.com
+
+
+2. 修改 RDS Security Group
+
+进入 AWS 控制台 → EC2 → Security Groups
+
+找到 RDS 主实例的 Security Group
+
+删除 来自 EKS Worker Nodes 的入站规则
+
+只允许 备实例的流量
+
+
+
+3. EKS Pod 现在无法连接 RDS 主实例，但仍可访问 Read Replica
+
+
+
+效果:
+✅ 适用于所有 EKS 节点（托管 / 自托管 / Fargate）
+✅ 不影响其他 AWS 资源
+❌ 安全组更改可能有传播延迟（几秒到几分钟）
+
+
+---
+
+方案 3：FIS Failover + 应用层检测
+
+如果你主要是测试 应用能否检测到 RDS 主实例故障并切换到备实例，可以直接用 AWS FIS 触发 RDS 故障转移：
+
+{
+  "actionType": "aws:rds:failover-db-cluster",
+  "parameters": {
+    "dbClusterIdentifier": "your-aurora-cluster-id"
+  }
+}
+
+效果:
+✅ 真实模拟 RDS 主实例失效
+❌ EKS 仍然可以访问 RDS 主实例的 IP（但连接会中断）
+
+
+---
+
+总结：哪种方案最适合你？
+
+如果你想要 精确控制 RDS 主实例的可达性，方案 2（修改 Security Group） 可能是最简单有效的办法。
+你更倾向于哪种方式？
+
