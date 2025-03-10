@@ -1,0 +1,99 @@
+在 EKS Node 上添加 Security Group 来禁止连接到 RDS 主实例 是完全可行的。你可以通过为 EKS Worker Nodes 添加一个额外的 Security Group，并通过此 Security Group 控制 对 RDS 主实例的访问。
+
+步骤：如何为 EKS Worker Node 添加新的 Security Group 并禁止连接到 RDS 主实例
+
+1. 创建新的 Security Group
+
+首先，创建一个新的 Security Group，其规则将阻止对 RDS 主实例 的连接。
+
+1. 打开 AWS 控制台 → 进入 EC2 → Security Groups。
+
+
+2. 点击 Create Security Group。
+
+
+3. 给它一个有意义的名字，例如：block-rds-primary.
+
+
+4. 选择 VPC，然后点击 Create。
+
+
+
+2. 在新的 Security Group 中添加规则
+
+接下来，添加规则来阻止 EKS Worker Nodes 连接到 RDS 主实例。
+
+1. 选择新创建的 Security Group，然后进入 Inbound Rules（入站规则）部分。
+
+
+2. 添加入站规则，阻止连接到 RDS 主实例的 3306 端口。
+选择 Type = MySQL/Aurora 或 Custom TCP Rule，端口设置为 3306，并在 Source 中选择 RDS 主实例的 IP 地址（即主实例的 CIDR 地址）。
+
+如果你知道 RDS 主实例的 IP 地址，你可以将源设置为该 IP 地址。如果没有，你可以使用 nslookup 来查找主实例的 IP。
+
+nslookup your-db-cluster.cluster-xyz.us-east-1.rds.amazonaws.com
+
+
+3. 示例规则：
+
+Type: MySQL/Aurora
+
+Protocol: TCP
+
+Port Range: 3306
+
+Source: <RDS Primary IP>/32
+
+
+
+
+3. 将新 Security Group 关联到 EKS Worker Node
+
+现在，你已经创建了一个新的 Security Group 并添加了相应的规则，接下来将这个 Security Group 关联到 EKS Worker Node 上。
+
+1. 查看 EKS Worker Node 使用的 EC2 实例。
+
+打开 EKS 控制台 → 选择集群 → Node Groups，找到 Worker Node 所在的 EC2 实例。
+
+在 EC2 控制台 → Instances 页面，找到相应的 EC2 实例。
+
+
+
+2. 为 EC2 实例添加新的 Security Group。
+
+在 EC2 控制台中，选择你的 Worker Node EC2 实例。
+
+在 Description 部分，找到 Security Groups，点击编辑。
+
+添加刚才创建的 Security Group block-rds-primary。
+
+保存更改。
+
+
+
+
+4. 测试连接
+
+你可以在 EKS Pod 中运行一个 MySQL 客户端，来验证连接是否被阻止。
+
+例如，使用下面的命令运行 MySQL 客户端，尝试连接到 RDS 主实例：
+
+kubectl run -i --tty --rm mysql-client --image=mysql:5.7 --restart=Never -- mysql -h your-db-cluster.cluster-xyz.us-east-1.rds.amazonaws.com -u user -p
+
+如果连接被阻止，说明新的 Security Group 配置生效。
+
+
+
+---
+
+总结
+
+通过为 EKS Worker Node 添加一个新的 Security Group，并在该 Security Group 中设置规则来阻止对 RDS 主实例 的访问，是一种有效的方式来控制网络访问。
+
+这种方法只会影响连接到 RDS 主实例，不会影响连接到 RDS 副本。
+
+这种方法也能确保 安全组的配置 能被有效地管理，不需要在 Pod 内部配置复杂的 iptables 规则。
+
+
+这种方式是否满足你的需求？
+
