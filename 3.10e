@@ -1,0 +1,69 @@
+在 EKS Worker Node 的 Security Group 中，应该使用 Outbound (出站规则) 来禁止连接到 RDS 主实例，因为你是控制 EKS Worker Node（即 EC2 实例）向 RDS 实例 发起的连接。
+
+为什么使用 Outbound 而不是 Inbound?
+
+Inbound Rules (入站规则) 主要控制来自外部的流量进入 EKS Worker Node，而 Outbound Rules (出站规则) 控制的是从 EKS Worker Node 到外部的流量。
+
+在这种情况下，EKS Worker Node 需要发起与 RDS 主实例 的连接，所以你需要通过 Outbound Rules 阻止对 RDS 主实例的连接。
+
+
+如何配置 Outbound Rules 来禁止连接到 RDS 主实例?
+
+1. 创建 Security Group（如果尚未创建）：
+
+打开 EC2 控制台，进入 Security Groups。
+
+创建一个新的 Security Group，例如 block-rds-primary.
+
+
+
+2. 编辑 Outbound Rules：
+
+选择你创建的 Security Group block-rds-primary。
+
+点击 Outbound Rules，然后点击 Edit Outbound Rules。
+
+添加规则：阻止从 EKS Worker Node 到 RDS 主实例 的连接。
+
+选择 Type: MySQL/Aurora（或者 Custom TCP Rule），Port 设置为 3306，Destination 设置为 RDS 主实例的 IP 地址（你可以通过 nslookup 获取）。
+
+
+示例：
+
+Type: MySQL/Aurora
+
+Protocol: TCP
+
+Port Range: 3306
+
+Destination: <RDS Primary IP>/32
+
+
+
+3. 将新的 Security Group 关联到 EKS Worker Node：
+
+在 EC2 控制台，找到与 EKS Worker Node 关联的 EC2 实例。
+
+将 block-rds-primary Security Group 添加到该 EC2 实例的 Outbound 规则中。
+
+
+
+4. 测试连接：
+
+在 EKS Pod 中运行 MySQL 客户端，测试是否能够连接到 RDS 主实例。如果连接失败，表示设置已经生效。
+
+
+
+
+
+---
+
+总结
+
+使用 Outbound Rules 来阻止 EKS Worker Node 访问 RDS 主实例，因为连接是从 Worker Node 发起的。
+
+配置好后，可以在 EKS Pod 中进行测试，确保连接被正确阻止。
+
+
+这种方法是否符合你的需求？
+
