@@ -1,0 +1,185 @@
+在 F5 + NLB + EKS 的架构下，想要用 AWS FIS（Fault Injection Simulator） 模拟 NLB 断开与 EKS 的连接，可以有以下几种方法：
+
+
+---
+
+1️⃣ 方法 1：修改 NLB 的 Target Group（推荐）
+
+思路：让 NLB 临时移除 EKS Worker Node，模拟流量断开。
+
+如何操作
+
+使用 AWS FIS 进行 Target Group 实验：
+
+1. 创建 FIS 实验
+
+选择 "AWS::ElasticLoadBalancingV2::TargetGroup" 作为实验目标。
+
+选择 影响范围（scope），比如 某个 Target Group。
+
+选择操作 "DeregisterTargets"（取消注册 Target）。
+
+
+
+2. 执行实验
+
+运行实验后，NLB 会自动 移除 EKS Node，导致 Pod 无法接收流量。
+
+你可以 观察 NLB 访问失败，然后 自动恢复（Re-register Targets）。
+
+
+
+
+适用场景
+
+✅ 最真实的模拟：用户访问 NLB，但流量无法转发到 EKS。
+✅ 对 EKS 业务无侵入：不会影响 Pod，只是让流量断开。
+✅ 容易恢复：实验结束后，NLB 自动重新绑定 EKS Worker Node。
+
+
+---
+
+2️⃣ 方法 2：修改 EKS Node Security Group（SG）
+
+思路：用 AWS FIS 修改 EKS Worker Node 的 SG 出站规则，阻止 NLB 的健康检查和流量转发。
+
+如何操作
+
+1. 创建 FIS 实验
+
+选择 "AWS::EC2::SecurityGroup" 作为实验目标。
+
+选择 EKS Worker Node 的 Security Group。
+
+选择 操作："RevokeSecurityGroupEgress"（删除出站规则） 或 "RevokeSecurityGroupIngress"（删除入站规则）。
+
+目标端口：443（如果 NLB 是 HTTPS）或 80（如果是 HTTP）。
+
+
+
+2. 执行实验
+
+FIS 会 移除 NLB 到 EKS 的通信规则，导致 NLB 无法连接 EKS。
+
+你可以 观察 NLB Target Group 变为 "Unhealthy"。
+
+
+
+3. 恢复连接
+
+等实验超时后，AWS FIS 会恢复原始 SG 规则。
+
+你也可以 手动恢复 SG 规则：
+
+aws ec2 authorize-security-group-ingress --group-id <SG_ID> --protocol tcp --port 443 --source-group <NLB_SG_ID>
+
+
+
+
+适用场景
+
+✅ 可以精准控制哪些 Node 受影响。
+✅ 影响的是 Worker Node，不是 Pod，适用于 测试 NLB 健康检查失败的情况。
+✅ 适合 NLB 是 TCP/UDP 监听的情况。
+
+
+---
+
+3️⃣ 方法 3：停止 EKS Worker Node（风险较高，不推荐）
+
+思路：直接 使用 FIS 停止 EKS Worker Node，让 NLB 失去目标后端。
+
+如何操作
+
+1. 创建 FIS 实验
+
+选择 "AWS::EC2::Instance" 作为实验目标。
+
+选择 EKS Worker Node。
+
+选择 操作："StopInstances"（停止实例）。
+
+
+
+2. 执行实验
+
+实验运行后，EKS Worker Node 会停机，NLB 连接会断开。
+
+NLB 的 Target Group 状态会变为 Unhealthy。
+
+
+
+3. 恢复
+
+等待实验超时后，AWS FIS 会自动重启 Worker Node。
+
+如果 EKS 具有自动扩展（Cluster Autoscaler），它可能会自动创建新 Node。
+
+
+
+
+适用场景
+
+✅ 可以模拟 EKS 整个节点不可用的情况。
+⚠ 风险较高，可能导致 Pod 迁移或重启。
+⚠ 如果 EKS 没有自动扩展，可能需要手动恢复 Worker Node。
+
+
+---
+
+4️⃣ 方法 4：阻断 NLB 监听端口
+
+思路：用 FIS 修改 NLB Listener 规则，临时关闭流量。
+
+如何操作
+
+1. 创建 FIS 实验
+
+选择 "AWS::ElasticLoadBalancingV2::Listener" 作为实验目标。
+
+选择 NLB 的 Listener（比如 443 或 80）。
+
+选择 操作："RemoveListener"（移除监听）。
+
+
+
+2. 执行实验
+
+FIS 会移除 NLB 的监听端口，导致 所有流量无法通过 NLB。
+
+你可以 模拟整个 NLB 断开（但底层 EKS 仍然正常运行）。
+
+
+
+3. 恢复
+
+FIS 实验结束后，Listener 会自动恢复。
+
+你也可以手动重新添加 Listener：
+
+aws elbv2 create-listener --load-balancer-arn <NLB_ARN> --protocol TCP --port 443 --default-actions Type=forward,TargetGroupArn=<TG_ARN>
+
+
+
+
+适用场景
+
+✅ 最简单的方式，可以直接断开 NLB 流量。
+✅ 不会影响 EKS Worker Node，只影响负载均衡器。
+⚠ 所有后端（EKS + 其他服务）都会断开，适用于测试 整个系统断网 的情况。
+
+
+---
+
+✅ 结论
+
+如果你想 最真实地模拟 NLB 断开，推荐： ✔ 方法 1（修改 NLB Target Group）
+✔ 方法 2（修改 EKS Security Group）
+
+如果你想 整个 NLB 停止提供服务，可以用： ✔ 方法 4（移除 NLB Listener）
+
+
+---
+
+你是想测试 NLB 连接 EKS 失败的场景，还是 想让 EKS 仍然运行，但外部访问不到 NLB？
+
