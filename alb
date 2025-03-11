@@ -1,0 +1,74 @@
+AWS Load Balancer Controller 如何管理 NLB 目标（Target）？
+
+在 EKS + NLB (nlb-ip) 模式 下，AWS Load Balancer Controller 负责自动管理 Pod IP 和 NLB Target Group，确保 NLB 始终将流量转发到最新的 Pod。
+
+
+---
+
+1. 具体管理流程
+
+当你在 EKS 中创建一个 LoadBalancer 类型的 Service（并启用 nlb-ip），AWS Load Balancer Controller 会执行以下操作：
+
+① 发现和创建 NLB
+
+Controller 监听 Service 的创建或变更，如果 service.beta.kubernetes.io/aws-load-balancer-type: "nlb-ip" 存在：
+
+自动创建 NLB，如果已经存在，则复用。
+
+创建 Target Group，并设置目标类型为 IP（而不是默认的 Instance 模式）。
+
+
+
+② 监听 Pod 变化，自动更新 Target
+
+Controller 监听 与 Service 关联的 Pod 的 IP：
+
+Pod 启动/调度时 → 获取 Pod IP 并 注册到 Target Group。
+
+Pod 终止/迁移时 → 从 Target Group 中移除旧 IP。
+
+Pod IP 变更时 → 同步到 NLB Target Group。
+
+
+
+③ 配置 NLB 监听器
+
+自动为 NLB 创建监听器 (Listener) 并绑定 Target Group。
+
+默认使用 TCP 代理模式，直接将流量转发到 Pod 的 IP 和端口（避免 NodePort 的额外跳转）。
+
+
+
+---
+
+2. 配置 AWS Load Balancer Controller
+
+如果你在 EKS 上部署 NLB，并希望它自动管理 Pod 目标，需要确保：
+
+1. 安装 AWS Load Balancer Controller
+
+helm repo add eks https://aws.github.io/eks-charts
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller \
+    -n kube-system \
+    --set clusterName=<your-cluster-name>
+
+
+2. 创建带 nlb-ip 注解的 Service
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-service
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb-ip"
+spec:
+  type: LoadBalancer
+  selector:
+    app: my-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort:
+
+
+
