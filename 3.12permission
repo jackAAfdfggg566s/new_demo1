@@ -1,0 +1,31 @@
+在 AWS IAM 中，您可以使用以下 JSON 权限策略来允许或限制对 Network Load Balancer (NLB) 的 RegisterTargets 和 DeregisterTargets 操作。
+
+示例 IAM 权限策略
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "elasticloadbalancing:RegisterTargets",
+                "elasticloadbalancing:DeregisterTargets"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+策略说明
+
+elasticloadbalancing:RegisterTargets：允许向 NLB 的目标组中注册目标（如 EC2 实例或 IP）。
+
+elasticloadbalancing:DeregisterTargets：允许从 NLB 的目标组中注销目标。
+
+"Resource": "*"：适用于所有 NLB 目标组。如果要限制特定资源，可以用 ARN 指定目标组，如：
+
+"Resource": "arn:aws:elasticloadbalancing:region:account-id:targetgroup/target-group-name/target-group-id"
+
+
+如果您需要更细粒度的控制（如限制对某个特定 VPC、NLB 或目标组的访问），请告诉我，我可以帮助调整策略！
+
