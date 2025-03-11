@@ -1,0 +1,140 @@
+在 EKS + NLB（nlb-ip 模式） 下，如果你想 模拟 NLB 与某个特定 Pod 断开连接，而其他 Pod 不受影响，可以使用以下方法：
+
+
+---
+
+1. 方法 1：从 Target Group 移除某个 Pod
+
+你可以手动从 AWS NLB 的 Target Group 里移除一个 Pod 的 IP，让 NLB 不再向该 Pod 发送流量。
+
+步骤：
+
+1. 获取 NLB 关联的 Target Group
+
+aws elbv2 describe-target-groups --query "TargetGroups[*].TargetGroupArn"
+
+记住你的 Target Group ARN。
+
+
+2. 获取当前注册的 Pod IP
+
+aws elbv2 describe-target-health --target-group-arn <your-target-group-arn>
+
+你会看到所有注册的 Pod IP，比如：
+
+{
+    "TargetHealthDescriptions": [
+        {
+            "Target": {
+                "Id": "10.0.1.15",
+                "Port": 8080
+            },
+            "TargetHealth": {
+                "State": "healthy"
+            }
+        },
+        {
+            "Target": {
+                "Id": "10.0.2.20",
+                "Port": 8080
+            },
+            "TargetHealth": {
+                "State": "healthy"
+            }
+        }
+    ]
+}
+
+
+3. 从 Target Group 里移除特定 Pod
+
+aws elbv2 deregister-targets --target-group-arn <your-target-group-arn> --targets Id=10.0.1.15,Port=8080
+
+这样，NLB 就不会再向 10.0.1.15 这个 Pod 发送流量了。
+
+其他 Pod 仍然保持连接，不受影响。
+
+
+
+4. 验证 再次运行：
+
+aws elbv2 describe-target-health --target-group-arn <your-target-group-arn>
+
+确保目标 IP 被移除了，或者 State 变成了 "unused"。
+
+
+
+
+---
+
+2. 方法 2：在 Kubernetes 层面删除或隔离 Pod
+
+如果你不想直接操作 AWS，而是通过 Kubernetes 让 Pod 不再接收流量，可以用以下方法：
+
+① 直接删除某个 Pod
+
+kubectl delete pod <pod-name>
+
+NLB 监听到 Pod 终止后，会自动从 Target Group 里移除该 Pod，其他 Pod 不受影响。
+
+适用于模拟 某个 Pod 宕机的情况。
+
+
+② 修改 Service 让特定 Pod 退出目标
+
+如果你不想删 Pod，只想让它不再接受 NLB 流量：
+
+kubectl label pod <pod-name> app=my-app-exclude
+kubectl edit service my-service
+
+然后在 spec.selector 里 排除 这个标签：
+
+spec:
+  selector:
+    app: my-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+
+这样，Pod 仍然运行，但 Service 不会再选中它，NLB 也不会转发流量给它。
+
+
+---
+
+3. 方法 3：用 Network Policy 限制流量
+
+如果你只想让 NLB 无法连接到某个 Pod，但 Pod 仍然正常运行，可以用 Kubernetes NetworkPolicy：
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: block-nlb
+spec:
+  podSelector:
+    matchLabels:
+      app: my-app
+      exclude-nlb: "true"
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8080
+
+然后给某个 Pod 打上 exclude-nlb=true 的标签：
+
+kubectl label pod <pod-name> exclude-nlb=true
+
+这样，该 Pod 仍然运行，但 NLB 无法连接到它。
+
+
+---
+
+4. 方法 4：使用 AWS Health Check 让 Pod 被标记为 Unhealthy
+
+NLB 依靠 Health Check 来决定是否向目标 Pod 发送流量。
+你可以让某个 Pod 返回错误状态，使它被标记为 Unhealthy，这样 NLB 会自动断开连接：
+
+**① 修改
+
