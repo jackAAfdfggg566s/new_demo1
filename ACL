@@ -1,0 +1,77 @@
+在 AWS 网络 ACL（NACL） 中，您可以通过 "Deny" 规则 来阻止 EKS 访问 RDS 主实例，而不影响备实例。
+
+
+---
+
+步骤：使用 NACL 禁止 EKS 访问 RDS 主实例
+
+1. 找到 EKS 和 RDS 的子网
+
+进入 AWS VPC 控制台（VPC 控制台）。
+
+在 Subnets（子网） 中，找到：
+
+EKS Worker Nodes（EKS 工作节点）所在的子网（例如 subnet-eks）。
+
+RDS 主实例所在的子网（例如 subnet-rds-primary）。
+
+RDS 备实例所在的子网（例如 subnet-rds-secondary）。
+
+
+
+2. 修改 EKS 子网的出站 ACL
+
+在 VPC 控制台 > Network ACLs（网络 ACL）。
+
+选择 EKS 子网关联的 NACL。
+
+进入 Outbound Rules（出站规则），点击 Edit outbound rules。
+
+
+添加一条 DENY 规则
+
+💡 注意：
+
+Rule # 越小，优先级越高，因此 100 低于默认 ALLOW 规则，确保 DENY 先执行。
+
+Destination 只能是 IP 地址，如果 RDS 主实例有多个 IP，可以用 /32 表示单个 IP。
+
+
+
+---
+
+3. 确保 RDS 备实例仍然可访问
+
+在 Outbound Rules 里，添加一个 "ALLOW" 规则： | Rule # | Type | Protocol | Port Range | Destination | Action | |--------|------|----------|------------|-------------|--------| | 200 | MySQL/Aurora or PostgreSQL | TCP | 3306 (MySQL) or 5432 (PostgreSQL) | RDS 备实例的 IP 地址（如 10.0.2.20/32） | ALLOW |
+
+确保 NACL 规则不会误伤其他数据库流量。
+
+
+
+---
+
+4. 测试连接
+
+进入 EKS Pod，执行：
+
+kubectl exec -it my-pod -- /bin/sh
+
+然后：
+
+nc -zv 10.0.1.10 3306  # 测试连接 RDS 主实例
+nc -zv 10.0.2.20 3306  # 测试连接 RDS 备实例
+
+如果 RDS 主实例连接失败，备实例连接成功，则配置生效。
+
+
+
+---
+
+总结
+
+✅ 使用 NACL "Deny" 规则，可以 精准阻止 EKS 访问 RDS 主实例，而不影响备实例。
+✅ 优先级设置很重要，DENY 规则的 Rule # 必须比 ALLOW 规则更小。
+✅ NACL 适用于跨子网流量控制，但如果 EKS 和 RDS 在同一子网，需要用 Security Group 代替 NACL。
+
+如果 EKS 和 RDS 在同一子网，或者测试失败，欢迎提供您的 VPC 结构（子网 IP、NACL 规则），我可以给出更详细的配置指导！
+
