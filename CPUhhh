@@ -1,0 +1,84 @@
+在 AWS CloudWatch Dashboard 中，可以使用 JSON 配置 Math Expression。以下是一个示例 JSON，按照你的需求来筛选 CPU 使用率大于 2% 的数据进行平均计算。
+
+
+---
+
+JSON 配置
+
+{
+    "widgets": [
+        {
+            "type": "metric",
+            "x": 0,
+            "y": 0,
+            "width": 6,
+            "height": 6,
+            "properties": {
+                "metrics": [
+                    [ "AWS/EC2", "CPUUtilization", "InstanceId", "i-xxxxxxxxxxxxxxxx", { "id": "m1", "label": "CPU Utilization" } ],
+                    [ { "expression": "IF(m1 > 2, m1, NAN)", "id": "m2", "label": "Filtered CPU (>2%)" } ],
+                    [ { "expression": "AVG(m2)", "id": "m3", "label": "Avg CPU (>2%)" } ]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "us-east-1",
+                "title": "Filtered CPU Utilization",
+                "period": 60,
+                "stat": "Average"
+            }
+        }
+    ]
+}
+
+
+---
+
+说明
+
+1. 原始 CPU 指标 (m1)
+
+[ "AWS/EC2", "CPUUtilization", "InstanceId", "i-xxxxxxxxxxxxxxxx", { "id": "m1", "label": "CPU Utilization" } ]
+
+采集 EC2 实例的 CPU 使用率 (CPUUtilization)。
+
+
+
+2. 过滤 CPU 低于 2% 的数据 (m2)
+
+[ { "expression": "IF(m1 > 2, m1, NAN)", "id": "m2", "label": "Filtered CPU (>2%)" } ]
+
+只有当 m1 > 2 时才计算，否则为 NAN（不纳入计算）。
+
+
+
+3. 计算大于 2% 的 CPU 使用率的平均值 (m3)
+
+[ { "expression": "AVG(m2)", "id": "m3", "label": "Avg CPU (>2%)" } ]
+
+只对筛选后的 m2 计算平均值。
+
+
+
+
+
+---
+
+使用方法
+
+1. 打开 CloudWatch Dashboard。
+
+
+2. 创建新 Widget -> 选择“Metrics”。
+
+
+3. 点击“Source”（源码编辑）。
+
+
+4. 粘贴上述 JSON，然后保存即可。
+
+
+
+这样，CloudWatch 只会统计 CPU 使用率大于 2% 时的平均值，避免被低值影响。
+
+你可以修改 "region" 和 "InstanceId" 以适配你的 EC2 实例！
+
