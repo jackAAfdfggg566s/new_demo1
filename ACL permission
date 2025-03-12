@@ -1,0 +1,111 @@
+在 AWS IAM 中，创建 VPC 网络 ACL（NACL） 并添加 Outbound 规则 需要以下权限：
+
+
+---
+
+1. 允许创建和管理 NACL
+
+{
+    "Effect": "Allow",
+    "Action": [
+        "ec2:CreateNetworkAcl",
+        "ec2:DeleteNetworkAcl",
+        "ec2:DescribeNetworkAcls",
+        "ec2:ReplaceNetworkAclAssociation",
+        "ec2:ReplaceNetworkAclEntry",
+        "ec2:CreateNetworkAclEntry",
+        "ec2:DeleteNetworkAclEntry"
+    ],
+    "Resource": "*"
+}
+
+解释：
+
+ec2:CreateNetworkAcl → 允许创建新的 NACL。
+
+ec2:DeleteNetworkAcl → 允许删除 NACL（仅在不关联子网时）。
+
+ec2:DescribeNetworkAcls → 允许查看 NACL 信息。
+
+ec2:ReplaceNetworkAclAssociation → 允许更改 NACL 关联的子网。
+
+ec2:ReplaceNetworkAclEntry → 允许修改现有 NACL 规则。
+
+ec2:CreateNetworkAclEntry → 允许添加新的规则（Outbound 规则）。
+
+ec2:DeleteNetworkAclEntry → 允许删除 NACL 规则。
+
+
+
+---
+
+2. 允许管理 VPC 和子网（可选）
+
+如果需要同时管理 VPC 和子网：
+
+{
+    "Effect": "Allow",
+    "Action": [
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:AssociateNetworkAcl"
+    ],
+    "Resource": "*"
+}
+
+ec2:DescribeVpcs → 获取 VPC 信息。
+
+ec2:DescribeSubnets → 获取子网信息。
+
+ec2:AssociateNetworkAcl → 允许将 NACL 关联到子网。
+
+
+
+---
+
+完整 IAM 权限 JSON
+
+如果用户需要完整的 NACL 创建、修改、删除 权限：
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:CreateNetworkAcl",
+                "ec2:DeleteNetworkAcl",
+                "ec2:DescribeNetworkAcls",
+                "ec2:ReplaceNetworkAclAssociation",
+                "ec2:ReplaceNetworkAclEntry",
+                "ec2:CreateNetworkAclEntry",
+                "ec2:DeleteNetworkAclEntry",
+                "ec2:DescribeVpcs",
+                "ec2:DescribeSubnets",
+                "ec2:AssociateNetworkAcl"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+
+---
+
+测试权限
+
+如果想测试用户是否有足够权限，可以运行：
+
+aws iam simulate-principal-policy \
+    --policy-source-arn arn:aws:iam::123456789012:user/MyUser \
+    --action-names "ec2:CreateNetworkAcl" "ec2:CreateNetworkAclEntry"
+
+如果返回 Allowed，说明权限正确。
+
+
+---
+
+总结
+
+如果还有具体的 NACL 操作报错 或 权限不足 问题，欢迎提供错误信息，我可以帮你排查！
+
