@@ -1,0 +1,78 @@
+在 Amazon EKS (Elastic Kubernetes Service) 中，使用 CloudWatch Logs Insights 来查看 Pod 的 CPU 利用率时，显示的结果可能不符合预期的百分比。这可能是因为数据收集、查询或显示方式上的一些原因。下面是一些常见的原因及解决方法，帮助您更准确地查看 CPU 使用率。
+
+常见原因及解决方法
+
+1. Pod 级别的 CPU 使用率与节点的比例不匹配
+
+EKS 中每个 Pod 使用的 CPU 是基于节点资源（例如，EC2 实例）的。CloudWatch Logs Insights 显示的 CPU 使用率可能是基于 Pod 或节点的整体资源分配。
+
+解决方法：
+
+检查 Pod 的 CPU 请求（cpuRequest）和限制（cpuLimit）值。CPU 使用率是相对这些资源分配的百分比。您可以通过以下命令查看 Pod 的资源请求和限制：
+
+kubectl describe pod <pod_name>
+
+确保在 CloudWatch Logs Insights 查询中考虑了 CPU 请求和限制，例如，如果您查询的 CPU 利用率是相对于 Pod 配置的限制，而不是节点的总体资源。
+
+2. CloudWatch Logs Insights 查询表达式问题
+
+CloudWatch Logs Insights 使用自定义查询语言。如果查询没有正确处理数据，可能导致显示错误的 CPU 利用率。
+
+解决方法：
+
+确保您的查询正确处理了数据，特别是 CPU 时间 的单位。一般情况下，EKS 的 Pod CPU 使用率在 CloudWatch Logs Insights 中会显示为纳秒（ns）。因此，如果查询没有转换成标准的百分比，可能会导致不准确的显示。
+
+示例查询：
+
+fields @timestamp, @message
+| filter kubernetes.labels.app == "my-app"
+| stats sum(cpu_usage) as total_cpu_usage by bin(1m)
+| sort @timestamp desc
+| limit 20
+
+请确保将查询中的 cpu_usage 和其他指标单位转换为百分比。可以考虑以下类似的查询：
+
+fields @timestamp, @message
+| stats sum(cpu_usage) as total_cpu_usage by pod_name
+| eval cpu_percent = (total_cpu_usage / max_cpu_limit) * 100
+| sort @timestamp desc
+| limit 20
+
+其中 max_cpu_limit 是 Pod 设置的 CPU 限制（如 1000m 或 1 vCPU）。
+
+3. CloudWatch 监控的时间粒度问题
+
+CloudWatch Logs Insights 在查询时的时间粒度（如 1 分钟、5 分钟）可能导致数据的精度丧失。即使某些指标在短时间内使用率很高，CloudWatch 可能会平滑这些数据。
+
+解决方法：
+
+确保在查询中选择了足够精细的时间粒度（比如 1 分钟或更短时间窗口），并且尽量避免过大的查询窗口。例如：
+
+fields @timestamp, cpu_usage
+| filter pod_name == "your-pod"
+| stats sum(cpu_usage) as total_cpu_usage by bin(1m)
+
+4. EKS Metrics Server 的配置
+
+如果您使用的是 Kubernetes Metrics Server，确保它正确配置，并且没有出现 数据延迟或数据不一致 的问题。EKS Metrics Server 收集的数据会提供 Pod 的实时 CPU 和内存使用情况，这些数据会被传送到 CloudWatch。
+
+解决方法：
+
+检查 Metrics Server 是否正常运行，并查看它的日志。
+
+确保 Metrics Server 和 CloudWatch 之间的数据同步没有问题。
+
+
+查看 Metrics Server 是否正常：
+
+kubectl get deployment metrics-server -n kube-system
+kubectl logs deployment/metrics-server -n kube-system
+
+5. EKS Cluster 中的资源限制
+
+在 EKS 集群中，如果 CPU 请求 设置得过低，Pod 可能会在节点中 被调度到资源不足的地方。这种情况下，虽然 Pod 显示 90% 的 CPU 使用率，但由于资源限制，实际的显示可能会低于 90%。
+
+解决方法：
+
+确保您的 Pod 请求和限制合理，并且与节点的实际资源匹配。例如，Pod 设置的 cpuRequest
+
