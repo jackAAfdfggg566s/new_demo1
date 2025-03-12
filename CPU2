@@ -1,0 +1,45 @@
+你的 Pod CPU Utilization Over Pod Limit 只有 30%，而 FIS CPU（Fault Injection Service？）显示 80%，可能有以下几种原因：
+
+1. CPU 限制 (limits.cpu) 影响计算方式
+
+Pod CPU Utilization Over Pod Limit 计算的是 (Pod CPU 使用量 / CPU 限制) × 100%。
+
+CPU 使用率（FIS CPU 80%） 可能是 Pod CPU 相对于可用 CPU 资源或节点 CPU 总量的占比，这两个概念不同。
+
+
+举例：
+
+假设你的 Pod 设置：
+
+requests.cpu = 500m
+
+limits.cpu = 1000m
+
+实际 CPU 使用 = 800m
+
+
+那么：
+
+FIS 可能基于 requests.cpu，计算出 80%（800m / 1000m）。
+
+Pod CPU Utilization Over Pod Limit = (800m / 2500m) × 100% = 32%（如果 limits 设为 2500m）。
+
+
+2. 节点和 cgroup 限制
+
+你的 Pod 可能运行在一个 共享 CPU 资源的环境，比如 多个 Pod 共享 CPU 资源，影响 Utilization Over Limit 计算。
+
+Kubernetes 使用 cgroup 限制 Pod CPU，如果 limit 设得很高（比如 2500m），即使你的 Pod 使用了 80% 的 节点 CPU，但相对 Pod 限制来说仍然很小，所以 Over Pod Limit 可能很低。
+
+
+3. 监控工具计算方式不同
+
+FIS（或其他监控工具）可能基于不同的数据来源，比如 Node CPU 总量 或 Pod Request 设定，计算的 80% 可能和 kubectl top pod 或 Prometheus 计算的方式不一样。
+
+
+你可以检查：
+
+kubectl describe pod <your-pod>
+
+看看 limits.cpu 的值是多少，然后手动计算 (实际CPU / 限制CPU) × 100%，看看是否匹配 Pod CPU Utilization Over Pod Limit 的值。
+
