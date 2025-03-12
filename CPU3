@@ -1,0 +1,100 @@
+AWS FIS (Fault Injection Simulator) 的 CPU 负载计算方式 主要取决于 EKS 的 CPU 资源配置，具体来说，它通常基于 Pod 限制 (limits.cpu) 或 节点 CPU 总量 计算负载。FIS 提供的 CPU Stress Action (aws:eks:pod-cpu-stress) 允许你向指定 Pod 施加 CPU 负载，计算方式如下：
+
+
+---
+
+1. FIS CPU 负载计算逻辑
+
+FIS 负载 (%) = ( 实际消耗的 CPU / 目标 CPU 资源 ) × 100%
+
+其中：
+
+实际消耗的 CPU → 由 stress-ng 或 FIS 指定的负载进程消耗的 CPU。
+
+目标 CPU 资源 → 可能基于以下之一：
+
+Pod 的 CPU 限制 (limits.cpu) → 如果设置了 limits.cpu，FIS 可能基于此计算负载。
+
+节点的 CPU 总量 → 如果没有 limits.cpu，FIS 可能相对于节点的总 CPU 计算负载。
+
+
+
+
+---
+
+2. 计算示例
+
+情况 1：Pod 设定 limits.cpu，FIS 施加 80% 负载
+
+假设你的 Pod 资源限制如下：
+
+resources:
+  requests:
+    cpu: "500m"
+  limits:
+    cpu: "2000m"  # 2 核
+
+如果 FIS 设置 80% 负载，计算如下：
+
+\frac{1.6}{2.0} \times 100\% = 80\%
+
+情况 2：Pod 没有 limits.cpu，FIS 相对于节点 CPU 计算
+
+你的节点有 4 核 CPU，Pod 没有限制 limits.cpu。
+
+FIS 施加 80% 负载，可能计算方式：
+
+
+\frac{3.2}{4.0} \times 100\% = 80\%
+
+
+---
+
+3. 如何确认 FIS 计算方式？
+
+1. 检查 limits.cpu 设定
+
+kubectl describe pod <pod-name> | grep -A5 "Limits"
+
+如果 limits.cpu 设为 2.0，FIS 可能相对于 2.0 核 计算负载。
+
+如果 limits.cpu 未设置，FIS 可能相对于 节点总 CPU 计算。
+
+
+
+2. 查看 kubectl top pod
+
+kubectl top pod <pod-name>
+
+看 CPU 使用量是否接近 80% × limits.cpu。
+
+
+
+3. 使用 AWS CloudWatch 监控
+
+进入 AWS CloudWatch > EKS 指标 > Pod CPU Utilization
+
+对比 FIS 负载和 Pod 实际 CPU 消耗是否匹配。
+
+
+
+
+
+---
+
+总结
+
+FIS 负载基于 limits.cpu 计算（如果设置了）。
+
+如果没有 limits.cpu，可能基于节点 CPU 总量计算。
+
+可以用 kubectl top pod 和 CloudWatch 确认实际 CPU 负载。
+
+
+如果你的测试结果和预期不符，建议：
+
+检查 limits.cpu 是否被正确设置。
+
+尝试调整 FIS 负载参数，看 CPU 使用量的变化。
+
+
