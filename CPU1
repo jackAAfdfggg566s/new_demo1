@@ -1,0 +1,28 @@
+Pod CPU Utilization Over Pod Limit 不是简单的 Pod CPU 百分比，而是指 Pod 实际使用的 CPU 资源相对于它的 CPU 限制的比例。
+
+解释：
+
+CPU Utilization (%): Pod 实际使用的 CPU 资源相对于节点 CPU 总量的占比。
+
+CPU Limit: Pod 被分配的最大 CPU 资源（如果设置了 limits.cpu）。
+
+CPU Utilization Over Pod Limit (%) = (Pod 实际 CPU 使用量 / Pod 设定的 CPU 限制) × 100%
+
+
+举例：
+
+Pod CPU 限制（Limit）= 500m（即 0.5 核）
+
+Pod 实际使用 CPU = 250m（即 0.25 核）
+
+CPU Utilization Over Pod Limit = (250m / 500m) × 100% = 50%
+
+
+如果 Pod 实际 CPU 使用达到 600m（超过限制）：
+
+CPU Utilization Over Pod Limit = (600m / 500m) × 100% = 120%（表示超限）
+
+
+
+如果 CPU 限制未设置，那么 Pod CPU Utilization Over Pod Limit 可能会无意义，或者某些监控工具会默认值为 100%。
+
