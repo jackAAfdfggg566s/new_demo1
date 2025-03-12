@@ -1,0 +1,61 @@
+你的需求是：
+
+当 CPU > 2% 时，计算平均值，不让低值拉低结果。
+
+但如果 CPU 一直很低（比如 0.2%），仍然能得到一个合理的平均值，而不是空值。
+
+
+
+---
+
+改进查询
+
+fields @timestamp, CPUUtilization
+| stats 
+    avg(if(CPUUtilization > 2, CPUUtilization, null)) as AvgCPUFiltered, 
+    avg(CPUUtilization) as AvgCPU
+
+
+---
+
+解释
+
+AvgCPUFiltered: 只计算 CPU > 2% 时的平均值，如果所有数据都 ≤ 2%，它会返回 null（空）。
+
+AvgCPU: 整体 CPU 使用率的平均值，包括 0.2% 的情况。
+
+
+
+---
+
+如何确保低负载时仍然有平均值？
+
+如果 CPU 长时间低于 2%，你希望 AvgCPUFiltered 也有值（而不是空），可以用 coalesce() 设定默认值：
+
+fields @timestamp, CPUUtilization
+| stats 
+    coalesce(avg(if(CPUUtilization > 2, CPUUtilization, null)), avg(CPUUtilization)) as AvgCPUFinal
+
+如果 CPUUtilization > 2 的数据有值，则计算平均值。
+
+如果所有 CPU 使用率都 ≤ 2%，则用 avg(CPUUtilization) 作为默认值。
+
+
+
+---
+
+示例结果
+
+第一行：CPU 长时间低于 2%，AvgCPUFiltered 是 null，所以 AvgCPUFinal = 1.2（使用原始平均值）。
+
+第二行：CPU 高于 2% 时，AvgCPUFiltered 正常计算，AvgCPUFinal 也是 5.6。
+
+
+
+---
+
+最终结论
+
+✅ 这样，当 CPU 高于 2% 时，它计算过滤后的平均值。
+✅ 当 CPU 低于 2% 时，仍然能返回一个合理的平均值，不会出现空值。
+
