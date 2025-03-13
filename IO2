@@ -1,0 +1,206 @@
+在 Kubernetes 中，即使 没有 Persistent Volume (PV)，Pod 仍然有磁盘空间，原因如下：
+
+
+---
+
+1. Pod 默认使用 Node 的临时存储
+
+每个 Kubernetes Node 都自带本地存储，Pod 运行时会自动使用它（除非你挂载了 PVC）。
+
+(1) emptyDir（默认临时存储）
+
+默认存储位置：如果 Pod 没有挂载 PVC，它的 /tmp 或其他写入路径通常使用 emptyDir。
+
+存储位置：在 Node 的 /var/lib/kubelet/pods/<pod-id>/volumes/kubernetes.io~empty-dir/
+
+特点：
+
+Pod 终止后数据消失
+
+受限于 Node 的本地磁盘大小
+
+
+
+示例：
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: emptydir-test
+spec:
+  containers:
+    - name: app
+      image: ubuntu
+      command: ["/bin/sh", "-c", "sleep 3600"]
+      volumeMounts:
+        - name: cache
+          mountPath: /tmp
+  volumes:
+    - name: cache
+      emptyDir: {}
+
+在这个 Pod 里，/tmp 默认就是临时磁盘，可以执行 fio 或 dd 测试 I/O。
+
+
+---
+
+(2) rootfs（容器层文件系统）
+
+如果 Pod 没有显式声明 emptyDir，但仍然能写入文件，那它使用的是 容器文件系统（rootfs）。
+
+默认挂载在 /
+
+限制：
+
+Pod 终止后数据丢失
+
+文件存储在容器镜像层（aufs/overlayfs），可能影响性能
+
+受限于 Node 本地磁盘
+
+
+
+检查 rootfs 使用情况：
+
+df -h /
+
+
+---
+
+2. Node 本地存储类型
+
+Kubernetes Node 提供的存储通常是：
+
+1. 本地磁盘（HDD/SSD）
+
+emptyDir 和 hostPath 依赖它
+
+
+
+2. EBS（如果 Node 运行在 AWS 上）
+
+AWS 默认会给 EC2 挂载一个 EBS 作为 root volume（比如 /dev/nvme0n1）
+
+
+
+3. 临时实例存储（Instance Store）
+
+仅适用于 某些 AWS EC2 实例类型
+
+数据在 EC2 终止后丢失
+
+
+
+
+检查 Node 本地磁盘：
+
+lsblk
+df -h
+
+
+---
+
+3. 为什么 kubectl exec 进入 Pod 仍然有磁盘？
+
+即使 没有 PV/PVC，Pod 仍然能访问：
+
+/tmp（通常是 emptyDir，基于 Node 磁盘）
+
+/（容器文件系统 rootfs）
+
+/var/lib/docker/overlay2（容器存储层）
+
+
+但这些存储都是临时的，Pod 终止后数据会丢失。
+
+
+---
+
+4. 如何让 Pod 拥有持久存储？
+
+如果你需要数据 Pod 退出后仍然保留，你需要： ✅ 挂载 Persistent Volume (PV)
+✅ 使用 PVC 绑定 PV
+
+例如，使用 EBS 作为 PV：
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: ebs-pv
+spec:
+  capacity:
+    storage: 10Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: gp2
+  awsElasticBlockStore:
+    volumeID: vol-xxxxxxxx
+    fsType: ext4
+
+然后，Pod 绑定 PVC：
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ebs-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp2
+  resources:
+    requests:
+      storage: 10Gi
+
+Pod 使用 PVC：
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ebs-pod
+spec:
+  containers:
+    - name: app
+      image: ubuntu
+      volumeMounts:
+        - name: storage
+          mountPath: /mnt/data
+  volumes:
+    - name: storage
+      persistentVolumeClaim:
+        claimName: ebs-pvc
+
+
+---
+
+5. 总结
+
+没有 PV，Pod 仍然有磁盘，但它使用的是：
+
+容器 rootfs（默认）
+
+emptyDir（临时存储，随 Pod 生命周期）
+
+hostPath（直接使用 Node 本地存储）
+
+
+如何检查磁盘？
+
+df -h
+
+mount
+
+lsblk
+
+
+如何获得持久存储？
+
+必须使用 PVC 绑定 PV（如 EBS/EFS）
+
+否则数据会随 Pod 删除而丢失
+
+
+
+你是想测试 Pod 本地存储的 I/O，还是 希望数据持久化？
+
