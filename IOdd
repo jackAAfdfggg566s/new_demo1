@@ -1,0 +1,107 @@
+如果你想用 dd 命令模拟 90% I/O 负载，可以参考以下方法：
+
+
+---
+
+1. 确定磁盘 IOPS 和吞吐量
+
+在 kubectl exec 进入 Pod 后，运行以下命令：
+
+iostat -xm 2
+
+观察 %util 字段，它表示磁盘使用率（接近 100% 表示磁盘快满载）。如果没有 iostat，也可以用：
+
+df -h   # 查看磁盘容量
+lsblk    # 查看磁盘设备
+
+
+---
+
+2. 使用 dd 模拟 90% 负载
+
+顺序写入测试（高吞吐量负载）：
+
+dd if=/dev/zero of=/tmp/testfile bs=1M count=100000 oflag=direct &
+
+bs=1M：每次写入 1MB 数据
+
+count=100000：写 100GB 数据（根据磁盘大小调整）
+
+oflag=direct：绕过缓存，直接写入磁盘
+
+&：后台运行，持续产生 I/O 负载
+
+
+然后 查看磁盘使用率：
+
+iostat -xm 2
+
+如果 iostat 显示 %util 接近 90%，说明负载达标。
+
+
+---
+
+随机写入测试（模拟数据库负载）：
+
+dd if=/dev/urandom of=/tmp/testfile bs=4K count=250000 oflag=direct &
+
+bs=4K：模拟小块写入（常见于数据库）
+
+count=250000：写 1GB 随机数据
+
+
+
+---
+
+持续运行多个 dd 进程，逼近 90% 如果单个 dd 负载不够，可以运行多个进程：
+
+dd if=/dev/zero of=/tmp/testfile1 bs=1M count=50000 oflag=direct &
+dd if=/dev/zero of=/tmp/testfile2 bs=1M count=50000 oflag=direct &
+
+然后 观察 iostat，直到 %util 接近 90%。
+
+
+---
+
+3. 使用 while true 让 I/O 负载持续
+
+while true; do dd if=/dev/zero of=/tmp/testfile bs=1M count=1000 oflag=direct; done &
+
+这样 dd 会不断写入，直到手动停止：
+
+killall dd
+
+
+---
+
+4. 清理测试文件
+
+测试完毕后，可以清理文件：
+
+rm -f /tmp/testfile*
+
+
+---
+
+总结
+
+顺序写入：dd if=/dev/zero of=/tmp/testfile bs=1M count=100000 oflag=direct &
+
+随机写入：dd if=/dev/urandom of=/tmp/testfile bs=4K count=250000 oflag=direct &
+
+同时运行多个 dd 进程，提高负载
+
+用 iostat -xm 2 监控 %util，调整负载到 90%
+
+
+如果你的 Pod 磁盘 I/O 一直达不到 90%，可能是：
+
+1. 磁盘性能太高（EBS gp3 比 gp2 快）。
+
+
+2. EFS 存储有吞吐量限制，导致 I/O 达不到目标。
+
+
+
+你现在是想测试 本地存储 (emptyDir/hostPath)，还是 远程存储 (EBS/EFS)？
+
