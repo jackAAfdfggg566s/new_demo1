@@ -1,0 +1,174 @@
+如果你只能通过 /proc/diskstats 文件来计算磁盘 I/O 负载的百分比，可以使用以下方法手动计算 I/O 利用率（%util）。
+
+
+---
+
+1. /proc/diskstats 字段解析
+
+/proc/diskstats 的一行数据格式如下（示例）：
+
+cat /proc/diskstats | grep nvme0n1
+
+示例输出：
+
+259 0 nvme0n1  524288  0  4096000  200  786432  0  6291456  400  0  1000  3000  0  0  0  0
+
+字段含义（以 nvme0n1 为例）：
+
+字段   含义  
+1      主设备号  
+2      次设备号  
+3      设备名称  
+4      读完成次数  
+5      合并读次数  
+6      读扇区数（每扇区512字节）  
+7      读时间（ms）  
+8      写完成次数  
+9      合并写次数  
+10     写扇区数（每扇区512字节）  
+11     写时间（ms）  
+12     I/O 正在处理的时间（ms）  
+13     设备总运行时间（ms）
+
+其中：
+
+字段12（I/O 处理时间 ms）：表示磁盘繁忙的时间，越大说明 I/O 占用越高。
+
+字段13（设备总时间 ms）：表示磁盘运行的总时间。
+
+计算利用率（%util）： I/O 处理时间 ÷ 设备运行时间 × 100
+
+
+
+---
+
+2. 计算 I/O 负载的百分比
+
+你可以手动计算，也可以写一个 bash 脚本进行监控。
+
+手动计算
+
+1. 记录 diskstats 的初始值：
+
+cat /proc/diskstats | grep nvme0n1
+
+示例：
+
+259 0 nvme0n1  524288  0  4096000  200  786432  0  6291456  400  0  1000  3000  0  0  0  0
+
+这里 I/O 处理时间 = 1000 ms，设备总时间 = 3000 ms。
+
+
+2. 过 1 秒 再次读取：
+
+sleep 1
+cat /proc/diskstats | grep nvme0n1
+
+新输出：
+
+259 0 nvme0n1  524500  0  4100000  300  786800  0  6292000  500  0  1500  4000  0  0  0  0
+
+变化：
+
+I/O 处理时间增加 = 1500 - 1000 = 500 ms
+
+设备总时间增加 = 4000 - 3000 = 1000 ms
+
+
+
+3. 计算利用率：
+
+500 / 1000 * 100 = 50%
+
+I/O 负载为 50%。
+
+
+
+
+---
+
+3. 监控 I/O 负载的脚本
+
+如果你想每秒计算一次 I/O 百分比，可以使用以下 bash 脚本：
+
+#!/bin/bash
+
+DEVICE="nvme0n1"  # 你的磁盘设备名
+
+echo "Time   | %util"
+while true; do
+    # 获取初始值
+    LINE1=$(grep $DEVICE /proc/diskstats)
+    IO1=$(echo $LINE1 | awk '{print $12}')
+    TOTAL1=$(echo $LINE1 | awk '{print $13}')
+
+    sleep 1
+
+    # 获取 1 秒后值
+    LINE2=$(grep $DEVICE /proc/diskstats)
+    IO2=$(echo $LINE2 | awk '{print $12}')
+    TOTAL2=$(echo $LINE2 | awk '{print $13}')
+
+    # 计算 I/O 利用率
+    IO_DELTA=$((IO2 - IO1))
+    TOTAL_DELTA=$((TOTAL2 - TOTAL1))
+    
+    if [ "$TOTAL_DELTA" -gt 0 ]; then
+        UTIL_PERCENT=$((IO_DELTA * 100 / TOTAL_DELTA))
+    else
+        UTIL_PERCENT=0
+    fi
+
+    # 输出结果
+    echo "$(date +%H:%M:%S) | $UTIL_PERCENT%"
+done
+
+执行方法
+
+chmod +x monitor_disk_util.sh
+./monitor_disk_util.sh
+
+示例输出：
+
+Time   | %util
+12:00:01 | 45%
+12:00:02 | 60%
+12:00:03 | 90%
+12:00:04 | 80%
+
+
+---
+
+4. 使用 dd 触发 I/O 并监控
+
+1. 运行 dd 进行磁盘写入：
+
+dd if=/dev/zero of=/mnt/data/test.img bs=1M count=10000 oflag=direct
+
+
+2. 同时运行监控脚本：
+
+./monitor_disk_util.sh
+
+
+3. 观察 I/O %util 是否接近 90%，如果不够，可以调整 dd 参数，例如：
+
+dd if=/dev/zero of=/mnt/data/test.img bs=4M count=10000 oflag=direct
+
+
+
+
+---
+
+总结
+
+只有 /proc/diskstats 时，可以手动计算 I/O 百分比：
+
+计算方式： I/O 处理时间 ÷ 设备总时间 × 100
+
+
+可以使用 bash 脚本自动计算，每秒监控 I/O 负载。
+
+结合 dd 测试磁盘负载，并调整 bs 和 count 让 %util 接近 90%。
+
+
