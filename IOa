@@ -1,0 +1,72 @@
+在 Kubernetes (K8s) 的 Pod 内部执行 dd 命令测试磁盘写入，但 /proc/diskstats 没有变化，可能是以下原因导致的：
+
+可能的原因：
+
+1. 写入的是内存文件系统 (tmpfs) 或 overlayfs
+
+Pod 中的文件系统可能是 tmpfs 或 overlayfs，写入的数据不会直接落到物理磁盘上，因此 /proc/diskstats 不会更新。
+
+可以通过 df -Th 查看文件系统类型，确认写入路径是否是物理磁盘。
+
+
+
+2. 写入的是容器的 aufs / overlay2 存储层
+
+在 Docker 或 containerd 运行时，容器的根文件系统可能是 overlay2，数据可能先写入了 upperdir 而不是物理磁盘。
+
+解决方案：尝试在宿主机的物理磁盘路径上进行 dd 测试，例如挂载一个 hostPath 目录。
+
+
+
+3. 写入缓存未触发真实磁盘 I/O
+
+dd 默认会使用缓存，数据可能还在内存里，未真正写入磁盘。
+
+解决方案：尝试加 oflag=direct 选项，绕过缓存，如：
+
+dd if=/dev/zero of=/data/test.img bs=1M count=100 oflag=direct
+
+或者手动触发同步：
+
+sync
+
+
+
+4. Pod 运行环境受限，无法访问 /proc/diskstats
+
+在某些受限环境（如 Kubernetes 运行在 GKE、EKS 等云平台上），容器可能无法直接访问宿主机的 /proc/diskstats。
+
+解决方案：
+
+尝试 kubectl debug node/<node-name> -it --image=busybox 进入 Node，直接在宿主机测试 dd。
+
+或者在 hostPath 挂载 /proc/diskstats 到容器中，测试是否能看到变化。
+
+
+
+
+
+解决方案：
+
+1. 确保 dd 目标路径是宿主机的物理磁盘，例如挂载 /mnt/data 目录：
+
+volumes:
+- name: data-volume
+  hostPath:
+    path: /mnt/data
+
+然后在 Pod 内部执行 dd：
+
+dd if=/dev/zero of=/mnt/data/test.img bs=1M count=100 oflag=direct
+
+
+2. 直接在 Node 上执行 dd：
+
+kubectl debug node/<node-name> -it --image=busybox
+dd if=/dev/zero of=/mnt/data/test.img bs=1M count=100 oflag=direct
+cat /proc/diskstats
+
+
+
+如果 diskstats 仍然无变化，可能是写入优化导致的，可以尝试 sync 或 echo 3 > /proc/sys/vm/drop_caches 后再观察。
+
