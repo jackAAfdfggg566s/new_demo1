@@ -1,0 +1,143 @@
+你可以通过 /proc/diskstats 直接查看 I/O 负载信息，具体方法如下：
+
+
+---
+
+1. 先找到磁盘设备名
+
+运行：
+
+lsblk
+
+或者：
+
+df -h
+
+输出可能类似：
+
+NAME    MAJ:MIN RM  SIZE RO TYPE MOUNTPOINT
+nvme0n1 259:0    0  100G  0 disk 
+└─nvme0n1p1
+        259:1    0  100G  0 part /
+
+这里 nvme0n1 就是磁盘设备名。
+
+
+---
+
+2. 查看 /proc/diskstats
+
+运行：
+
+cat /proc/diskstats | grep nvme0n1
+
+示例输出：
+
+259 0 nvme0n1 125000 15000 5000000 32000 250000 100000 8000000 45000 0 120000 0 0 0 0
+
+字段说明（单位：次数或毫秒）：
+
+<主设备号> <次设备号> <设备名>
+1.  已完成的读取次数
+2.  合并的读取次数
+3.  读取的扇区数
+4.  读取时间（ms）
+5.  已完成的写入次数
+6.  合并的写入次数
+7.  写入的扇区数
+8.  写入时间（ms）
+9.  正在进行的 I/O 操作数
+10. I/O 花费的总时间（ms）
+
+重点关注：
+
+列 4（读取时间 ms） 和 列 8（写入时间 ms）
+
+列 9（当前 I/O 操作数）
+
+列 10（总 I/O 时间）
+
+
+
+---
+
+3. 计算磁盘 I/O 负载
+
+1. 第一次采样
+
+
+
+cat /proc/diskstats | grep nvme0n1 > diskstats_before
+
+2. 运行 dd 生成 I/O 负载
+
+
+
+dd if=/dev/zero of=/tmp/testfile bs=1M count=10000 oflag=direct
+
+3. 第二次采样
+
+
+
+cat /proc/diskstats | grep nvme0n1 > diskstats_after
+
+4. 计算 I/O 负载
+
+
+
+paste diskstats_before diskstats_after | awk '{print "Reads:", $4-$14, "Writes:", $8-$18, "I/O Time (ms):", $11-$21}'
+
+示例输出：
+
+Reads: 1000 Writes: 5000 I/O Time (ms): 30000
+
+如果 I/O 时间（ms）/ 采样间隔（ms） ≈ 90%，说明磁盘负载接近 90%。
+
+
+---
+
+4. 持续监控 I/O
+
+如果你想 每 2 秒查看一次 I/O 变化：
+
+while true; do cat /proc/diskstats | grep nvme0n1; sleep 2; done
+
+或者：
+
+while true; do awk '{print "Reads:", $4, "Writes:", $8, "I/O Time (ms):", $11}' /proc/diskstats; sleep 2; done
+
+
+---
+
+5. 如果 /proc/diskstats 没有数据
+
+有些环境可能不直接显示 I/O 统计，可以尝试：
+
+cat /sys/block/nvme0n1/stat
+
+输出示例：
+
+125000 15000 5000000 32000 250000 100000 8000000 45000 0 120000 0
+
+字段顺序类似 /proc/diskstats，可以用相同方式计算 I/O 负载。
+
+
+---
+
+总结
+
+1. 用 cat /proc/diskstats | grep <设备> 查看磁盘 I/O
+
+
+2. 记录两次 /proc/diskstats，计算读写次数变化
+
+
+3. 用 while true 监控 I/O 负载
+
+
+4. 如果 /proc/diskstats 没有数据，尝试 /sys/block/<设备>/stat
+
+
+
+你现在是想让 I/O 负载 接近 90%，还是只是想 实时监控 I/O？
+
