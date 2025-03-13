@@ -1,0 +1,85 @@
+是的，你可以在 kubectl exec 进入的 Pod 内部 测试本地磁盘的 I/O 性能。但 Pod 的本地存储类型 会影响测试结果，比如：
+
+1. emptyDir：临时存储，Pod 删除后数据消失（存储在 Node 的临时目录）。
+
+
+2. hostPath：直接映射宿主机的目录（可能影响 Node 其他 Pod）。
+
+
+3. PVC（EBS 或 EFS）：持久化存储，性能受 EBS/EFS 限制。
+
+
+4. Ephemeral Storage（临时存储）：受 Node 物理磁盘影响。
+
+
+
+
+---
+
+1. 使用 fio 测试 I/O
+
+安装 fio（如果 Pod 使用的是 Ubuntu/Alpine）：
+
+apt update && apt install -y fio
+
+或（如果是 Amazon Linux/CentOS）：
+
+yum install -y fio
+
+测试顺序写入性能：
+
+fio --name=seq-write --filename=/tmp/testfile --rw=write --bs=4k --size=500M --numjobs=4 --time_based --runtime=30s --group_reporting
+
+测试随机读写：
+
+fio --name=randrw --filename=/tmp/testfile --rw=randrw --bs=4k --size=500M --numjobs=4 --time_based --runtime=30s --group_reporting
+
+> 注意：
+
+/tmp/ 是 Pod 的本地存储路径（可能是 emptyDir）。
+
+如果 Pod 使用 PVC 挂载 EFS/EBS，则 /mnt/data（或你的挂载路径）可能是远程存储，性能受 EFS/EBS 影响。
+
+
+
+
+
+---
+
+2. 使用 dd 测试 I/O
+
+测试写入速度：
+
+dd if=/dev/zero of=/tmp/testfile bs=1M count=1000 oflag=direct
+
+测试读取速度：
+
+dd if=/tmp/testfile of=/dev/null bs=1M count=1000
+
+
+---
+
+3. 使用 iostat 监控 I/O
+
+安装 sysstat（如果没有）：
+
+apt install -y sysstat
+
+运行 I/O 监控：
+
+iostat -xm 2
+
+
+---
+
+4. 如何判断 I/O 受限？
+
+如果 Pod 使用 emptyDir 或 hostPath，磁盘 I/O 受 Node 的磁盘限制（通常较快）。
+
+如果 Pod 挂载了 PVC（EBS），I/O 受 EBS 性能限制（gp2/gp3 性能有上限）。
+
+如果 Pod 挂载了 EFS，I/O 受 EFS 吞吐量限制（BurstCreditBalance 低时会变慢）。
+
+
+你想测试的是 Pod 的本地存储，还是 EBS/EFS 等远程存储？
+
