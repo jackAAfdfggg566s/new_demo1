@@ -1,0 +1,233 @@
+在 Amazon EKS（Elastic Kubernetes Service）中，挂载 Amazon EFS（Elastic File System）后，可以使用 fio 或 stress-ng 来模拟 I/O 负载。以下是完整的步骤：
+
+
+---
+
+1. 在 EKS 中挂载 EFS
+
+(1) 创建 EFS 文件系统
+
+如果你还没有 EFS 文件系统，可以使用 AWS 控制台或 CLI 创建：
+
+aws efs create-file-system --performance-mode generalPurpose --throughput-mode bursting
+
+记下 FileSystemId（例如 fs-12345678）。
+
+(2) 创建 EFS 挂载目标
+
+aws efs create-mount-target --file-system-id fs-12345678 --subnet-id subnet-xxxxxxx --security-groups sg-xxxxxxx
+
+EFS 需要与 EKS 集群在 同一个 VPC 和安全组，确保 NFS 端口 (2049) 在安全组中开放。
+
+(3) 部署 EFS CSI Driver
+
+kubectl apply -k "github.com/kubernetes-sigs/aws-efs-csi-driver/deploy/kubernetes/overlays/stable/ecr/?ref=release-1.5"
+
+(4) 创建 StorageClass
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: fs-12345678
+  directoryPerms: "777"
+  gidRangeStart: "1000"
+  gidRangeEnd: "2000"
+
+kubectl apply -f efs-sc.yaml
+
+(5) 创建 PersistentVolume (PV) 和 PersistentVolumeClaim (PVC)
+
+PersistentVolume (PV)
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: efs-pv
+spec:
+  capacity:
+    storage: 5Gi
+  volumeMode: Filesystem
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: efs-sc
+  csi:
+    driver: efs.csi.aws.com
+    volumeHandle: fs-12345678
+
+kubectl apply -f efs-pv.yaml
+
+PersistentVolumeClaim (PVC)
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: efs-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: efs-sc
+  resources:
+    requests:
+      storage: 5Gi
+
+kubectl apply -f efs-pvc.yaml
+
+
+---
+
+2. 部署测试 Pod 并运行 I/O 负载
+
+创建一个 Pod，挂载 EFS 并运行 fio 或 stress-ng 进行 I/O 压测。
+
+(1) 使用 fio 进行 I/O 压测
+
+Pod YAML
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fio-test
+spec:
+  containers:
+    - name: fio
+      image: ubuntu
+      command: ["/bin/sh", "-c", "apt update && apt install -y fio && sleep infinity"]
+      volumeMounts:
+        - mountPath: "/mnt/efs"
+          name: efs-storage
+  volumes:
+    - name: efs-storage
+      persistentVolumeClaim:
+        claimName: efs-pvc
+
+kubectl apply -f fio-pod.yaml
+
+运行 fio 测试
+
+进入 Pod：
+
+kubectl exec -it fio-test -- /bin/sh
+
+执行 I/O 负载：
+
+fio --name=efs-test --directory=/mnt/efs --rw=randrw --bs=4k --size=1G --numjobs=4 --time_based --runtime=60s --group_reporting
+
+
+---
+
+(2) 使用 stress-ng 进行 I/O 负载
+
+Pod YAML
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: stress-ng-test
+spec:
+  containers:
+    - name: stress-ng
+      image: ubuntu
+      command: ["/bin/sh", "-c", "apt update && apt install -y stress-ng && sleep infinity"]
+      volumeMounts:
+        - mountPath: "/mnt/efs"
+          name: efs-storage
+  volumes:
+    - name: efs-storage
+      persistentVolumeClaim:
+        claimName: efs-pvc
+
+kubectl apply -f stress-ng-pod.yaml
+
+运行 stress-ng 测试
+
+进入 Pod：
+
+kubectl exec -it stress-ng-test -- /bin/sh
+
+执行 I/O 负载：
+
+stress-ng --hdd 4 --hdd-ops 100000 --temp-path /mnt/efs
+
+--hdd 4：使用 4 个并发进程
+
+--hdd-ops 100000：执行 10 万次 I/O 操作
+
+--temp-path /mnt/efs：测试 EFS I/O 性能
+
+
+
+---
+
+3. 监控 EFS I/O 性能
+
+(1) 使用 df 和 mount 确认 EFS 挂载
+
+df -h
+mount | grep efs
+
+(2) 使用 iostat 监控 I/O
+
+apt install -y sysstat
+iostat -xm 2
+
+(3) 使用 AWS CloudWatch 监控 EFS
+
+登录 AWS 控制台 > CloudWatch > Metrics > EFS
+
+重点监控：
+
+BurstCreditBalance（突发额度）
+
+PermittedThroughput（吞吐量）
+
+PercentIOLimit（I/O 限制百分比）
+
+ClientConnections（连接数）
+
+
+
+
+---
+
+4. 清理资源
+
+测试完成后，可以删除 Pod 和 PVC：
+
+kubectl delete pod fio-test stress-ng-test
+kubectl delete pvc efs-pvc
+kubectl delete pv efs-pv
+kubectl delete sc efs-sc
+
+如果不再需要 EFS，可以使用 AWS CLI 删除：
+
+aws efs delete-file-system --file-system-id fs-12345678
+
+
+---
+
+总结
+
+EFS 在 EKS 挂载：使用 EFS CSI Driver 进行挂载
+
+I/O 压测工具：
+
+fio（模拟随机读写负载）
+
+stress-ng（模拟高 I/O 负载）
+
+
+监控：
+
+df, mount, iostat
+
+AWS CloudWatch 监控 EFS 指标
+
+
+
+你是想测试 EFS 性能瓶颈 还是 应用在高负载下的表现？如果需要更深入的性能调优，也可以调整 EFS 性能模式（General Purpose vs Max I/O）。
+
