@@ -1,0 +1,33 @@
+在 AWS CLI 中，你可以使用 describe-instances 命令来获取指定 EC2 实例 ID 所在的 子网（Subnet）ID，如下所示：
+
+命令：
+
+aws ec2 describe-instances --instance-ids i-xxxxxxxxxxxxxxxxx --query 'Reservations[*].Instances[*].SubnetId' --output text
+
+替换 i-xxxxxxxxxxxxxxxxx 为你的实例 ID。
+
+示例输出：
+
+subnet-abc12345
+
+这个 Subnet ID 就是该 EC2 实例所在的子网。
+
+
+---
+
+如果需要更多信息（如 VPC ID）
+
+aws ec2 describe-instances --instance-ids i-xxxxxxxxxxxxxxxxx --query 'Reservations[*].Instances[*].[InstanceId,SubnetId,VpcId]' --output table
+
+示例输出：
+
+---------------------------------
+|      DescribeInstances       |
++-------------+-------------+-----------+
+|  i-xxxxxxx  |  subnet-xxx |  vpc-xxx  |
++-------------+-------------+-----------+
+
+这样可以同时获取 实例 ID、子网 ID 和 VPC ID。
+
+你是要查找某个实例所在的子网，还是要进一步做其他操作？
+
