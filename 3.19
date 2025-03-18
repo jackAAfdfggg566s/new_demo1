@@ -1,0 +1,33 @@
+你可以使用 awk -v 传递变量，并结合 wc -l 统计符合条件的行数。
+
+正确写法
+
+#!/bin/bash
+
+target_status="2/2"
+
+kubectl get pods | awk -v status="$target_status" '$2 == status {print $1}' | wc -l
+
+解释
+
+-v status="$target_status" 让 awk 识别 shell 变量。
+
+'$2 == status' 只匹配 READY 列等于 target_status 的行。
+
+print $1 输出符合条件的 Pod 名称（即 $1 是 Pod 名称列）。
+
+| wc -l 统计符合条件的 Pod 数量。
+
+
+示例输出
+
+如果有 3 个 Pod 处于 2/2 状态：
+
+3
+
+如果没有符合的：
+
+0
+
+你是想统计符合 2/2 状态的 Pod 数量，还是要进一步处理这些 Pod？
+
