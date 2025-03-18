@@ -1,0 +1,116 @@
+在 Amazon EKS 上运行 fis network disrupt connectivity，意味着你正在使用 AWS Fault Injection Simulator (FIS) 进行 网络连接中断实验。预期的结果取决于 目标范围 和 具体的故障类型，可能包括以下几种情况：
+
+
+---
+
+1. 影响单个 Pod 的网络连接
+
+如果 connectivity 影响的是 特定 Pod（例如基于 Label 或 Deployment 选择的 Pod），则：
+
+该 Pod 无法与其他 Pod、Service 或外部网络通信。
+
+可能导致 应用超时、请求失败或部分功能不可用。
+
+如果是 Stateful 应用（如数据库），可能导致数据同步问题。
+
+
+示例影响：
+
+如果一个 Nginx Pod 受到影响，外部请求可能失败（502/504 错误）。
+
+如果是一个 MySQL Pod，应用可能无法查询数据。
+
+
+
+---
+
+2. 影响整个 Kubernetes Service
+
+如果 connectivity 作用于 Kubernetes Service，则：
+
+该 Service 可能无法路由流量到后端 Pod，导致应用程序访问异常。
+
+可能引发 API 依赖失败（例如前端调用后端超时）。
+
+
+示例影响：
+
+一个 backend-service 被断网，前端应用会收到请求失败（如 504 Gateway Timeout）。
+
+
+
+---
+
+3. 影响整个节点（Node）
+
+如果 FIS 注入故障的目标是某个 EKS 节点，则该节点上的所有 Pod 都可能断网：
+
+该节点上的所有 Pod 可能无法与 EKS 其他节点、外部 API 或数据库交互。
+
+Kubernetes 可能会将 Pod 标记为 Unhealthy，如果有 PodDisruptionBudget 或自动扩展策略，可能会触发 重新调度（如果其他节点可用）。
+
+
+示例影响：
+
+如果数据库 Pod 在受影响的节点上，所有数据库请求可能失败。
+
+如果 API Gateway（如 Kong 或 Nginx）在该节点上，整个 API 可能宕机。
+
+
+
+---
+
+4. 影响 EKS 集群的外部连接
+
+如果 fis network disrupt connectivity 作用于 整个 EKS VPC 或子网，则：
+
+EKS 无法访问 AWS 依赖服务（如 RDS、S3、DynamoDB）。
+
+EKS 控制平面可能无法管理 Worker 节点，甚至可能影响集群操作（如 kubectl 访问失败）。
+
+
+示例影响：
+
+你的应用无法访问 RDS，导致数据库连接超时。
+
+应用无法访问 S3，文件上传失败。
+
+kubectl get pods 可能变慢甚至失败。
+
+
+
+---
+
+如何缓解影响？
+
+1. 监控：使用 AWS CloudWatch、Prometheus、Grafana 监控网络状态。
+
+
+2. 自动恢复：启用 Kubernetes Pod 重启策略，让故障 Pod 重新调度到健康节点。
+
+
+3. 多可用区（Multi-AZ）部署：确保关键服务跨多个 AZ，避免单点故障。
+
+
+4. Service Mesh（如 Istio）：支持流量路由、重试和熔断，减少影响。
+
+
+
+
+---
+
+总结
+
+运行 fis network disrupt connectivity 在 EKS 上的影响，取决于你选择的目标：
+
+Pod：单个应用实例断网，可能导致部分请求失败。
+
+Service：整个应用 API 可能不可用。
+
+Node：整个节点上的 Pod 都失去网络连接。
+
+VPC 或 Subnet：EKS 可能失去与 AWS 服务的连接，甚至导致全局故障。
+
+
+你具体想测试哪种情况？
+
