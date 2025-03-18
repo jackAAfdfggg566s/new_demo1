@@ -1,0 +1,88 @@
+在 Ansible Playbook 中，要 直接复制文件（不压缩） 从远程机器传输到 GitLab Agent（Runner），可以使用 fetch 或 synchronize 模块。
+
+
+---
+
+方案 1：使用 fetch（适用于单个文件或目录）
+
+fetch 模块用于从远程主机复制文件到 Ansible 控制节点（即 GitLab Agent 运行 Ansible 的位置）。
+
+示例：拷贝远程 /var/log/app.log 到 GitLab Agent /tmp/app.log
+
+- name: Fetch file from remote server
+  hosts: remote_host
+  tasks:
+    - name: Copy file from remote to GitLab Agent
+      fetch:
+        src: /var/log/app.log  # 远程文件路径
+        dest: /tmp/app.log      # 复制到 GitLab Agent（本地）存放的路径
+        flat: yes               # 避免创建远程路径的层级结构
+
+> flat: yes 选项确保 不会创建额外的目录结构，文件会直接复制到 /tmp/app.log。
+
+
+
+
+---
+
+方案 2：使用 synchronize（适用于整个目录）
+
+synchronize 模块基于 rsync，比 fetch 更高效，适用于传输整个目录。
+
+示例：从远程服务器 /var/logs/ 复制到 GitLab Agent /tmp/logs/
+
+- name: Sync directory from remote to GitLab Agent
+  hosts: remote_host
+  tasks:
+    - name: Sync logs directory
+      synchronize:
+        mode: pull               # 从远程到本地
+        src: /var/logs/          # 远程目录
+        dest: /tmp/logs/         # GitLab Agent 本地目录
+        recursive: yes           # 递归复制所有文件
+
+> mode: pull 表示从 远程机器 -> GitLab Agent 复制数据。
+
+
+
+
+---
+
+GitLab CI/CD 集成
+
+如果 GitLab Runner 运行 Ansible，并且你想把文件放入 GitLab 目录 以供后续 CI/CD 使用：
+
+1. 确保 Runner 有权限执行 Ansible。
+
+
+2. 将文件拷贝到 $CI_PROJECT_DIR，例如：
+
+- name: Copy file to GitLab workspace
+  fetch:
+    src: /var/log/app.log
+    dest: "{{ lookup('env', 'CI_PROJECT_DIR') }}/artifacts/app.log"
+    flat: yes
+
+
+3. 在 GitLab gitlab-ci.yml 里上传到 artifacts：
+
+artifacts:
+  paths:
+    - artifacts/app.log
+
+
+
+
+---
+
+总结
+
+fetch → 适用于复制单个文件，默认会存到 GitLab Agent 本地。
+
+synchronize → 适用于复制整个目录，效率更高，类似 rsync。
+
+GitLab CI/CD 兼容 → 可存到 $CI_PROJECT_DIR 并作为 artifacts。
+
+
+你的 GitLab Runner 是 Docker 模式运行的，还是在物理机上运行的？是否有特殊要求？
+
