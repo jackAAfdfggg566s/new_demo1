@@ -1,0 +1,106 @@
+你的问题可能是这样发生的：
+
+1. JAR 进程启动 → 生成日志文件，但可能一开始是空的。
+
+
+2. Shell 脚本运行 → 读取日志文件并尝试复制，但此时文件可能仍然是空的。
+
+
+3. JAR 进程被 kill → 进程退出，日志写入完成，文件才真正有内容。
+
+
+4. 但脚本已经执行完毕，没有再次尝试复制，所以目标目录的日志文件仍然是空的。
+
+
+
+
+---
+
+解决方案
+
+你可以让脚本在 jar 进程退出后再次检查并复制最新的日志文件。可以使用 wait 或 ps 来确保 JAR 进程退出后才复制日志。
+
+方案 1：使用 wait
+
+如果你的 jar 进程是通过 & 方式后台运行的，可以直接 wait：
+
+#!/bin/bash
+
+# 运行 JAR 进程
+java -jar myapp.jar &  
+JAR_PID=$!  # 获取 JAR 进程的 PID
+
+# 等待 JAR 进程退出
+wait $JAR_PID  
+
+echo "JAR 进程已退出，开始复制日志..."
+
+# 复制最新的 3 个日志文件
+for file in $(ls -t /path/to/logs/*.log | head -n 3); do
+    cp "$file" /path/to/destination/
+done
+
+echo "日志复制完成。"
+
+> 工作原理：
+
+& 让 java -jar 进程在后台运行，同时获取它的 PID。
+
+wait $JAR_PID 会让脚本等待 JAR 进程退出后才继续执行。
+
+JAR 进程退出后，再复制最新的日志，确保不会复制到空文件。
+
+
+
+
+
+---
+
+方案 2：使用 ps 检测进程
+
+如果 JAR 进程是通过其他方式启动的，无法直接 wait，可以用 ps 轮询等待进程退出：
+
+#!/bin/bash
+
+JAR_NAME="myapp.jar"
+
+# 监测 JAR 进程是否还在运行
+while pgrep -f "$JAR_NAME" > /dev/null; do
+    echo "等待 $JAR_NAME 进程退出..."
+    sleep 5  # 每 5 秒检查一次
+done
+
+echo "JAR 进程已退出，开始复制日志..."
+
+# 复制最新的 3 个日志文件
+for file in $(ls -t /path/to/logs/*.log | head -n 3); do
+    cp "$file" /path/to/destination/
+done
+
+echo "日志复制完成。"
+
+> 工作原理：
+
+pgrep -f "$JAR_NAME" 检查进程是否仍在运行。
+
+while 循环会不断等待，直到进程退出。
+
+JAR 进程退出后，再复制日志文件，确保文件内容完整。
+
+
+
+
+
+---
+
+方案选择
+
+如果你的脚本本身启动了 JAR 进程，推荐 方案 1 (wait)。
+
+如果 JAR 进程是由其他方式启动的（如 systemctl 或 docker），推荐 方案 2 (pgrep)。
+
+
+这样就能避免因日志文件写入时间和脚本执行时间不同步而导致目标日志文件为空的问题！
+
+你可以试试看，看看是否符合你的需求？
+
