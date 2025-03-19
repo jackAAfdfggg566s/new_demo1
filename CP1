@@ -1,0 +1,54 @@
+是的，你可以让脚本循环等待，直到日志文件写入完成后再复制。可以用 lsof 反复检查文件是否仍在被进程占用。
+
+方案：循环等待写入完成后再复制
+
+for file in $(ls -t /path/to/logs/*.log | head -n 3); do
+    while lsof "$file" > /dev/null 2>&1; do
+        echo "Waiting for $file to finish writing..."
+        sleep 5  # 每5秒检查一次
+    done
+    echo "Copying $file..."
+    cp "$file" /path/to/destination/
+done
+
+工作原理
+
+1. ls -t 获取最新的 3 个日志文件。
+
+
+2. lsof "$file" 检查文件是否被占用（正在写入）。
+
+
+3. 如果文件仍在写入，sleep 5 让脚本等待 5 秒后再次检查。
+
+
+4. 当文件不再被进程占用，才执行 cp 进行拷贝。
+
+
+
+这样就能保证文件写入完成后再复制，避免复制后是空文件或不完整的问题。
+
+你是希望一直循环等待，还是超时后放弃？如果要设置超时机制，可以这样做：
+
+timeout=60  # 最大等待 60 秒
+for file in $(ls -t /path/to/logs/*.log | head -n 3); do
+    elapsed=0
+    while lsof "$file" > /dev/null 2>&1; do
+        echo "Waiting for $file to finish writing..."
+        sleep 5
+        elapsed=$((elapsed + 5))
+        if [ "$elapsed" -ge "$timeout" ]; then
+            echo "Timeout waiting for $file, skipping..."
+            break
+        fi
+    done
+    if [ "$elapsed" -lt "$timeout" ]; then
+        echo "Copying $file..."
+        cp "$file" /path/to/destination/
+    fi
+done
+
+超时机制：如果 60 秒后文件仍在写入，跳过这个文件，避免死循环。
+
+你觉得这个方案适合你的需求吗？如果有其他需求，告诉我，我可以帮你调整！
+
