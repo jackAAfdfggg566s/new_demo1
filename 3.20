@@ -1,0 +1,78 @@
+以下是一个 Shell 脚本，它会：
+
+1. 查找 指定目录下 文件名包含 "output" 的文件。
+
+
+2. 提取文件名（去除路径）。
+
+
+3. 检查文件大小，如果为 0 则从 备用目录 复制相同名称的文件。
+
+
+
+
+---
+
+Shell 脚本
+
+#!/bin/bash
+
+# 源目录（查找 "output" 文件的目录）
+source_dir="/path/to/source_folder"
+
+# 备用目录（如果文件为空，则从这里复制）
+backup_dir="/path/to/backup_folder"
+
+# 使用 find 查找包含 "output" 的文件，并遍历处理
+find "$source_dir" -type f -name "*output*" | while read -r file; do
+    filename=$(basename "$file")  # 提取文件名
+
+    if [ ! -s "$file" ]; then  # 判断文件是否为空 (-s 检查文件是否非空)
+        backup_file="$backup_dir/$filename"
+        
+        if [ -e "$backup_file" ]; then  # 检查备用文件是否存在
+            cp "$backup_file" "$file"
+            echo "已复制: $backup_file -> $file"
+        else
+            echo "⚠️ 备份文件不存在: $backup_file"
+        fi
+    fi
+done
+
+
+---
+
+说明
+
+find "$source_dir" -type f -name "*output*"：查找所有包含 "output" 关键字的文件。
+
+basename "$file"：提取文件名，不包含路径。
+
+[ ! -s "$file" ]：如果文件大小 为 0，则执行复制。
+
+cp "$backup_file" "$file"：从 备用目录 复制相同文件名的文件。
+
+if [ -e "$backup_file" ]：确保备用文件存在才复制，否则提示错误。
+
+
+
+---
+
+使用方法
+
+1. 修改 source_dir 和 backup_dir 为你的真实路径。
+
+
+2. 保存 脚本为 fix_empty_files.sh，然后赋予执行权限：
+
+chmod +x fix_empty_files.sh
+
+
+3. 执行脚本：
+
+./fix_empty_files.sh
+
+
+
+这样，所有 大小为 0 的 output 文件 都会被自动修复！
+
