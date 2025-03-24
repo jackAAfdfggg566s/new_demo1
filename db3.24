@@ -1,0 +1,190 @@
+是的，你可以使用 Ansible Playbook 通过跳板机访问 PostgreSQL 数据库并执行查询。Ansible 提供 ssh 代理功能，可以用来连接数据库。以下是实现步骤：
+
+
+---
+
+方法 1：使用 Ansible shell 模块
+
+在 Ansible Playbook 里，先通过跳板机建立 SSH 隧道，然后使用 psql 查询数据库。
+
+1. 创建 playbook.yml
+
+- name: Query PostgreSQL through Bastion Host
+  hosts: localhost
+  gather_facts: no
+  vars:
+    jump_host: "bastion.example.com"
+    jump_user: "bastion_user"
+    db_host: "database.internal"
+    db_user: "db_user"
+    db_pass: "db_password"
+    db_name: "db_name"
+    local_port: 5433  # 本地端口映射到数据库
+
+  tasks:
+    - name: Establish SSH tunnel through jump host
+      shell: |
+        ssh -o StrictHostKeyChecking=no -fN -L {{ local_port }}:{{ db_host }}:5432 {{ jump_user }}@{{ jump_host }}
+      async: 10
+      poll: 0
+
+    - name: Wait for tunnel to be established
+      pause:
+        seconds: 5
+
+    - name: Run SQL query
+      shell: PGPASSWORD="{{ db_pass }}" psql -h 127.0.0.1 -p {{ local_port }} -U {{ db_user }} -d {{ db_name }} -c "SELECT * FROM your_table LIMIT 10;"
+      register: query_result
+
+    - name: Print Query Result
+      debug:
+        var: query_result.stdout_lines
+
+
+---
+
+2. 运行 Ansible Playbook
+
+ansible-playbook -i localhost, playbook.yml
+
+（localhost, 代表本机运行，不用 inventory 文件）
+
+
+---
+
+解释
+
+1. 建立 SSH 隧道
+
+shell: ssh -o StrictHostKeyChecking=no -fN -L {{ local_port }}:{{ db_host }}:5432 {{ jump_user }}@{{ jump_host }}
+
+-L {{ local_port }}:{{ db_host }}:5432：本地端口 5433 代理数据库 5432 端口
+
+-fN：后台运行，不执行远程命令
+
+-o StrictHostKeyChecking=no：跳过 SSH 密钥检查（可选）
+
+
+
+2. 执行 SQL 查询
+
+shell: PGPASSWORD="{{ db_pass }}" psql -h 127.0.0.1 -p {{ local_port }} -U {{ db_user }} -d {{ db_name }} -c "SELECT * FROM your_table LIMIT 10;"
+
+
+3. 显示查询结果
+
+debug:
+  var: query_result.stdout_lines
+
+
+
+
+---
+
+方法 2：使用 Ansible community.postgresql 模块
+
+如果你的 Ansible 版本较新，可以使用 community.postgresql.postgresql_query 模块，而不是 shell。
+
+1. 安装 PostgreSQL Collection
+
+ansible-galaxy collection install community.postgresql
+
+2. 修改 playbook.yml
+
+- name: Query PostgreSQL using Ansible Module
+  hosts: localhost
+  gather_facts: no
+  vars:
+    jump_host: "bastion.example.com"
+    jump_user: "bastion_user"
+    db_host: "database.internal"
+    db_user: "db_user"
+    db_pass: "db_password"
+    db_name: "db_name"
+    local_port: 5433
+
+  tasks:
+    - name: Create SSH tunnel through bastion
+      shell: |
+        ssh -o StrictHostKeyChecking=no -fN -L {{ local_port }}:{{ db_host }}:5432 {{ jump_user }}@{{ jump_host }}
+      async: 10
+      poll: 0
+
+    - name: Wait for tunnel
+      pause:
+        seconds: 5
+
+    - name: Query database
+      community.postgresql.postgresql_query:
+        login_host: "127.0.0.1"
+        login_port: "{{ local_port }}"
+        login_user: "{{ db_user }}"
+        login_password: "{{ db_pass }}"
+        db: "{{ db_name }}"
+        query: "SELECT * FROM your_table LIMIT 10;"
+      register: query_result
+
+    - name: Show query results
+      debug:
+        var: query_result
+
+
+---
+
+方法 3：使用 ProxyJump（更简单但要求 Ansible 配置 SSH）
+
+如果你可以直接让 Ansible 通过 SSH 代理访问数据库，ProxyJump 是更好的选择。
+
+1. 修改 ~/.ssh/config
+
+Host database.internal
+    ProxyJump bastion_user@bastion.example.com
+
+2. 创建 playbook.yml
+
+- name: Query PostgreSQL through SSH ProxyJump
+  hosts: localhost
+  gather_facts: no
+  vars:
+    db_host: "database.internal"
+    db_user: "db_user"
+    db_pass: "db_password"
+    db_name: "db_name"
+
+  tasks:
+    - name: Query database
+      community.postgresql.postgresql_query:
+        login_host: "{{ db_host }}"
+        login_user: "{{ db_user }}"
+        login_password: "{{ db_pass }}"
+        db: "{{ db_name }}"
+        query: "SELECT * FROM your_table LIMIT 10;"
+      register: query_result
+
+    - name: Show query results
+      debug:
+        var: query_result
+
+优点：
+
+不需要 ssh -L 隧道，Ansible 直接代理 SSH。
+
+适用于长期需要通过跳板机访问数据库的情况。
+
+
+
+---
+
+总结
+
+最佳选择：
+
+临时查询：方法 1（SSH 隧道 + psql）。
+
+自动化查询：方法 2（Ansible community.postgresql 模块）。
+
+长期维护：方法 3（ProxyJump）。
+
+
+你更倾向哪种方案？我可以帮你调整！
+
