@@ -1,0 +1,108 @@
+在 GitLab CI/CD 中触发 AWS FIS（Fault Injection Simulator） 并等待其运行完成，可以按照以下步骤进行：
+
+
+---
+
+步骤 1：使用 AWS CLI 触发 FIS
+
+你可以使用 aws fis start-experiment 命令来触发 AWS FIS 实验，并获取 Experiment ID。
+
+stages:
+  - trigger-fis
+
+trigger_fis:
+  stage: trigger-fis
+  script:
+    - echo "Starting AWS FIS Experiment..."
+    - EXPERIMENT_ID=$(aws fis start-experiment --experiment-template-id <TEMPLATE_ID> --query 'experiment.id' --output text)
+    - echo "Experiment ID: $EXPERIMENT_ID"
+    - echo "Waiting for experiment to complete..."
+    - while true; do
+        STATUS=$(aws fis get-experiment --id $EXPERIMENT_ID --query 'experiment.state.status' --output text);
+        echo "Current Status: $STATUS";
+        if [[ "$STATUS" == "COMPLETED" ]]; then
+          echo "Experiment completed successfully!";
+          break;
+        elif [[ "$STATUS" == "FAILED" || "$STATUS" == "STOPPED" ]]; then
+          echo "Experiment failed or stopped!";
+          exit 1;
+        fi;
+        sleep 30;  # 每 30 秒检查一次状态
+      done;
+
+
+---
+
+步骤 2：解释代码
+
+1. 触发 AWS FIS 实验
+
+EXPERIMENT_ID=$(aws fis start-experiment --experiment-template-id <TEMPLATE_ID> --query 'experiment.id' --output text)
+
+这里 <TEMPLATE_ID> 替换为 AWS FIS 实验模板 ID。
+
+
+2. 轮询实验状态
+
+while true; do
+    STATUS=$(aws fis get-experiment --id $EXPERIMENT_ID --query 'experiment.state.status' --output text);
+    echo "Current Status: $STATUS";
+    if [[ "$STATUS" == "COMPLETED" ]]; then
+      echo "Experiment completed successfully!";
+      break;
+    elif [[ "$STATUS" == "FAILED" || "$STATUS" == "STOPPED" ]]; then
+      echo "Experiment failed or stopped!";
+      exit 1;
+    fi;
+    sleep 30;
+done;
+
+每 30 秒检查一次 AWS FIS 实验的状态。
+
+如果状态为 COMPLETED，脚本结束，pipeline 继续。
+
+如果状态为 FAILED 或 STOPPED，pipeline 失败（exit 1）。
+
+
+
+
+
+---
+
+步骤 3：CI/CD 配置 AWS 权限
+
+GitLab Runner 需要有 AWS CLI 访问权限。你可以：
+
+1. 在 GitLab CI/CD 变量中配置 AWS 访问凭证：
+
+AWS_ACCESS_KEY_ID
+
+AWS_SECRET_ACCESS_KEY
+
+AWS_DEFAULT_REGION（如 us-east-1）
+
+
+
+2. 使用 GitLab CI/CD 配置 AWS CLI：
+
+before_script:
+  - export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+  - export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+  - export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
+
+
+
+
+---
+
+最终效果
+
+Pipeline 触发 AWS FIS，并等待实验完成。
+
+实验完成（或失败）后，GitLab Pipeline 继续执行（或失败）。
+
+可调整 sleep 时间，以减少 API 调用频率。
+
+
+你可以试试看！
+
