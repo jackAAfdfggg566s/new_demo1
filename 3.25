@@ -1,0 +1,55 @@
+在 GitLab CI/CD 中，如果你希望某个脚本执行失败时让整个 pipeline 失败，你需要确保脚本返回一个非零的退出码 (exit code)。GitLab CI/CD 会根据脚本的退出码判断作业（job）是否成功：
+
+方法 1：直接运行脚本
+
+stages:
+  - test
+
+job:
+  stage: test
+  script:
+    - ./your_script.sh  # 假设 your_script.sh 内部正确返回了错误码
+
+如果 your_script.sh 内部执行了 exit 1（或其他非零值），那么该作业会失败，pipeline 也会失败。
+
+
+---
+
+方法 2：手动检测错误
+
+如果脚本内部没有正确返回错误码，可以手动检查：
+
+job:
+  script:
+    - ./your_script.sh || exit 1
+
+这样，当 your_script.sh 失败时（返回非零值），CI/CD 也会失败。
+
+
+---
+
+方法 3：使用 set -e
+
+如果 your_script.sh 是一个 Shell 脚本，你可以在脚本开头添加：
+
+#!/bin/bash
+set -e
+
+这样，只要有命令失败，整个脚本就会立即退出，并返回失败状态。
+
+
+---
+
+方法 4：允许失败
+
+如果你希望脚本失败但 pipeline 继续运行，可以使用：
+
+job:
+  script:
+    - ./your_script.sh
+  allow_failure: true  # 允许该 job 失败，不影响整个 pipeline
+
+但这样做 job 会标记为失败（黄色），但不会阻止整个 pipeline 继续执行。
+
+你可以根据需求选择合适的方法。
+
