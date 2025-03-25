@@ -1,0 +1,70 @@
+在 AWS CLI 中，你可以使用 aws cloudwatch get-metric-statistics 命令来获取 EKS Pod 的平均 CPU 使用率。你需要确保 EKS 的 CloudWatch 指标已启用，并提供正确的指标名称、命名空间、统计方法和时间范围。
+
+1. 获取 EKS Pod 的平均 CPU 使用率
+
+aws cloudwatch get-metric-statistics \
+  --namespace "ContainerInsights" \
+  --metric-name "pod_cpu_utilization" \
+  --dimensions Name=ClusterName,Value=<你的EKS集群名> Name=PodName,Value=<你的Pod名称> \
+  --start-time $(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 60 \
+  --statistics Average \
+  --region <你的AWS区域>
+
+2. 参数说明
+
+--namespace "ContainerInsights": EKS 监控数据通常存储在 CloudWatch Container Insights 这个命名空间。
+
+--metric-name "pod_cpu_utilization": 监控 Pod 的 CPU 使用率（单位：核心）。
+
+--dimensions:
+
+ClusterName: 你的 EKS 集群名称。
+
+PodName: 你要监控的 Pod 名称。
+
+
+--start-time 和 --end-time: 定义查询时间范围，例如过去 10 分钟的数据。
+
+--period 60: 采样周期（秒）。
+
+--statistics Average: 计算平均值。
+
+
+3. 示例返回数据
+
+{
+    "Label": "pod_cpu_utilization",
+    "Datapoints": [
+        {
+            "Timestamp": "2025-03-25T12:00:00Z",
+            "Average": 0.25,
+            "Unit": "Count"
+        },
+        {
+            "Timestamp": "2025-03-25T12:01:00Z",
+            "Average": 0.3,
+            "Unit": "Count"
+        }
+    ]
+}
+
+这里 Average 表示该 Pod 在 1 分钟内的平均 CPU 使用率（单位为 vCPU 核心数）。
+
+4. 获取所有 Pod 的平均 CPU
+
+如果要获取整个集群的所有 Pod 平均 CPU 使用率，可以去掉 PodName 维度：
+
+aws cloudwatch get-metric-statistics \
+  --namespace "ContainerInsights" \
+  --metric-name "node_cpu_utilization" \
+  --dimensions Name=ClusterName,Value=<你的EKS集群名> \
+  --start-time $(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 60 \
+  --statistics Average \
+  --region <你的AWS区域>
+
+这样可以获得集群内所有 Pod CPU 的平均值。你可以通过 AWS CLI、AWS SDK（如 Boto3）或 AWS CloudWatch 控制台进一步分析这些数据。
+
