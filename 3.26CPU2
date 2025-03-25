@@ -1,0 +1,78 @@
+在 AWS CLI 中，你可以使用 aws cloudwatch get-metric-statistics 命令来查询某个 Namespace 下所有 Pod 的 CPU 平均使用率。不过，CloudWatch 的 Container Insights 主要按 ClusterName 和 PodName 维度存储指标，默认不会直接提供按 Namespace 聚合的数据。
+
+方法 1：查询所有 Pod 的 CPU 使用率并筛选 Namespace
+
+由于 namespace 不是 CloudWatch Metrics 的直接维度，你可以先获取所有 Pod 的 CPU 数据，然后通过 jq 过滤目标命名空间的 Pod。
+
+aws cloudwatch get-metric-statistics \
+  --namespace "ContainerInsights" \
+  --metric-name "pod_cpu_utilization" \
+  --dimensions Name=ClusterName,Value=<你的EKS集群名> \
+  --start-time $(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ) \
+  --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+  --period 60 \
+  --statistics Average \
+  --region <你的AWS区域> | jq '.Datapoints[] | select(.PodName | startswith("<你的Namespace>"))'
+
+> 这里假设 Pod 名称是以 Namespace 相关的前缀命名的。如果不是，你可能需要结合 kubectl 获取 Pod 列表，再筛选。
+
+
+
+
+---
+
+方法 2：结合 kubectl 和 AWS CLI
+
+由于 AWS CloudWatch 不能直接按 Namespace 查询，你可以：
+
+1. 先用 kubectl 获取 Namespace 下所有 Pod
+
+
+2. 再使用 AWS CLI 查询这些 Pod 的 CPU 使用率
+
+
+
+kubectl get pods -n <你的Namespace> -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' > pod_list.txt
+
+while read pod; do
+  echo "Fetching CPU for Pod: $pod"
+  aws cloudwatch get-metric-statistics \
+    --namespace "ContainerInsights" \
+    --metric-name "pod_cpu_utilization" \
+    --dimensions Name=ClusterName,Value=<你的EKS集群名> Name=PodName,Value=$pod \
+    --start-time $(date -u -d '10 minutes ago' +%Y-%m-%dT%H:%M:%SZ) \
+    --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+    --period 60 \
+    --statistics Average \
+    --region <你的AWS区域>
+done < pod_list.txt
+
+
+---
+
+方法 3：使用 eksctl + kubectl
+
+你也可以使用 eksctl 和 kubectl 来直接查询 EKS 集群的 Metrics Server，而不是 CloudWatch：
+
+kubectl top pod -n <你的Namespace>
+
+示例输出：
+
+NAME          CPU(cores)   MEMORY(bytes)   
+pod-1         100m         200Mi   
+pod-2         150m         250Mi
+
+如果你只关心当前 CPU 负载，这种方式比 CloudWatch 更快。
+
+
+---
+
+总结
+
+如果 CloudWatch 必须使用 Namespace 维度，需要结合 kubectl 获取 Pod 列表，然后逐个查询 CPU 指标。
+
+如果只是想看当前 CPU 负载，使用 kubectl top pod -n <namespace> 更简单高效。
+
+如果希望长期监控 Namespace 级别 CPU，建议配置 CloudWatch Metrics 采集 Namespace 维度（例如自定义指标）。
+
+
