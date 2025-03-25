@@ -1,0 +1,83 @@
+如果你的 EKS CPU 监控数据存储在 CloudWatch Logs 的 Performance LogGroup 中，你可以使用 aws logs filter-log-events 命令查询 CPU 使用率。
+
+
+---
+
+1. 查询 EKS Namespace 下所有 Pod 的 CPU
+
+你需要找到你的 Performance LogGroup，然后使用 aws logs filter-log-events 过滤相关日志。
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<你的EKS集群名>/performance" \
+  --start-time $(date -d '10 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern '{ $.Type = "Pod" && $.Namespace = "<你的Namespace>" }' \
+  --region <你的AWS区域>
+
+参数说明
+
+--log-group-name：CloudWatch 的 Performance Log 组，通常是 /aws/containerinsights/<EKS集群名>/performance。
+
+--start-time 和 --end-time：查询过去 10 分钟的数据（以 Unix 时间戳毫秒为单位）。
+
+--filter-pattern：过滤 Type="Pod" 且 Namespace=你的Namespace 的日志。
+
+--region：指定 AWS 区域。
+
+
+
+---
+
+2. 解析日志，获取 CPU 使用率
+
+日志返回格式类似：
+
+{
+  "events": [
+    {
+      "message": "{ \"Type\": \"Pod\", \"ClusterName\": \"my-cluster\", \"Namespace\": \"default\", \"PodName\": \"my-pod-1\", \"CpuUsageMillicores\": 250 }"
+    },
+    {
+      "message": "{ \"Type\": \"Pod\", \"ClusterName\": \"my-cluster\", \"Namespace\": \"default\", \"PodName\": \"my-pod-2\", \"CpuUsageMillicores\": 300 }"
+    }
+  ]
+}
+
+你可以用 jq 提取 CPU 数据：
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<你的EKS集群名>/performance" \
+  --start-time $(date -d '10 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern '{ $.Type = "Pod" && $.Namespace = "<你的Namespace>" }' \
+  --region <你的AWS区域> | jq '.events[].message | fromjson | {PodName, CpuUsageMillicores}'
+
+示例输出：
+
+{
+  "PodName": "my-pod-1",
+  "CpuUsageMillicores": 250
+}
+{
+  "PodName": "my-pod-2",
+  "CpuUsageMillicores": 300
+}
+
+其中 CpuUsageMillicores 表示 CPU 使用情况（单位 mCPU，例如 250m = 0.25 核）。
+
+
+---
+
+3. 计算 Namespace 下所有 Pod 的平均 CPU
+
+如果你想计算 整个 Namespace 内所有 Pod 的平均 CPU 使用率：
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<你的EKS集群名>/performance" \
+  --start-time $(date -d '10 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern '{ $.Type = "Pod" && $.Namespace = "<你的Namespace>" }' \
+  --region <你的AWS区域> | jq '[.events[].message | fromjson | .CpuUsageMillicores] | add / length'
+
+这会返回该
+
