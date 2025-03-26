@@ -1,0 +1,84 @@
+如果 date -d '10 minutes ago' 报错 invalid date，可能的原因有：
+
+1. 你的系统 不支持 -d 选项（常见于 macOS）。
+
+
+2. 你使用的 Shell 不支持 date -d 的语法（如某些版本的 sh）。
+
+
+3. 你的 date 命令需要 本地化参数（某些系统使用 LANG=C 可以修复）。
+
+
+
+✅ 解决方案
+
+🔹 方法 1：跨平台兼容（推荐）
+
+START_TIME=$(($(date +%s) - 600))000
+END_TIME=$(date +%s)000
+
+解释：
+
+date +%s 获取当前 UNIX 时间戳（秒）。
+
+- 600 代表 减去 600 秒（即 10 分钟）。
+
+000 转换成 毫秒时间戳（AWS 需要毫秒级时间戳）。
+
+
+
+---
+
+🔹 方法 2：Linux（Ubuntu、CentOS、Debian）
+
+如果你的系统是 Linux，可以使用：
+
+START_TIME=$(date -d '10 minutes ago' +%s)000
+END_TIME=$(date +%s)000
+
+如果仍然报错，可以尝试：
+
+START_TIME=$(LANG=C date -d '10 minutes ago' +%s)000
+
+
+---
+
+🔹 方法 3：macOS（BSD date 语法）
+
+macOS 使用 -v 选项：
+
+START_TIME=$(date -v -10M +%s)000
+END_TIME=$(date +%s)000
+
+说明：
+
+-v -10M 表示 向前 10 分钟。
+
+
+
+---
+
+🔹 方法 4：直接使用 epoch 时间
+
+如果 date 仍然报错，你可以手动输入 epoch 时间：
+
+START_TIME=1700000000000  # 你可以替换成正确的毫秒级时间戳
+END_TIME=$(date +%s)000
+
+你可以用 date 转换手动获取：
+
+date +%s  # 获取当前秒级时间戳
+
+然后 - 600 手动计算过去 10 分钟的时间。
+
+
+---
+
+💡 总结
+
+如果你的系统 仍然报错，可以运行：
+
+date --version
+
+看看 date 命令的版本，再选择对应的方法！
+
