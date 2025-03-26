@@ -1,0 +1,80 @@
+如果 CpuUsageMillicores 字段不存在，可能是 CloudWatch Logs 的数据格式不同。可以先查看日志的完整结构，确定 CPU 数据的正确字段名称。
+
+
+---
+
+1. 检查日志格式
+
+运行以下命令，查看 CloudWatch 记录的完整日志：
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<EKS集群名>/performance" \
+  --start-time $(date -d '5 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern '{ $.Type = "Pod" }' \
+  --limit 3 \
+  --region <你的AWS区域> | jq '.events[].message | fromjson'
+
+示例输出（可能的数据格式）：
+
+{
+  "Type": "Pod",
+  "ClusterName": "my-cluster",
+  "Namespace": "default",
+  "PodName": "nginx-abc-123",
+  "CpuUtilization": 15.6,
+  "CpuRequest": 500,
+  "CpuLimit": 1000,
+  "MemoryUtilization": 200,
+  "MemoryRequest": 512,
+  "MemoryLimit": 1024
+}
+
+
+---
+
+2. 确定 CPU 使用率字段
+
+根据日志结构，可能的 CPU 相关字段有：
+
+CpuUtilization（百分比 %）
+
+CpuRequest（Pod 申请的 CPU）
+
+CpuLimit（Pod 限制的 CPU）
+
+
+如果 没有 CpuUsageMillicores，但有 CpuUtilization，可以用：
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<EKS集群名>/performance" \
+  --start-time $(date -d '10 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern '{ $.Type = "Pod" && $.Namespace = "<你的Namespace>" }' \
+  --region <你的AWS区域> | jq '[.events[].message | fromjson | .CpuUtilization] | add / length'
+
+这会计算 过去 10 分钟内 Namespace 下所有 Pod 的平均 CPU 使用率（%）。
+
+
+---
+
+3. 如果 CpuUtilization 也没有
+
+如果日志中 既没有 CpuUsageMillicores 也没有 CpuUtilization，可能是 Container 级别的数据，而不是 Pod 级别。你可以尝试：
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<EKS集群名>/performance" \
+  --start-time $(date -d '10 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern '{ $.Type = "Container" && $.Namespace = "<你的Namespace>" }' \
+  --region <你的AWS区域> | jq '[.events[].message | fromjson | .CpuUsageMillicores] | add / length'
+
+或者 先 手动检查日志结构，找出正确的 CPU 字段，然后再改 jq 解析逻辑。
+
+
+---
+
+总结
+
+你可以先 查看日志格式，找到正确的 CPU 指标字段，再修改查询命令！
+
