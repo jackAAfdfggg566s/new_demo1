@@ -1,0 +1,74 @@
+如果仍然遇到问题，可能是因为 AWS CLI 对于 filter-pattern 参数的处理有所不同，特别是对包含变量的 JSON 字符串格式的要求。
+
+我们可以采用不同的方式来构建 --filter-pattern 参数，以确保它能够正确解析。
+
+1. 使用单引号包装整个命令
+
+在 shell 中传递 JSON 字符串时，双引号 和 单引号 的使用会影响字符串的解析。为了避免变量替换和转义问题，可以尝试直接使用 单引号 包装整个命令，避免变量替换的干扰。
+
+2. 直接使用 Bash 变量
+
+AWS CLI 会自动解析正确格式的 filter-pattern，而不需要手动转义。我们只需要确保 JSON 格式正确并传递给命令。
+
+步骤 1：构建 filter-pattern 变量
+
+我们可以通过在 Bash 中构建 filter-pattern，然后将它传递给 aws 命令。
+
+POD_NAME="your-pod-name"
+FILTER_PATTERN="{\"$.Type\":\"Pod\", \"$.PodName\":\"$POD_NAME\"}"
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<EKS集群名>/performance" \
+  --start-time $(date -d '10 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern "$FILTER_PATTERN" \
+  --region <你的AWS区域> | jq '[.events[].message | fromjson | .CpuUtilization] | add / length'
+
+解释：
+
+1. 构建 filter-pattern 变量：我们先在 Bash 中构建好 filter-pattern 字符串，并确保 $.PodName 和 $.Type 的引用格式正确。
+
+
+2. 传递 filter-pattern：通过引用变量 $FILTER_PATTERN，确保它在执行时作为有效的 JSON 传递给 AWS CLI。
+
+
+
+步骤 2：逐步检查命令
+
+为了进一步调试，可以逐步检查 filter-pattern 的实际输出：
+
+echo "$FILTER_PATTERN"
+
+确保输出是一个有效的 JSON 字符串，例如：
+
+{"$.Type":"Pod", "$.PodName":"your-pod-name"}
+
+如果输出格式正确，继续执行命令。如果仍然失败，可能需要检查 AWS CLI 版本或者重新创建 CloudWatch Logs 配置。
+
+3. 使用 AWS CLI 的 --query 参数
+
+如果你不希望使用 jq，你也可以使用 aws logs 的 --query 参数来直接过滤数据。
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<EKS集群名>/performance" \
+  --start-time $(date -d '10 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern "{\"$.Type\":\"Pod\", \"$.PodName\":\"$POD_NAME\"}" \
+  --region <你的AWS区域> --query 'events[].message' | jq 'map(fromjson | .CpuUtilization) | add / length'
+
+这样使用 aws logs 命令的 --query 过滤器来缩小结果范围。
+
+
+---
+
+总结：
+
+变量传递：在 Bash 中构建 filter-pattern 字符串，然后作为变量传递给 AWS CLI。
+
+转义：确保 filter-pattern 中的 JSON 字符串格式正确，特别是 $POD_NAME 的传递。
+
+调试：首先通过 echo "$FILTER_PATTERN" 检查 filter-pattern 格式是否正确。
+
+
+这样可以避免一些常见的字符解析问题。如果问题依然存在，可能需要检查 AWS CLI 的版本或进一步查看 CloudWatch Logs 配置。
+
