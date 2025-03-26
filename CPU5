@@ -1,0 +1,46 @@
+要将 PodName 改为变量并在 jq 里进行处理，首先需要确保将变量传递到命令中并正确转义它。在命令行中，你可以通过使用 Bash 的变量替换来实现这一点。
+
+1. 设置变量
+
+首先，定义你要查询的 PodName 作为变量。
+
+POD_NAME="your-pod-name"
+
+2. 将变量传递给 AWS CLI
+
+然后，通过 Bash 的变量替换，将变量传递给 aws logs 命令，并在 jq 中使用它。你可以在 filter-pattern 中使用变量，同时需要使用 --filter-pattern 时转义 {} 和 "。
+
+3. 完整命令
+
+假设你要查询该 Pod 的 CPU 平均使用率，并且变量 POD_NAME 用于过滤 Pod 名称，命令可以如下：
+
+POD_NAME="your-pod-name"
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<EKS集群名>/performance" \
+  --start-time $(date -d '10 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern "{\"$.Type\": \"Pod\", \"$.PodName\": \"$POD_NAME\"}" \
+  --region <你的AWS区域> | jq '[.events[].message | fromjson | .CpuUtilization] | add / length'
+
+解释
+
+变量替换：$POD_NAME 用于替换查询中的 Pod 名称。
+
+转义：因为 filter-pattern 是一个 JSON 格式的字符串，需要转义双引号 "，所以使用 \" 来转义。这样可以保证 aws logs 能正确解析 JSON 格式的字符串。
+
+
+
+---
+
+总结
+
+POD_NAME="your-pod-name"：设置 PodName 变量。
+
+--filter-pattern "{\"$.Type\": \"Pod\", \"$.PodName\": \"$POD_NAME\"}"：在 filter-pattern 中正确传递变量并转义双引号。
+
+jq '[...] | add / length'：计算 CPU 平均值。
+
+
+这样，你就可以通过设置变量来灵活查询不同的 Pod，并计算它们的 CPU 平均值。
+
