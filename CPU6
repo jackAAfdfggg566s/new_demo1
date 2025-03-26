@@ -1,0 +1,59 @@
+这个错误提示 InvalidCharacterException 通常是因为传递给 --filter-pattern 参数的 JSON 字符串格式不正确，或者包含了 AWS CLI 无法解析的特殊字符。
+
+在你的情况下，问题可能是由于转义字符的处理不当导致的。为了确保格式正确，可以采取以下步骤。
+
+解决方案
+
+AWS CLI 的 --filter-pattern 需要正确的 JSON 转义。首先确保你没有使用错误的字符，特别是双引号或其他特殊字符。
+
+步骤 1：检查 --filter-pattern 的格式
+
+在 --filter-pattern 中，必须使用 正确的 JSON 格式，并且所有的双引号 " 都需要被转义。比如，{ "$.PodName": "$POD_NAME" } 这样的格式就需要正确转义。
+
+步骤 2：改用单引号和正确的双引号转义
+
+你可以尝试以下命令：
+
+POD_NAME="your-pod-name"
+
+aws logs filter-log-events \
+  --log-group-name "/aws/containerinsights/<EKS集群名>/performance" \
+  --start-time $(date -d '10 minutes ago' +%s)000 \
+  --end-time $(date +%s)000 \
+  --filter-pattern "{\"$.Type\":\"Pod\", \"$.PodName\":\"$POD_NAME\"}" \
+  --region <你的AWS区域> | jq '[.events[].message | fromjson | .CpuUtilization] | add / length'
+
+解释：
+
+1. 转义双引号：由于 filter-pattern 是 JSON 格式，所以双引号必须转义，使用 \"。
+
+
+2. 单引号：使用外部的单引号 ' 包围整个命令，这样可以避免 shell 解释变量中 " 为特殊字符。
+
+
+3. 使用正确的字段名称：确保字段名称（如 $.PodName 和 $.Type）与实际 CloudWatch Logs 中的数据结构一致。
+
+
+
+步骤 3：额外的调试
+
+你可以首先调试并检查 filter-pattern 的实际格式。运行以下命令来检查 filter-pattern 是否被正确地传递：
+
+echo "{\"$.Type\":\"Pod\", \"$.PodName\":\"$POD_NAME\"}"
+
+确保输出的 filter-pattern 是有效的 JSON 格式。
+
+
+---
+
+总结
+
+使用 "{\"$.Type\":\"Pod\", \"$.PodName\":\"$POD_NAME\"}" 来正确转义 JSON 字符串。
+
+确保 filter-pattern 是一个有效的 JSON 字符串，转义字符正确。
+
+运行 echo 命令来检查输出，确保字符串格式无误。
+
+
+这样应该可以避免 InvalidCharacterException 错误。如果仍然有问题，可以继续检查 AWS CLI 的版本或 AWS 文档中的相关限制。
+
