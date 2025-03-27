@@ -1,0 +1,47 @@
+如果没有符合条件的 value > 20 的数据，你可以显示一个提示，比如 "No values greater than 20"。
+
+完整命令：
+
+jq '[.[] | select(.value > 20) | .value] as $arr | if length > 0 then ($arr | add / length) else "No values greater than 20" end' file.json
+
+命令解析：
+
+as $arr → 将筛选出的 value 存入变量 $arr
+
+if length > 0 then ... else ... end → 判断 $arr 是否为空：
+
+有数据 → 计算平均值 add / length
+
+无数据 → 显示 "No values greater than 20"
+
+
+
+示例 1：有符合的数据
+
+JSON (file.json)：
+
+[
+  {"name": "item1", "value": 10},
+  {"name": "item2", "value": 25},
+  {"name": "item3", "value": 30}
+]
+
+执行结果：
+
+27.5
+
+示例 2：无符合的数据
+
+JSON (file.json)：
+
+[
+  {"name": "item1", "value": 10},
+  {"name": "item2", "value": 15}
+]
+
+执行结果：
+
+"No values greater than 20"
+
+这样就能优雅地处理无符合数据的情况了！
+
