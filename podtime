@@ -1,0 +1,57 @@
+在 Shell 脚本中，你可以使用 kubectl 来获取 Kubernetes Pod 的运行时间。
+
+
+---
+
+方法 1：使用 kubectl get pods
+
+可以使用 kubectl get pods 并筛选 AGE 字段：
+
+kubectl get pods --no-headers -o custom-columns="NAME:.metadata.name,AGE:.status.startTime"
+
+但是 AGE 默认是时间格式（如 10d、5h），不够精准。
+
+
+---
+
+方法 2：计算 Pod 运行时间（秒/分钟/小时）
+
+如果需要更精确的运行时间，你可以用 kubectl 获取 startTime 并计算：
+
+#!/bin/bash
+
+pod_name="your-pod-name"  # 修改为你的 Pod 名称
+namespace="default"        # 修改为你的 Namespace（如果不是 default）
+
+# 获取 Pod 的 startTime（格式为 2024-03-27T12:34:56Z）
+start_time=$(kubectl get pod "$pod_name" -n "$namespace" -o jsonpath="{.status.startTime}")
+
+# 获取当前时间（转换为时间戳）
+current_time=$(date -u +"%s")
+
+# 将 startTime 转换为时间戳
+start_timestamp=$(date -d "$start_time" +"%s")
+
+# 计算运行时间（秒）
+uptime_seconds=$((current_time - start_timestamp))
+
+# 显示运行时间（格式化为 时:分:秒）
+uptime_formatted=$(date -u -d @"$uptime_seconds" +"%H:%M:%S")
+
+echo "Pod $pod_name has been running for $uptime_formatted (HH:MM:SS)"
+
+✅ 输出示例：
+
+Pod your-pod-name has been running for 05:30:15 (HH:MM:SS)
+
+表示 Pod 运行了 5 小时 30 分 15 秒。
+
+
+---
+
+方法 3：获取所有 Pod 的运行时间
+
+如果想要获取所有 Pod 的运行时间：
+
+kubectl get pods -o json | jq -r '.items[] | "
+
