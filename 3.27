@@ -1,0 +1,36 @@
+你可以使用 jq 计算筛选后数据的平均值。
+
+1. 筛选 value > 20 的数据并计算平均值
+
+jq '[.[] | select(.value > 20) | .value] | add / length' file.json
+
+2. 命令解析
+
+[.[] | select(.value > 20) | .value] → 获取所有 value > 20 的值并转换为数组
+
+add → 计算数组元素的总和
+
+/ length → 总和除以元素个数，得到平均值
+
+
+3. 示例 JSON
+
+[
+  {"name": "item1", "value": 10},
+  {"name": "item2", "value": 25},
+  {"name": "item3", "value": 30}
+]
+
+4. 执行结果
+
+27.5
+
+(即 (25 + 30) / 2 = 27.5)
+
+如果 value > 20 的数据为空，则 jq 会报错 length 不能为 0。
+你可以加一个 if 语句处理这种情况：
+
+jq '[.[] | select(.value > 20) | .value] as $arr | if length > 0 then ($arr | add / length) else 0 end' file.json
+
+如果没有符合条件的 value，则返回 0 而不会报错。
+
