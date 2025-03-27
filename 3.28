@@ -1,0 +1,152 @@
+你想在 一个 Shell 脚本 (main.sh) 里调用另一个文件 (aaa.sh) 里的函数，但是 source ./aaa.sh 时报错。让我们彻底解决这个问题！
+
+
+---
+
+✅ 解决方案
+
+1️⃣ 确保 aaa.sh 里定义的是函数
+
+请检查 aaa.sh，确保里面定义的是函数，而不是直接执行的命令：
+
+#!/bin/bash
+
+# 定义一个函数
+hello() {
+    echo "Hello, $1!"
+}
+
+# 定义另一个函数
+sum() {
+    echo "$(($1 + $2))"
+}
+
+> 🚨 注意：
+
+不能直接写 echo 语句，否则 source 时会直接执行，而不是导入函数。
+
+hello() 必须用 {}，并且 { 和 } 之间的代码要正确缩进。
+
+
+
+
+
+---
+
+2️⃣ 确保 main.sh 正确 source 了 aaa.sh
+
+请修改 main.sh：
+
+#!/bin/bash
+
+# 加载 aaa.sh
+source ./aaa.sh  # 或者用 `. ./aaa.sh`
+
+# 调用 aaa.sh 里的函数
+hello "Alice"
+sum 5 3
+
+
+---
+
+3️⃣ 确保 aaa.sh 存在且可读
+
+检查 aaa.sh 是否存在：
+
+ls -l aaa.sh
+
+✅ 期待的结果：
+
+-rw-r--r-- 1 user user 123 Mar 27 10:00 aaa.sh
+
+❌ 如果 aaa.sh 不存在，说明路径不对，请使用绝对路径：
+
+source /home/user/scripts/aaa.sh
+
+❌ 如果 aaa.sh 没有读取权限，请运行：
+
+chmod +r aaa.sh
+
+
+---
+
+4️⃣ 处理 source 时报错
+
+如果运行 bash main.sh，仍然报错：
+
+bash: ./aaa.sh: No such file or directory
+
+尝试 改用 .（点符号）
+
+. ./aaa.sh
+
+如果仍然报错，请检查当前目录：
+
+pwd
+
+如果 aaa.sh 在 scripts/ 目录里，应该这样：
+
+source ./scripts/aaa.sh
+
+
+---
+
+5️⃣ 处理 : not found 错误
+
+如果 source 时报 : not found，可能是 Windows 换行符问题，执行：
+
+cat -A aaa.sh
+
+如果发现 ^M 结尾：
+
+hello() {^M
+
+请运行：
+
+dos2unix aaa.sh
+
+或者：
+
+sed -i 's/\r$//' aaa.sh
+
+然后再尝试：
+
+. ./aaa.sh
+
+
+---
+
+🚀 最终测试
+
+运行：
+
+bash main.sh
+
+✅ 期待的输出：
+
+Hello, Alice!
+8
+
+
+---
+
+🛠 总结
+
+1. 确保 aaa.sh 里定义的是函数，而不是直接执行命令
+
+
+2. main.sh 里用 source ./aaa.sh 或 . ./aaa.sh 加载
+
+
+3. 确认 aaa.sh 存在且可读（ls -l aaa.sh）
+
+
+4. 避免 Windows 换行符（dos2unix aaa.sh）
+
+
+5. 检查 Shell 是否是 bash（bash main.sh）
+
+
+
+试试看！如果还是有问题，把具体的错误信息贴出来，我帮你分析！
+
