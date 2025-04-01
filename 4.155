@@ -1,0 +1,115 @@
+抱歉，我理解错了您的需求。如果您希望通过标签来找到 EC2 实例，并通过 AWS Fault Injection Simulator (FIS) 来 停止实例 5 分钟，以下是一个适合的示例脚本。
+
+方案概述：
+
+1. 使用 AWS CLI 根据 Tag 名称 和 Tag 值 查找 EC2 实例的 Instance ID。
+
+
+2. 使用 AWS FIS 暂停实例，进行模拟故障（模拟停止实例 5 分钟）。
+
+
+3. 5 分钟后重新启动实例。
+
+
+
+必要条件：
+
+1. AWS CLI 已经安装并配置（并且有执行相关操作的权限）。
+
+
+2. 需要配置 FIS 相关的故障注入模板（Fault Injection Template），以便模拟实例的停止。
+
+
+3. 假设您已经创建了适当的故障注入模板来停止 EC2 实例。
+
+
+
+脚本流程：
+
+1. 查找标签对应的 实例 ID。
+
+
+2. 使用 FIS 模拟停止该实例。
+
+
+3. 5 分钟后使用 FIS 恢复该实例。
+
+
+
+Shell 脚本：
+
+#!/bin/bash
+
+# 设置实例的标签名称和值
+TAG_NAME="Name"
+TAG_VALUE="YourTagValue"
+
+# 查找根据标签筛选的 EC2 实例 ID
+INSTANCE_ID=$(aws ec2 describe-instances \
+  --filters "Name=tag:${TAG_NAME},Values=${TAG_VALUE}" \
+  --query "Reservations[*].Instances[*].InstanceId" \
+  --output text)
+
+# 检查是否找到实例 ID
+if [ -z "$INSTANCE_ID" ]; then
+  echo "未找到符合条件的实例"
+  exit 1
+fi
+
+echo "找到实例: $INSTANCE_ID"
+
+# 设置 FIS 故障注入模板 ARN (此处需要您的模板 ARN)
+FIS_TEMPLATE_ARN="arn:aws:fis:region:account-id:experiment-template/template-id"
+
+# 启动 FIS 故障注入实验（停止实例）
+aws fis start-experiment --experiment-template-arn $FIS_TEMPLATE_ARN --start-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --parameters "instanceId=${INSTANCE_ID},action=stop" 
+
+echo "实例 $INSTANCE_ID 将被停止 5 分钟"
+
+# 等待 5 分钟（300 秒）
+sleep 300
+
+# 重新启动实例
+aws ec2 start-instances --instance-ids $INSTANCE_ID
+
+echo "实例 $INSTANCE_ID 已重新启动"
+
+脚本说明：
+
+1. 实例标签查询：通过 aws ec2 describe-instances 命令，使用实例标签（Name=YourTagValue）来获取 EC2 实例的 ID。
+
+
+2. FIS 故障注入：使用 aws fis start-experiment 启动故障注入实验，故障注入模板会模拟实例故障，比如停止实例。您需要提供事先创建的 FIS 故障注入模板 ARN，并在模板中配置实例停止操作。
+
+
+3. 等待 5 分钟：sleep 300 用于暂停脚本 5 分钟，这期间实例处于停止状态。
+
+
+4. 重启实例：5 分钟后，脚本会使用 aws ec2 start-instances 命令重新启动该实例。
+
+
+
+FIS 故障注入模板配置：
+
+您需要预先创建一个 FIS 故障注入模板，该模板应该包括停止 EC2 实例的操作。
+
+您可以通过以下步骤创建一个简单的 FIS 故障注入模板：
+
+1. 在 AWS 控制台中，导航到 Fault Injection Simulator，并创建一个新的实验模板。
+
+
+2. 在模板中选择 Stop EC2 Instances 操作，并配置相关参数。
+
+
+3. 获取模板的 ARN，然后将其用于上面的脚本中。
+
+
+
+脚本执行：
+
+执行此脚本时，它会根据提供的标签名称和值查找实例，模拟停止实例 5 分钟，等待 5 分钟后，自动重新启动该实例。
+
+> 注意：确保您拥有使用 FIS 和停止实例的权限，并且该实例支持故障注入操作。如果没有正确配置 FIS，该脚本将无法运行。
+
+
+
