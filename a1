@@ -1,0 +1,62 @@
+如果你想要通过 Ansible 使用 SCP 将文件从远程主机拷贝到 GitLab CI/CD agent 中，并且目录名使用变量，可以利用 Ansible 的 copy 或 fetch 模块，结合 scp 命令来实现。假设你已经有一个 GitLab Runner 的 agent 环境，并希望将文件从远程主机拷贝到 agent 中指定的目录。
+
+这里是一个示例 playbook，展示如何通过 scp 将文件从远程主机拷贝到 GitLab agent，且使用变量来指定目录名：
+
+示例 Playbook
+
+---
+- name: SCP files from remote to GitLab agent
+  hosts: your_remote_host_group
+  gather_facts: no
+  vars:
+    destination_directory: "/path/to/gitlab/agent/directory/{{ ansible_hostname }}"
+
+  tasks:
+    - name: Copy file from remote to GitLab agent using SCP
+      ansible.builtin.command:
+        cmd: >
+          scp -r /path/to/remote/files/* user@{{ gitlab_agent_host }}:{{ destination_directory }}
+      delegate_to: localhost
+
+解释：
+
+1. vars:
+
+destination_directory：使用变量来指定目标目录路径。这里我们使用了 {{ ansible_hostname }} 来使目录名称动态地根据远程主机名变化，你可以根据需要调整这个值。
+
+gitlab_agent_host：GitLab Agent 的 IP 地址或主机名。你可以通过变量或 Ansible Inventory 来指定。
+
+
+
+2. ansible.builtin.command：
+
+该任务会执行一个 scp 命令，将远程主机上的文件拷贝到 GitLab Agent 机器上指定的目录。我们使用了 -r 参数来递归拷贝目录内容（如果有目录的话）。
+
+delegate_to: localhost：这确保 scp 命令会在 Ansible 控制机上运行，而不是在目标主机上运行。
+
+
+
+3. {{ ansible_hostname }}：这是 Ansible 提供的内置变量，它会在每个目标主机上动态生成该主机的主机名。
+
+
+4. scp 需要你在目标主机和 GitLab Agent 之间有有效的 SSH 连接。确保你已经配置了 SSH 密钥或能够通过密码登录。
+
+
+
+使用时的注意事项：
+
+1. SSH 设置：确保你能从 Ansible 控制节点（localhost）通过 SSH 无密码地登录到 GitLab Agent 上。可以通过 SSH 密钥认证来避免输入密码。
+
+
+2. GitLab Agent 地址：替换 {{ gitlab_agent_host }} 为你的 GitLab Agent 的实际主机名或 IP 地址。
+
+
+3. 目录权限：确保目标目录（即 GitLab agent 的目录）具有足够的权限，以便拷贝操作成功执行。
+
+
+4. 文件路径：你可以根据需要修改 scp 命令中的文件路径。此处 scp -r /path/to/remote/files/* 是一个例子，表示将整个目录内容拷贝过去。
+
+
+
+通过这种方式，你可以使用 Ansible 在运行时动态指定目标目录，并将文件从远程主机通过 SCP 拷贝到 GitLab Agent 上。
+
