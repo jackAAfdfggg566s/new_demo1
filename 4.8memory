@@ -1,0 +1,96 @@
+你的配置：
+
+resources:
+  requests:
+    memory: "512Mi"
+  limits:
+    memory: "512Mi"
+
+这个配置本身是合法且正常的，表示：
+
+容器启动时就“预留”512Mi 的内存资源（requests）
+
+最多只能使用512Mi（limits）
+
+
+但在你做 memory stress 实验 的场景下，这可能不够大，原因如下：
+
+
+---
+
+为什么 512Mi 可能不够？
+
+当你运行 FIS 的 memory stress（比如使用 stress-ng）时，它会尝试分配大量内存，比如：
+
+stress-ng --vm 1 --vm-bytes 700m --timeout 60s
+
+这个命令就会尝试吃掉 700Mi 的内存。如果容器限制是 512Mi，就直接 OOM（超出限制被 K8s 杀掉）。
+
+
+---
+
+如何确认 stress 占用了多少内存？
+
+你可以检查 FIS 模板里 memory stress action 的参数，有类似：
+
+"parameters": {
+  "workers": "1",
+  "memory": "700Mi"
+}
+
+如果这个值大于你容器的 limit（512Mi），就一定会失败。
+
+
+---
+
+怎么解决？
+
+方案 1：提高容器的 limits
+
+将容器的 limit 提高到比如 1Gi：
+
+resources:
+  requests:
+    memory: "512Mi"
+  limits:
+    memory: "1Gi"
+
+你可以只改 limits，不改 requests，避免对节点调度产生影响。
+
+方案 2：降低 FIS stress 的 memory 占用
+
+在 FIS 模板中把 memory 设置改小，比如 300Mi：
+
+"parameters": {
+  "memory": "300Mi"
+}
+
+
+---
+
+推荐操作顺序：
+
+1. 查看你 FIS 实验中 memory stress 的参数（要不要贴出来我看看？）
+
+
+2. 如果是 >512Mi，就升一下容器的 memory limit。
+
+
+3. 如果你不想升限额，可以改小 stress 参数。
+
+
+
+
+---
+
+如果你愿意，我可以帮你改一个安全的 FIS memory stress 实验，适配你目前的资源配置。你只要告诉我：
+
+你想 stress 哪个容器（容器名）
+
+是 Deployment 还是其他类型
+
+FIS 是用哪个 action（SageMaker agent？SSM？）
+
+
+我可以直接给你一份可用的模板。
+
