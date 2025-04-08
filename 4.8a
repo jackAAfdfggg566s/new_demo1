@@ -1,0 +1,124 @@
+在 GitLab CI/CD Pipeline 中结合 Ansible 来管理跳板机连接并查询 PostgreSQL 数据库，可以将 SSH 和数据库查询部分放到 Ansible Playbook 中。这样可以利用 Ansible 的自动化管理能力来简化操作。
+
+以下是如何将上述操作集成到 GitLab CI/CD Pipeline 中并使用 Ansible Playbook 连接到跳板机并查询 PostgreSQL 数据库的步骤。
+
+步骤 1：创建 Ansible Playbook
+
+首先，你需要创建一个 Ansible Playbook 文件来执行跳板机的 SSH 连接和 PostgreSQL 查询。
+
+创建 playbook.yml
+
+---
+- name: Connect to jumpbox and query PostgreSQL
+  hosts: jumpbox
+  become: no
+  vars:
+    db_host: "db_host"      # 替换为数据库主机
+    db_user: "postgres_user" # 替换为 PostgreSQL 用户
+    db_name: "db_name"       # 替换为数据库名称
+    db_password: "password"  # 替换为 PostgreSQL 密码
+  tasks:
+    - name: Ensure SSH is installed on jumpbox
+      package:
+        name: openssh-client
+        state: present
+
+    - name: Forward PostgreSQL port through jumpbox
+      command: >
+        ssh -o StrictHostKeyChecking=no -fN -L 5432:{{ db_host }}:5432 jumpbox_user@{{ inventory_hostname }}
+      become: no
+      async: 0
+      poll: 0
+      ignore_errors: yes
+
+    - name: Wait for port forwarding to be ready
+      wait_for:
+        host: "localhost"
+        port: 5432
+        state: started
+        timeout: 30
+
+    - name: Query PostgreSQL database
+      command: >
+        PGPASSWORD={{ db_password }} psql -h localhost -p 5432 -U {{ db_user }} -d {{ db_name }} -c "SELECT * FROM my_table;"
+      register: query_result
+
+    - name: Show query result
+      debug:
+        var: query_result.stdout
+
+hosts: jumpbox：这表示操作的目标主机是跳板机（在你的 Ansible inventory 文件中定义）。
+
+command: ssh -fN -L 5432:db_host:5432 jumpbox_user@{{ inventory_hostname }}：通过跳板机创建一个 SSH 隧道，将 5432 端口映射到目标 PostgreSQL 数据库。
+
+wait_for：等待端口转发生效。
+
+psql：连接到本地的 5432 端口并执行 SQL 查询。
+
+
+步骤 2：创建 Ansible Inventory 文件
+
+你需要定义你的跳板机和目标数据库主机信息。创建一个 inventory.ini 文件：
+
+[jumpbox]
+jumpbox_host ansible_ssh_user=jumpbox_user ansible_ssh_private_key_file=/path/to/ssh/key
+
+[db_host]
+db_host ansible_host=db_host ansible_ssh_user=postgres_user ansible_ssh_private_key_file=/path/to/ssh/key
+
+jumpbox_host 是跳板机的主机。
+
+db_host 是目标 PostgreSQL 数据库的主机。
+
+
+步骤 3：配置 GitLab CI/CD Pipeline
+
+然后，你可以在 .gitlab-ci.yml 中配置 Ansible 的执行部分。以下是一个集成了 Ansible Playbook 的 GitLab CI 配置文件示例：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  image: python:3.9  # 使用 Python 镜像来安装 Ansible 和依赖
+  before_script:
+    - pip install ansible
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+    - ansible-playbook -i inventory.ini playbook.yml
+
+步骤 4：配置 GitLab CI/CD 环境变量
+
+在 GitLab CI/CD 配置中，确保添加以下环境变量来处理 SSH 连接和 Ansible 配置：
+
+SSH_PRIVATE_KEY：你的跳板机私钥。
+
+SSH_KNOWN_HOSTS：跳板机的公钥（可以通过 ssh-keyscan 获得）。
+
+DB_PASSWORD：PostgreSQL 数据库密码。
+
+
+你可以在 GitLab 项目的 Settings -> CI / CD -> Variables 中添加这些变量。
+
+步骤 5：执行 GitLab CI/CD Pipeline
+
+完成上述配置后，每次推送代码时，GitLab CI 会执行以下操作：
+
+1. 使用 SSH 密钥连接到跳板机。
+
+
+2. 创建 SSH 隧道，将 5432 端口转发到目标 PostgreSQL 数据库。
+
+
+3. 通过 psql 查询数据库。
+
+
+4. 输出查询结果。
+
+
+
+这样，你就可以通过 Ansible 在 GitLab CI/CD Pipeline 中自动化地连接跳板机并查询 PostgreSQL 数据库。
+
