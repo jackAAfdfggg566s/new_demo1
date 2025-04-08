@@ -1,0 +1,91 @@
+谢谢补充，明白你的意思了：
+
+> 你的主容器 memory limit 是 14Gi，但 sidecar 报错说内存不足，导致整个 Pod 起不来。
+
+
+
+
+---
+
+K8s 的内存限制是 Pod 级别，而非容器总共共享的
+
+这是关键点：每个容器的 memory limit 是独立计算的，但 整个 Pod 的总内存使用不能超过节点可分配内存。
+
+如果你只给主容器设置了 14Gi 的 limit，但没有给 sidecar 容器设置 limit，默认就没有限制，它可能会被系统调度器认为总资源超了。
+
+
+---
+
+问题解析：
+
+你现在的 Pod 可能类似这样：
+
+containers:
+  - name: main
+    image: xxx
+    resources:
+      limits:
+        memory: "14Gi"
+  - name: sidecar
+    image: xxx
+    # 没有设置 limit
+
+这种情况下，K8s 会尝试在某个节点上调度这个 Pod，但如果节点上没有足够的 14Gi + sidecar 预估值，调度会失败，或者 OOM 报错。
+
+
+---
+
+解决建议：
+
+你有两个方向可以选：
+
+
+---
+
+方式 1：提升主容器的 limit，预留 sidecar 内存空间
+
+比如主容器设置为 15Gi，然后给 sidecar 预留 1Gi 内存，这样节点调度会留出足够资源：
+
+containers:
+  - name: main
+    resources:
+      limits:
+        memory: "15Gi"
+  - name: sidecar
+    resources:
+      limits:
+        memory: "1Gi"
+
+
+---
+
+方式 2：减少主容器 limit，显式为 sidecar 预留内存
+
+比如主容器改成 13Gi，sidecar 设置 1Gi，这样也能调度成功：
+
+containers:
+  - name: main
+    resources:
+      limits:
+        memory: "13Gi"
+  - name: sidecar
+    resources:
+      limits:
+        memory: "1Gi"
+
+
+---
+
+总结：
+
+是的，你的理解是对的 —— 如果你 只给主容器设了 14Gi limit，而 sidecar 又需要内存，这可能会超出 Pod 总可用内存预算，造成 sidecar 报错，最终整个 Pod 启动失败。
+
+你需要：
+
+要么提升主容器的 limit 给 sidecar 腾地方，
+
+要么显式给 sidecar 设置 limit，让资源分配合理。
+
+
+想让我帮你改下完整 YAML 模板吗？
+
