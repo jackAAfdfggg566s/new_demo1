@@ -1,0 +1,109 @@
+如果你不想使用 known_hosts 来验证跳板机的 SSH 主机密钥（即禁用 SSH 主机密钥检查），可以在 SSH 命令中使用 -o StrictHostKeyChecking=no 选项来绕过主机密钥验证。这通常是在自动化环境中使用时常见的做法，但要小心，因为这会禁用 SSH 的安全检查。
+
+下面是修改后的步骤和配置：
+
+步骤 1：修改 Ansible Playbook
+
+我们将 SSH 命令改为使用 StrictHostKeyChecking=no 来绕过主机密钥验证。
+
+playbook.yml 示例：
+
+---
+- name: Connect to jumpbox and query PostgreSQL
+  hosts: jumpbox
+  become: no
+  vars:
+    db_host: "db_host"      # 替换为数据库主机
+    db_user: "postgres_user" # 替换为 PostgreSQL 用户
+    db_name: "db_name"       # 替换为数据库名称
+    db_password: "password"  # 替换为 PostgreSQL 密码
+  tasks:
+    - name: Ensure SSH is installed on jumpbox
+      package:
+        name: openssh-client
+        state: present
+
+    - name: Forward PostgreSQL port through jumpbox (no host key checking)
+      command: >
+        ssh -o StrictHostKeyChecking=no -fN -L 5432:{{ db_host }}:5432 jumpbox_user@{{ inventory_hostname }}
+      become: no
+      async: 0
+      poll: 0
+      ignore_errors: yes
+
+    - name: Wait for port forwarding to be ready
+      wait_for:
+        host: "localhost"
+        port: 5432
+        state: started
+        timeout: 30
+
+    - name: Query PostgreSQL database
+      command: >
+        PGPASSWORD={{ db_password }} psql -h localhost -p 5432 -U {{ db_user }} -d {{ db_name }} -c "SELECT * FROM my_table;"
+      register: query_result
+
+    - name: Show query result
+      debug:
+        var: query_result.stdout
+
+步骤 2：修改 GitLab CI/CD Pipeline 配置
+
+在 GitLab CI 配置文件 .gitlab-ci.yml 中，我们依然使用 ssh -o StrictHostKeyChecking=no，来绕过主机密钥的检查。并且不再需要设置 known_hosts。
+
+.gitlab-ci.yml 示例：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  image: python:3.9  # 使用 Python 镜像来安装 Ansible 和依赖
+  before_script:
+    - pip install ansible
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ansible-playbook -i inventory.ini playbook.yml
+
+步骤 3：配置 GitLab CI/CD 环境变量
+
+在 GitLab 项目的 Settings -> CI / CD -> Variables 中，确保添加以下环境变量：
+
+SSH_PRIVATE_KEY：你的跳板机的私钥。
+
+DB_PASSWORD：PostgreSQL 数据库的密码。
+
+
+步骤 4：Ansible Inventory 文件
+
+与之前相同，你需要创建一个 inventory.ini 文件来定义跳板机和数据库主机的连接信息。假设你已经有跳板机和数据库的信息，inventory.ini 示例：
+
+[jumpbox]
+jumpbox_host ansible_ssh_user=jumpbox_user ansible_ssh_private_key_file=/path/to/ssh/key
+
+[db_host]
+db_host ansible_host=db_host ansible_ssh_user=postgres_user ansible_ssh_private_key_file=/path/to/ssh/key
+
+步骤 5：执行 GitLab CI/CD Pipeline
+
+完成上述配置后，每次推送代码时，GitLab CI 会自动执行以下操作：
+
+1. 使用提供的 SSH 私钥连接到跳板机。
+
+
+2. 创建一个 SSH 隧道将 5432 端口转发到目标数据库。
+
+
+3. 等待端口转发完成后，使用 psql 命令查询 PostgreSQL 数据库。
+
+
+4. 输出查询结果。
+
+
+
+总结
+
+通过在 ssh 命令中使用 -o StrictHostKeyChecking=no 选项，可以避免使用 known_hosts 文件，从而跳过 SSH 主机密钥验证。这样就能够更轻松地在 GitLab CI/CD 中自动化地连接跳板机并查询 PostgreSQL 数据库。
+
