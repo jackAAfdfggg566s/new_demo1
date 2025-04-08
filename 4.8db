@@ -1,0 +1,56 @@
+要在 GitLab CI/CD Pipeline 中直接连接上跳板机并查询 PostgreSQL 数据库，可以通过以下步骤实现。假设跳板机是一个中介服务器，允许你通过 SSH 连接到它，再通过它连接到数据库所在的服务器。
+
+步骤 1：设置跳板机的 SSH 连接
+
+1. 在 GitLab CI/CD 中配置 SSH 密钥
+首先，生成一个 SSH 密钥对，然后将公钥添加到跳板机的 ~/.ssh/authorized_keys 文件中。将私钥添加到 GitLab CI/CD 的 secret variables 中。
+
+在 GitLab 项目的设置中，找到 Settings -> CI / CD -> Variables，添加以下环境变量：
+
+SSH_PRIVATE_KEY：你的私钥。
+
+SSH_KNOWN_HOSTS：跳板机的主机公钥（可以通过 ssh-keyscan 获得）。
+
+
+
+2. 在 .gitlab-ci.yml 文件中配置 SSH 连接
+在 GitLab CI 配置文件 .gitlab-ci.yml 中配置 SSH 连接跳板机。以下是一个基本的配置示例：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - echo "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+    - ssh -o StrictHostKeyChecking=no -fN -L 5432:db_host:5432 jumpbox_user@jumpbox_host
+    - sleep 5  # 等待端口转发完成
+    - psql -h localhost -p 5432 -U postgres_user -d db_name -c "SELECT * FROM my_table;"
+
+-L 5432:db_host:5432：这会将跳板机的本地端口 5432 映射到目标数据库 db_host 的 5432 端口。
+
+ssh -fN：在后台执行 SSH 连接。
+
+psql：通过本地的 5432 端口连接到 PostgreSQL 数据库。
+
+
+
+
+步骤 2：使用 psql 查询 PostgreSQL 数据库
+
+在跳板机上设置端口转发之后，你可以使用 psql 连接到数据库。上面的 psql 命令会连接到 PostgreSQL 数据库并执行查询。根据需要替换数据库的用户名、数据库名称和查询语句。
+
+步骤 3：调试和验证
+
+在 GitLab CI/CD 中执行 pipeline 时，确保跳板机能够正确转发端口，并且 psql 命令可以成功连接到数据库。调试时，可以添加更多的日志输出，例如：
+
+- ssh -o StrictHostKeyChecking=no -v -fN -L 5432:db_host:5432 jumpbox_user@jumpbox_host
+- psql -h localhost -p 5432 -U postgres_user -d db_name -c "SELECT * FROM my_table;"
+
+-v 选项会让 SSH 输出更详细的调试信息，帮助你排查问题。
+
+这样，你就可以在 GitLab CI/CD Pipeline 中通过跳板机连接到 PostgreSQL 数据库并执行查询了。
+
