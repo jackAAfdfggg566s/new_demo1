@@ -1,0 +1,91 @@
+完全正确！在 AWS FIS（Fault Injection Simulator）执行实验时，确实会临时创建一个 FIS Agent Pod，它负责执行如 memory stress 等注入操作。
+
+
+---
+
+你看到的 "sidecar 容器" 报错，实际可能是这个 FIS 注入 Pod 本身中的容器报错
+
+这个临时 FIS Pod：
+
+会挂载到目标 Node 上
+
+可能是 DaemonSet、Job 或直接 Pod 的形式
+
+运行 AWS 提供的 FIS agent 镜像，如 amazonlinux + ssm agent 或 aws-fis-agent
+
+内部可能执行类似 stress-ng 命令对目标容器进行干预
+
+
+
+---
+
+为什么会报“内存不足”？
+
+你主容器设置了 14Gi 的 limit，但：
+
+FIS Agent 要注入 memory stress，需要占用大量内存（比如 13–14Gi）
+
+由于 FIS Agent 的容器也是运行在 Node 上，它和你的业务 Pod 共享节点资源
+
+如果节点可分配内存没有 额外的 buffer，就会报 FIS Agent 容器内存不足
+
+
+这跟你的业务 Pod 配置的 limit 是 间接相关 的，但更直接的是：整个 Node 剩余内存是否够用
+
+
+---
+
+解决方案：
+
+1. 给节点更多内存
+
+确保 EKS Node Group 的每个实例有足够多内存（比如 16Gi+），否则 FIS Agent + 你的 Pod 会打架。
+
+2. 在 FIS 实验里控制 stress 量
+
+如果你使用的是类似这样的 FIS Action：
+
+"action": "aws:fis:inject-stress",
+"parameters": {
+  "duration": "60",
+  "stress-type": "memory",
+  "memory-percentage": "95"
+}
+
+可以把 memory-percentage 调低一点，比如 80 或 70，避免直接冲顶导致 Agent 自己 OOM。
+
+3. 使用 DaemonSet 模式并控制容器资源
+
+如果你是用 aws-fis-agent 镜像，可以加资源限制，比如：
+
+resources:
+  limits:
+    memory: "1Gi"
+    cpu: "500m"
+
+但这要你有对 agent 镜像或 FIS Template 的自定义控制能力。
+
+
+---
+
+总结：
+
+FIS 运行时会启动一个临时的 Pod（不是你的业务 Pod的 sidecar）；
+
+报错“sidecar 内存不足”很可能就是这个临时 FIS Pod 的容器内存不够；
+
+解决办法是：
+
+确保节点有足够可用内存；
+
+控制 FIS 注入的压力（如 memory-percentage）；
+
+如果可能，给 FIS agent 容器设置合理的资源 limit。
+
+
+
+
+---
+
+你想给我看看你用的 FIS 模板 JSON 或 YAML 吗？我可以帮你优化配置，避免下次出错。
+
