@@ -1,0 +1,98 @@
+抱歉，确实是我理解错了你的问题。如果你不希望使用 SSH 密钥，而是完全通过密码（而不是密钥认证）连接到跳板机，那么可以通过 sshpass 来实现这一点，无需依赖 SSH 密钥。
+
+以下是完全使用 sshpass 的方案，其中 sshpass 会通过提供跳板机的密码来实现 SSH 连接，而不使用 SSH 密钥。
+
+步骤 1：修改 .gitlab-ci.yml
+
+我们将 sshpass 用于通过跳板机密码建立 SSH 连接，并使用它来转发 PostgreSQL 数据库的端口。修改后的 .gitlab-ci.yml 文件如下：
+
+stages:
+  - deploy
+
+deploy:
+  stage: deploy
+  image: python:3.9  # 使用 Python 镜像来安装 Ansible 和依赖
+  before_script:
+    # 安装所需的工具：sshpass 和 PostgreSQL 客户端
+    - apk update
+    - apk add sshpass
+    - apk add postgresql-client
+  script:
+    # 使用 sshpass 通过跳板机的密码进行 SSH 登录，并转发 PostgreSQL 端口
+    - sshpass -p "$JUMPBOX_PASSWORD" ssh -o StrictHostKeyChecking=no -fN -L 5432:db_host:5432 jumpbox_user@$JUMPBOX_HOST
+
+    # 等待端口转发建立
+    - sleep 5
+
+    # 使用 psql 查询 PostgreSQL 数据库
+    - PGPASSWORD="$DB_PASSWORD" psql -h localhost -p 5432 -U $DB_USER -d $DB_NAME -c "SELECT * FROM my_table;"
+
+解释：
+
+1. 安装依赖：
+
+使用 apk 安装 sshpass 和 postgresql-client，以便通过密码登录跳板机并查询 PostgreSQL 数据库。
+
+
+
+2. 创建 SSH 隧道：
+
+使用 sshpass -p "$JUMPBOX_PASSWORD" 提供跳板机的密码来自动化 SSH 登录。
+
+-o StrictHostKeyChecking=no 参数用于跳过 SSH 主机密钥验证（避免使用 known_hosts）。
+
+使用 -fN 在后台执行 SSH 会话，并通过 -L 5432:db_host:5432 创建端口转发，将本地的 5432 端口转发到 PostgreSQL 数据库的主机（db_host）。
+
+
+
+3. 等待端口转发建立：
+
+使用 sleep 5 确保端口转发建立完成，通常 5 秒钟足够。
+
+
+
+4. 查询数据库：
+
+使用 psql 连接到本地端口（通过跳板机转发的端口）并执行 SQL 查询。
+
+
+
+
+步骤 2：配置 GitLab 环境变量
+
+在 GitLab 项目的 Settings -> CI / CD -> Variables 中，确保添加以下环境变量：
+
+JUMPBOX_PASSWORD：跳板机的 SSH 密码。
+
+JUMPBOX_USER：跳板机的 SSH 用户名。
+
+JUMPBOX_HOST：跳板机的主机名或 IP 地址。
+
+DB_USER：PostgreSQL 数据库的用户名。
+
+DB_PASSWORD：PostgreSQL 数据库的密码。
+
+DB_NAME：PostgreSQL 数据库的名称。
+
+
+步骤 3：运行 GitLab Pipeline
+
+完成配置后，每次推送代码时，GitLab CI 会执行以下操作：
+
+1. 安装 sshpass 和 psql 工具。
+
+
+2. 使用 sshpass 自动通过密码登录跳板机。
+
+
+3. 创建 SSH 隧道，将 5432 端口转发到目标 PostgreSQL 数据库。
+
+
+4. 通过本地端口（localhost:5432）连接 PostgreSQL 数据库并执行查询。
+
+
+
+总结
+
+通过这种方式，你完全不需要使用 SSH 密钥，而是依赖于 sshpass 和密码进行 SSH 登录和端口转发。虽然这样做更简单，但在生产环境中，使用 SSH 密钥认证更安全。如果可能，建议改为使用 SSH 密钥认证而不是密码认证。
+
