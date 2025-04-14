@@ -1,0 +1,69 @@
+在 GitLab 中“回退四个版本”可以理解为让你的代码回到历史中某一个 commit 的状态。这里有几种常见的做法，取决于你要“回退的对象是本地还是远程”，“是否要保留历史”：
+
+
+---
+
+方式一：硬回退到前四个版本（本地 + 强制推送远程）
+
+如果你确认要回退并覆盖远程历史（危险操作，慎用）：
+
+# 查看提交记录，确认当前的位置
+git log --oneline
+
+# 回退到前四个提交
+git reset --hard HEAD~4
+
+# 强制推送到远程（慎用，会改动历史）
+git push origin HEAD --force
+
+> 说明：这会彻底让你本地和远程回到4个版本前的状态，后面的提交会“消失”。
+
+
+
+
+---
+
+方式二：创建一个新的 commit 恢复到四个版本前（安全）
+
+这种方式不会破坏历史，而是新增一个 commit 恢复旧状态：
+
+# 找到前4个版本的 commit hash（使用 git log）
+git log --oneline
+
+# 假设是 abc1234
+git checkout abc1234
+
+# 创建一个新的分支或 commit 用于恢复
+git checkout -b rollback-to-old
+# 或直接回主分支提交
+git checkout main
+git revert --no-commit HEAD~3..HEAD  # 反转近 3 次提交（总共 4 次前的状态）
+git commit -m "Revert to state from 4 commits ago"
+
+# 推送
+git push origin main
+
+
+---
+
+方式三：使用 GitLab UI 回退（适合简单情况）
+
+1. 打开项目主页 → Repository → Commits
+
+
+2. 找到你想“回退”的那个 commit（倒数第4个）
+
+
+3. 点击右侧的“Revert”按钮，GitLab 会自动创建一个反转 commit。
+
+
+
+> 适合不想用命令行的用户。
+
+
+
+
+---
+
+需要我帮你写具体命令或分析当前分支状态吗？可以发一下你的 git log --oneline 前几行。
+
