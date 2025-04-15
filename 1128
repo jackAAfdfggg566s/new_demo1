@@ -1,0 +1,92 @@
+你遇到的 35=2（Logon 消息）中缺失 1128 字段，属于 FIX 协议中 logon 消息格式不完整的问题。下面是具体解释和解决办法。
+
+
+---
+
+一、字段解释：
+
+35=2：表示这是一条 Logon 消息
+
+1128：是 "ApplVerID"，表示使用的 FIX 版本，比如：
+
+1128=9 表示 FIX.5.0SP2
+
+1128=8 表示 FIX.5.0SP1
+
+1128=7 表示 FIX.5.0
+
+1128=6 表示 FIX.4.4
+
+
+
+这个字段在 FIX 5.0 及以上版本是必须的（必填），缺失会导致对方（或你自己的引擎）拒绝连接。
+
+
+---
+
+二、解决办法
+
+情况1：你是 客户端（发送 logon 消息的一方）
+
+你需要在 Logon 消息中 添加 1128 字段，示例如下：
+
+8=FIXT.1.1|9=100|35=A|34=1|49=SENDER|56=TARGET|52=20250415-08:00:00.000|
+98=0|108=30|141=Y|1128=9|10=xxx|
+
+1128=9 表示使用 FIX 5.0 SP2
+
+| 代表分隔符（实际使用中是 ASCII SOH）
+
+
+情况2：你是 服务端（接收 logon 消息的一方）
+
+那么你应该：
+
+检查你的 FIX engine（如 QuickFIX/J、OnixS、FIX Antenna 等）配置，看是否启用了 严格验证
+
+如果对方没发 1128，而你使用 FIXT.1.1，你需要告诉对方“请补充 ApplVerID（1128）”
+
+或者在引擎配置中允许兼容老版本（不推荐）
+
+
+
+---
+
+三、在 QuickFIX/J 中的设置（举例）
+
+指定 FIX 版本：
+
+[DEFAULT]
+BeginString=FIXT.1.1
+DefaultApplVerID=9
+
+在发送 Logon 时自动带上 1128：
+
+SessionSettings settings = new SessionSettings("config.cfg");
+SessionID sessionID = new SessionID("FIXT.1.1", "SENDER", "TARGET");
+Session session = Session.lookupSession(sessionID);
+session.logon(); // 会带上 1128=9（如果配置了 DefaultApplVerID）
+
+
+---
+
+四、总结
+
+> 缺失 1128 的根本原因是使用 FIXT.1.1/FIX5.0+ 时没有正确设置版本字段。
+
+
+
+修复方法：
+
+发消息的一方加上 1128=9
+
+引擎配置中添加 DefaultApplVerID
+
+若不能控制对方消息格式，可在本地放宽校验（不推荐）
+
+
+
+---
+
+你用的是哪套 FIX 引擎（比如 QuickFIX/J、QuickFIX/n、FIX Antenna、Custom）？我可以给你具体配置。
+
