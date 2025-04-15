@@ -1,0 +1,56 @@
+你想实现的逻辑是：当收到某条包含 35=4 的 logout message（通常是 FIX 协议中的字段），就自动 kill Java 程序。可以通过脚本方式监控日志或网络消息，并触发 kill 操作。这里是一个 Linux 环境下使用 bash + grep + kill 实现的基本思路：
+
+
+---
+
+假设前提：
+
+Java 程序是一个单独的进程，能通过 ps 或进程名识别。
+
+logout message 会写入某个日志文件，或者可以从标准输出中读取。
+
+
+
+---
+
+示例脚本（监控日志方式）：
+
+#!/bin/bash
+
+# 设置日志路径
+LOG_PATH="/path/to/your/fix.log"
+# Java 程序关键字（用于ps查找）
+JAVA_KEYWORD="your-java-app-name-or-class"
+
+# 使用tail -F持续读取日志
+tail -F "$LOG_PATH" | while read line; do
+  if echo "$line" | grep -q "35=4"; then
+    echo "Detected logout message (35=4), killing Java process..."
+    PID=$(ps aux | grep "$JAVA_KEYWORD" | grep -v grep | awk '{print $2}')
+    if [ ! -z "$PID" ]; then
+      kill -9 $PID
+      echo "Killed Java process with PID $PID"
+    else
+      echo "Java process not found."
+    fi
+    break
+  fi
+done
+
+
+---
+
+替代方案（如果你能从 Java 内部处理）：
+
+如果你是在 Java 程序内部能检测到 35=4 消息，也可以在 Java 中直接触发 System.exit(0) 或执行 shell 命令 kill 自己。
+
+if (fixMessage.contains("35=4")) {
+    System.out.println("Logout message received. Exiting...");
+    System.exit(0);
+}
+
+
+---
+
+你是在 Java 外部监听消息？还是你希望 Java 自己处理？我可以根据你具体情况调整方案。
+
