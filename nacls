@@ -1,0 +1,102 @@
+Got it! 你说的是 NACLs = Network Access Control Lists —— 这是 AWS VPC（Virtual Private Cloud）中的网络访问控制机制。
+
+
+---
+
+简单解释：什么是 NACLs？
+
+在 AWS 中，NACL（Network ACL） 是一种子网级别的防火墙规则，用于控制进出子网的网络流量。它是无状态的，即入站和出站规则必须分别配置。
+
+
+---
+
+和你提到的 AWS FIS 结合：
+
+> 怎么用 AWS FIS 实现 NACL 故障注入？
+
+
+
+你可能想做的测试有：
+
+模拟 网络中断，通过修改 NACL 阻止端口（如 TCP 80/443）
+
+模拟某台机器被“隔离”，通过 deny 某个 IP
+
+测试服务在 NACL 配置错误时是否仍健壮运行（比如连不上数据库）
+
+
+
+---
+
+实现方式一：使用 AWS CLI 修改 NACL（结合 FIS）
+
+你可以在 AWS FIS 的实验中添加一个 SSM Action，去调用 CLI 修改 NACL：
+
+步骤：
+
+1. 找到目标 VPC 的 NACL ID（acl-xxxxxxxxx）
+
+
+2. 创建一个 FIS 实验，执行以下命令（通过 AWS SSM）：
+
+
+
+aws ec2 replace-network-acl-entry \
+  --network-acl-id acl-xxxxxxxx \
+  --rule-number 100 \
+  --protocol tcp \
+  --port-range From=80,To=80 \
+  --egress \
+  --rule-action deny \
+  --cidr-block 0.0.0.0/0
+
+这样就会阻断所有出站 HTTP 流量。
+
+
+---
+
+示例：FIS 实验模板片段（阻断端口）
+
+{
+  "actions": {
+    "blockHttpOut": {
+      "actionId": "aws:ssm:send-command",
+      "parameters": {
+        "documentArn": "arn:aws:ssm:region:account-id:document/AWS-RunShellScript",
+        "documentParameters": "{\"commands\":[\"aws ec2 replace-network-acl-entry --network-acl-id acl-xxxxxxxx --rule-number 100 --protocol tcp --port-range From=80,To=80 --egress --rule-action deny --cidr-block 0.0.0.0/0\"]}"
+      },
+      "targets": {
+        "Instances": ["tag:AppRole:Web"]
+      }
+    }
+  }
+}
+
+
+---
+
+说明几点：
+
+NACLs 是无状态的：你必须手动配置入站和出站规则。
+
+FIS 本身不直接操作 NACL，它通过 SSM + 脚本或者调用 Lambda 实现。
+
+你也可以用 CloudFormation + FIS 实现自动回滚。
+
+
+
+---
+
+想法延伸
+
+你想用 NACL 模拟的“故障”场景是什么？以下是常见场景参考：
+
+阻断应用访问外部 API（如 deny 443 出站）
+
+阻止 DB 子网的入站连接（如 deny 3306 入站）
+
+临时 isolate 某个服务子网（deny 所有出/入）
+
+
+告诉我你的场景，我可以给你写一个完整的 FIS + NACL 实验模板。
+
