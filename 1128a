@@ -1,0 +1,73 @@
+好的！下面是一个适用于 QuickFIX/J 的示例代码，用于在接收到消息时，如果是 35=2 且缺失字段 1128（ApplVerID），就自动补上 1128=9（FIX.5.0）：
+
+
+---
+
+示例：自动补全 1128=9 的消息处理逻辑
+
+import quickfix.Message;
+import quickfix.field.MsgType;
+import quickfix.field.ApplVerID;
+import quickfix.FieldNotFound;
+import quickfix.SessionID;
+import quickfix.MessageCracker;
+import quickfix.fix50.ResendRequest;
+
+public class FixgwadaterDriver extends MessageCracker {
+
+    @Override
+    public void onMessage(ResendRequest message, SessionID sessionID) {
+        try {
+            // 检查是否存在 ApplVerID（1128）
+            if (!message.isSetField(ApplVerID.FIELD)) {
+                message.setString(ApplVerID.FIELD, ApplVerID.FIX50);
+                System.out.println("收到 35=2 消息但缺少 1128，已自动补为 1128=9 (FIX.5.0)");
+            }
+
+            // 继续处理 ResendRequest 的业务逻辑...
+            // 你原来的 resend 处理逻辑写在这里
+
+        } catch (FieldNotFound e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+
+---
+
+说明：
+
+ApplVerID.FIELD 是 1128
+
+ApplVerID.FIX50 是 9
+
+这个类继承自 MessageCracker，你应该已经在 QuickFIX/J 中注册过它
+
+可以扩展到其他消息类型一样处理
+
+
+
+---
+
+可选：通用方式（拦截所有消息）
+
+如果你想在 所有消息处理前统一补这个字段，可以在 fromApp 或 toApp 方法中做：
+
+@Override
+public void fromApp(Message message, SessionID sessionID) throws FieldNotFound {
+    String msgType = message.getHeader().getString(MsgType.FIELD);
+    
+    if ("2".equals(msgType) && !message.isSetField(ApplVerID.FIELD)) {
+        message.setString(ApplVerID.FIELD, ApplVerID.FIX50);
+        System.out.println("收到 35=2 消息但缺少 1128，已补为 1128=9");
+    }
+
+    crack(message, sessionID); // 继续消息分发
+}
+
+
+---
+
+需要我帮你适配你项目结构或写一个完整类模板也可以，你可以贴你项目用的 FixgwadaterDriver.java 开头几行，我帮你直接套进去。
+
