@@ -1,0 +1,18 @@
+Here’s an English description for using AWS Fault Injection Simulator (FIS) to disconnect EKS and RDS by targeting a specific port:
+
+
+---
+
+"Simulate network connectivity disruption between Amazon EKS and Amazon RDS by blocking traffic on the database port (e.g., 5432 for PostgreSQL or 3306 for MySQL). This experiment injects a network disruption on EKS worker nodes to drop or deny outbound traffic to the RDS endpoint on the specified port, simulating a partial service outage or misconfigured security group/firewall."
+
+
+---
+
+If you want it more specific, here's a more technical version:
+
+> "This FIS experiment injects a network fault on selected EKS nodes, targeting outbound traffic to the RDS endpoint on port 5432. The goal is to simulate a network partition or port-level connectivity loss, helping validate application resilience and database failover mechanisms."
+
+
+
+Let me know if you want help writing the actual FIS template or SSM document for it.
+
