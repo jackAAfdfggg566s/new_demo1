@@ -1,0 +1,64 @@
+如果你希望 GitLab Agent（或更常见的是通过 GitLab CI/CD Pipeline）连接远程机器执行 shell 命令，并获取命令返回值（stdout/stderr 和 exit code），可以通过 ssh 执行后判断 $? 获取结果，以下是完整写法：
+
+
+---
+
+一、CI 脚本片段：执行远程 shell 并获取返回值
+
+stages:
+  - deploy
+
+remote_shell_exec:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - echo -e "Host *\n\tStrictHostKeyChecking no\n" > ~/.ssh/config
+  script:
+    - |
+      output=$(ssh user@remote_host "bash -c 'your_command_here'")
+      status=$?
+      echo "Command output: $output"
+      echo "Exit status: $status"
+      if [ "$status" -ne 0 ]; then
+        echo "Remote command failed."
+        exit $status
+      fi
+
+
+---
+
+二、示例（比如修改配置文件并返回状态）
+
+- |
+      output=$(ssh user@remote_host "sudo sed -i 's/old/new/g' /etc/myconfig.conf")
+      status=$?
+      echo "Modify config output: $output"
+      echo "Exit status: $status"
+      if [ "$status" -ne 0 ]; then
+        echo "修改配置失败"
+        exit $status
+      fi
+
+
+---
+
+三、解释说明：
+
+ssh user@host "command"：在远程机器上执行命令。
+
+output=$(...)：捕获 stdout。
+
+$?：捕获最后一条命令的 exit code。
+
+exit $status：将错误代码反馈到 GitLab，使 Job 标红。
+
+
+
+---
+
+你希望执行的远程命令大致是什么？是用于部署、配置，还是拉取数据等？我可以帮你写具体脚本。
+
