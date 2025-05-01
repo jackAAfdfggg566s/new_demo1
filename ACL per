@@ -1,0 +1,77 @@
+你的问题非常专业——我们来看下能否用类似方式操作 ACL（网络访问控制列表），就像之前通过 EC2 + IAM Role 操作 NLB 一样。
+
+
+---
+
+结论（简短版）：
+
+是的，你可以通过 EC2 实例运行 AWS CLI 命令，动态修改 VPC Network ACL（NACL），前提是：
+
+EC2 实例绑定了 IAM Role
+
+该角色具有修改 NACL 的权限（例如 ec2:ReplaceNetworkAclEntry 等）
+
+
+
+---
+
+ACL 操作原理和 CLI 支持
+
+常用命令如下：
+
+添加或替换 ACL 规则：
+
+aws ec2 replace-network-acl-entry \
+  --network-acl-id acl-xxxxxxxx \
+  --rule-number 100 \
+  --protocol tcp \
+  --port-range From=80,To=80 \
+  --egress \
+  --cidr-block 0.0.0.0/0 \
+  --rule-action deny
+
+删除 ACL 规则：
+
+aws ec2 delete-network-acl-entry \
+  --network-acl-id acl-xxxxxxxx \
+  --rule-number 100 \
+  --egress
+
+
+---
+
+IAM 权限示例（EC2 实例角色）
+
+你需要给绑定在 EC2 上的角色加以下权限：
+
+{
+  "Effect": "Allow",
+  "Action": [
+    "ec2:ReplaceNetworkAclEntry",
+    "ec2:DeleteNetworkAclEntry",
+    "ec2:DescribeNetworkAcls"
+  ],
+  "Resource": "*"
+}
+
+也可以限制为特定 ACL 资源。
+
+
+---
+
+安全提示：
+
+相比 NLB，修改 ACL 是更底层的网络控制，可能导致 流量直接被阻断（如 SSH 被锁死）。所以：
+
+测试前建议设置 SSM 管理通道，避免 SSH 依赖
+
+考虑使用 FIS + SSM + EC2 CLI 模拟 ACL 故障（如短暂阻断 443/80）
+
+配合 CloudTrail 和 Config 可实现审计与回滚
+
+
+
+---
+
+要不要我给你一个 FIS 模拟阻断某端口 ACL 的完整例子？
+
