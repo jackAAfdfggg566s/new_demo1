@@ -1,0 +1,12 @@
+Here’s the English translation of your statement with clear technical language:
+
+
+---
+
+Granting these permissions directly to users is not secure, as they are highly privileged. Therefore, the permissions are now assigned to a dedicated EC2 instance instead. This EC2 instance only allows access via AWS Systems Manager (SSM) and does not permit SSH access. For this reason, a new EC2 instance is provisioned specifically for fault injection, rather than using the existing bastion host.
+
+
+---
+
+Let me know if you’d like a more formal version for documentation or security reviews.
+
