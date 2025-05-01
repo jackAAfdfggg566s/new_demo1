@@ -1,0 +1,43 @@
+Sure! Here's a professional English email that explains the architecture and its security benefits:
+
+
+---
+
+Subject: Proposed Secure Architecture for FIS-Based Network Experiments
+
+Dear [Recipient's Name],
+
+I’d like to share our proposed approach for safely simulating network behavior using AWS Fault Injection Simulator (FIS), without introducing unnecessary security risks.
+
+Instead of granting sensitive permissions (e.g., deregistering targets from a Network Load Balancer or modifying network ACLs) directly to users or to a general-purpose bastion host, we’ve designed a more secure and isolated architecture:
+
+A dedicated EC2 instance is provisioned specifically for running fault injection commands.
+
+This instance is assigned an IAM role with tightly scoped permissions, such as elasticloadbalancing:DeregisterTargets or ec2:ReplaceNetworkAclEntry.
+
+The EC2 instance does not allow SSH access and is only accessible via AWS Systems Manager (SSM).
+
+All commands are triggered remotely via FIS using the aws:ssm:send-command action.
+
+The FIS execution role itself is limited to only calling SSM commands, minimizing its blast radius.
+
+
+This architecture ensures:
+
+Sensitive permissions are isolated to a controlled EC2 environment.
+
+Users and bastion hosts do not hold elevated permissions.
+
+All activity is auditable via SSM and CloudTrail.
+
+
+Please let me know if you'd like a diagram or example experiment template to support implementation.
+
+Best regards,
+[Your Name]
+
+
+---
+
+Would you like this tailored to a specific team (e.g., Security, DevOps) or made more formal?
+
