@@ -1,0 +1,76 @@
+很好的问题。
+
+虽然你在 FIS 实验中注入的是 NLB 的 目标实例移除与恢复 故障，但 FIS 本身并不直接操作 NLB，而是借助 SSM（Systems Manager） 来在目标实例上执行脚本，从而间接实现目标组的 register/deregister 操作。
+
+所以权限分为两个层次：
+
+
+---
+
+一、FIS 执行角色权限解释（FIS 本身）
+
+FIS 实验会使用一个 IAM 执行角色 来做以下几件事：
+
+1. 通过 SSM 对 EC2 实例执行命令（SendCommand）
+
+ssm:SendCommand：向指定 EC2 实例发送命令
+
+ssm:GetCommandInvocation：查看命令执行结果
+
+ssm:DescribeInstanceInformation（如有需要）：列出可用实例
+
+
+
+2. 在实例里执行注册/移除 NLB 的 AWS CLI 命令
+
+所以这个命令最终会调用：
+
+elasticloadbalancing:DeregisterTargets
+
+elasticloadbalancing:RegisterTargets
+
+
+
+
+3. 写入 CloudWatch 日志（可选）
+
+用于记录命令输出
+
+
+
+
+
+---
+
+二、实例本身权限（如果用 Instance Profile）
+
+如果你通过 SSM 执行命令时，目标 EC2 实例的 IAM Role（也就是它的 Instance Profile） 也需要有权限执行 ELB 操作，比如：
+
+{
+  "Effect": "Allow",
+  "Action": [
+    "elasticloadbalancing:DeregisterTargets",
+    "elasticloadbalancing:RegisterTargets"
+  ],
+  "Resource": "*"
+}
+
+如果 EC2 实例没有这个权限，SSM 即使执行了命令，也会因为权限不足无法 deregister。
+
+
+---
+
+总结
+
+
+---
+
+你可以选择：
+
+让 FIS 角色也能执行 ELB 操作，并在 SSM 中使用 --profile 执行；
+
+或 把 ELB 权限放到 EC2 的 Instance Profile 上（更清晰，也推荐）。
+
+
+是否要我帮你生成对应的策略组合？你可以告诉我你希望权限配置在 FIS 角色上，还是在 EC2 实例角色上。
+
