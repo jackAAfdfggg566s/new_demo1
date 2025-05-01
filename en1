@@ -1,0 +1,33 @@
+Certainly! Here's a clear English description of how to use FIS, SSM, and EC2 to simulate NLB register/deregister operations:
+
+
+---
+
+Simulating NLB Target Deregistration and Registration Using AWS FIS, SSM, and EC2
+
+To simulate the impact of an EC2 instance being removed from and re-added to a Network Load Balancer (NLB) target group, we use AWS Fault Injection Simulator (FIS) in combination with AWS Systems Manager (SSM) and EC2.
+
+1. FIS initiates the experiment and uses a predefined execution role with ssm:SendCommand permissions.
+
+
+2. SSM is used to remotely run shell commands on the target EC2 instance.
+
+
+3. The EC2 instance executes AWS CLI commands to deregister itself from the NLB target group and optionally re-register after a delay.
+
+
+
+This setup isolates permissions and follows the principle of least privilege:
+
+FIS only has permissions to invoke SSM commands.
+
+The EC2 instance role contains the necessary elasticloadbalancing:DeregisterTargets and RegisterTargets permissions.
+
+
+This design ensures that FIS cannot directly affect the load balancer or other resources, reducing the blast radius and improving security.
+
+
+---
+
+Let me know if you'd like a version for documentation or presentation use.
+
