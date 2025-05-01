@@ -1,0 +1,105 @@
+好的，我们一步步来，包括：
+
+1. IAM 角色权限设置（给 FIS 使用）
+
+
+2. 实验模板示例
+
+
+
+
+---
+
+一、IAM 权限设置（给 FIS 实验使用的角色）
+
+你需要为 FIS 实验创建一个 执行角色（通常叫 FIS-ExecutionRole），并附加一个包含如下权限的策略：
+
+示例 IAM 策略（允许操作 NLB 和使用 SSM）
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSSMSendCommand",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:SendCommand"
+      ],
+      "Resource": [
+        "arn:aws:ssm:*:*:document/AWS-RunShellScript",
+        "arn:aws:ec2:*:*:instance/*"
+      ]
+    },
+    {
+      "Sid": "AllowSSMCommandExecutionLogs",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetCommandInvocation"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowELBv2Actions",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:DeregisterTargets",
+        "elasticloadbalancing:RegisterTargets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowCloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+> 注意：你可以根据实际使用的资源（Target Group ARN、Instance ID）替换 "Resource": "*" 为精确 ARN。
+
+
+
+
+---
+
+二、IAM 角色信任策略
+
+确保这个角色允许 FIS 服务 来扮演：
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "fis.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+
+
+---
+
+三、FIS 实验模板示例（使用上面角色）
+
+如果你想要，我可以根据具体的目标组 ARN 和实例 ID，帮你生成完整的实验模板 JSON 文件。
+
+你愿意提供以下信息吗？
+
+1. 目标组 ARN（Target Group ARN）
+
+
+2. 实例 ID（或多个）
+
+
+3. 故障持续时间（比如 300 秒）
+
+
+
