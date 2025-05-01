@@ -1,0 +1,69 @@
+对，就是这个方向：为提高 EC2 安全性，尤其是在参与 FIS 故障注入这类敏感操作的场景中，最推荐的方式是完全不开放 SSH，改用 Systems Manager (SSM)。
+
+
+---
+
+推荐做法：关闭 SSH，启用 SSM 访问
+
+1. 不开放端口 22（SSH）
+
+安全组禁止入站 TCP 22
+
+不配置公钥或不生成 key pair
+
+
+2. 开启 SSM Agent + IAM 权限
+
+使用 Amazon Linux 或 Ubuntu 自带的 SSM Agent
+
+EC2 的 IAM Role 要有以下权限（最小）：
+
+
+{
+  "Effect": "Allow",
+  "Action": [
+    "ssm:UpdateInstanceInformation",
+    "ssm:DescribeInstanceInformation",
+    "ssm:SendCommand",
+    "ssm:ListCommandInvocations",
+    "ssm:StartSession",
+    "ssm:DescribeSessions",
+    "ssm:GetCommandInvocation",
+    "ssmmessages:*",
+    "ec2messages:*",
+    "cloudwatch:PutMetricData"  // 可选
+  ],
+  "Resource": "*"
+}
+
+3. SSM Session Manager 登录 EC2
+
+无需 key pair，无需开 22 端口
+
+所有命令在 CloudTrail 和 CloudWatch Logs 中可审计
+
+
+
+---
+
+优势对比
+
+
+---
+
+适用于故障注入的安全架构建议
+
+使用 SSM 管理所有 EC2 实例（特别是执行注入的实例）
+
+不允许 SSH 访问，甚至不生成 key pair
+
+所有命令注入通过 FIS + SSM 组合执行
+
+实例启动时可通过 user-data 自动注册自己到目标组（支持重试逻辑）
+
+
+
+---
+
+是否需要我帮你生成一个完整的 EC2 启动模板（含关闭 SSH、启用 SSM、安全组配置）？
+
