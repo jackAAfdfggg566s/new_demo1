@@ -1,0 +1,84 @@
+明白了！你要的是一个最简单的 GitLab CI/CD 示例：配置文件从变量中提供，pipeline 运行时保存下来，然后传给脚本读取使用，不做 merge。
+
+
+---
+
+项目结构
+
+your-project/
+├── .gitlab-ci.yml
+├── script.py
+
+
+---
+
+1. script.py 示例
+
+import yaml
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--config", required=True)
+args = parser.parse_args()
+
+with open(args.config) as f:
+    config = yaml.safe_load(f)
+
+print("Loaded Config:")
+for k, v in config.items():
+    print(f"{k}: {v}")
+
+
+---
+
+2. .gitlab-ci.yml
+
+stages:
+  - run
+
+run_with_manual_config:
+  stage: run
+  script:
+    - echo "$CONFIG_OVERRIDE" > config.yaml
+    - python3 script.py --config config.yaml
+
+
+---
+
+3. 使用方式
+
+手动运行 pipeline：
+
+1. 打开 GitLab 项目 → CI/CD → Run pipeline
+
+
+2. 添加变量：
+
+Key: CONFIG_OVERRIDE
+
+Value:
+
+learning_rate: 0.01
+batch_size: 32
+
+开启多行支持（点右下角按钮）
+
+
+
+3. 点击 “Run pipeline”
+
+
+
+输出：
+
+脚本会打印配置内容：
+
+Loaded Config:
+learning_rate: 0.01
+batch_size: 32
+
+
+---
+
+是否还需要我加入“将结果保存为文件并上传为 artifact”的步骤？
+
