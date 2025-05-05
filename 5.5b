@@ -1,0 +1,59 @@
+明白了：你在 Logs Insights 查询中用了 60 as threshold 来加“警戒线”，但那条线在图表上完全没显示。这是 CloudWatch 的一个常见问题：恒定值（constant）字段不会显示成图线，除非它在不同时间段有“变化”。
+
+
+---
+
+解决办法（让警戒线显示出来）
+
+你需要“制造变化”让 CloudWatch 把它当成一条线来显示。
+
+修改后的查询示例（可以画出 60 的警戒线）：
+
+fields @timestamp, mem_used_percent
+| stats 
+    avg(mem_used_percent) as usage,
+    avg(60 + rand()/10000) as threshold
+by bin(1m)
+
+rand()/10000 给警戒值 60 加一点微小扰动（如 60.00003、60.00047），CloudWatch 会认为它在“变化”，就会绘制成一条曲线。
+
+看起来仍是一条平直的线，但这能骗过图表系统。
+
+
+
+---
+
+图表设置确保项（重要）：
+
+在 Dashboard JSON 中，这个 widget 的 "view" 必须是 "timeSeries"。
+
+如果是 "bar"、"table"、或 "pie"，都不会画这类线。
+
+
+
+---
+
+完整 JSON 示例片段：
+
+{
+  "type": "log",
+  "x": 0,
+  "y": 0,
+  "width": 12,
+  "height": 6,
+  "properties": {
+    "query": "fields @timestamp, mem_used_percent | stats avg(mem_used_percent) as usage, avg(60 + rand()/10000) as threshold by bin(1m)",
+    "region": "us-east-1",
+    "title": "Memory Usage with Warning Line",
+    "view": "timeSeries",
+    "stacked": false
+  }
+}
+
+
+---
+
+这样配置后你就会看到一条真正显示在图上的“60%警戒线”。
+
+是否需要我帮你调一下你现有查询？你可以贴出来我直接改。
+
