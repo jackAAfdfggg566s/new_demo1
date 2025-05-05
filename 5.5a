@@ -1,0 +1,65 @@
+明白了，你是在 CloudWatch 的 Metrics 图表（比如 EC2 的内存使用图）上，想直接加一条固定值的参考线（例如 60%），而不是 Logs Insights 图表。那就可以直接在 Dashboard 的 JSON 中，添加一个 horizontal annotation 到现有的图表。
+
+以下是你可以使用的最简单例子：
+
+
+---
+
+示例：在内存图表上加 60% 警戒线（JSON）
+
+{
+  "type": "metric",
+  "x": 0,
+  "y": 0,
+  "width": 12,
+  "height": 6,
+  "properties": {
+    "metrics": [
+      [ "CWAgent", "mem_used_percent", "InstanceId", "i-0123456789abcdef0" ]
+    ],
+    "view": "timeSeries",
+    "region": "us-east-1",
+    "title": "Memory Usage",
+    "stat": "Average",
+    "period": 60,
+    "annotations": {
+      "horizontal": [
+        {
+          "label": "警戒线 60%",
+          "value": 60,
+          "color": "#ff0000",
+          "fill": "none"
+        }
+      ]
+    }
+  }
+}
+
+
+---
+
+使用方法：
+
+1. 打开你的 CloudWatch Dashboard。
+
+
+2. 点击右上角 “Actions” > “View/edit source”。
+
+
+3. 找到对应的 widget（通常含有 mem_used_percent）。
+
+
+4. 在 properties 下添加上面的 annotations.horizontal 字段。
+
+
+5. 点击“Update”。
+
+
+
+
+---
+
+这样图上就会出现一条红色的 60% 水平线，不影响实际数据，只是用于视觉参考。
+
+需要我帮你定位 JSON 中该加在哪一块，或者提供一个包含多个指标的完整例子吗？
+
