@@ -1,0 +1,60 @@
+# 在AWS CloudWatch Logs Insights中添加警戒线
+
+在AWS CloudWatch Logs Insights中，您不能直接添加"警戒线"（reference line），但可以通过以下几种方法实现类似效果：
+
+## 方法1：使用查询语句添加固定值参考线
+
+在您的Logs Insights查询中，您可以添加一个常量值作为参考线。例如，如果您想监控内存使用率并添加80%的警戒线：
+
+```sql
+stats avg(memory_usage) as avg_memory by bin(1m)
+| eval WARNING_LINE = 80
+| sort by bin(1m) asc
+```
+
+## 方法2：使用条件标记超过警戒线的事件
+
+```sql
+filter @message like /memory/
+| parse @message "memory usage: *%" as memory_usage
+| stats avg(memory_usage) as avg_memory, count(*) as sample_count by bin(1m)
+| eval STATUS = if(avg_memory > 80, "CRITICAL", if(avg_memory > 70, "WARNING", "OK"))
+| sort by bin(1m) asc
+```
+
+## 方法3：创建CloudWatch警报
+
+虽然这不是在Logs Insights中直接添加警戒线，但更实用的方法是创建CloudWatch警报：
+
+1. 首先创建一个指标筛选器：
+```json
+{
+  "metricName": "HighMemoryUsage",
+  "metricNamespace": "Custom/Memory",
+  "metricValue": "$memory_usage",
+  "filterPattern": "{ ($.memory_usage >= 80) }"
+}
+```
+
+2. 然后基于这个指标创建CloudWatch警报。
+
+## 方法4：使用CloudWatch仪表板
+
+如果您使用CloudWatch仪表板，可以添加参考线：
+
+1. 创建Logs Insights查询
+2. 将查询添加到仪表板
+3. 在仪表板的小部件编辑器中，可以添加参考线
+
+## 示例完整查询（假设日志中包含内存信息）
+
+```sql
+fields @timestamp, @message
+| parse @message 'Memory usage: *%' as memory_usage
+| stats avg(memory_usage) as avg_memory, max(memory_usage) as max_memory by bin(5m)
+| eval warning_line = 80
+| eval critical_line = 90
+| sort @timestamp desc
+```
+
+请注意，具体的查询语句需要根据您的实际日志格式进行调整。您需要先使用`fields`和`parse`命令从日志中提取出内存使用率数据。
