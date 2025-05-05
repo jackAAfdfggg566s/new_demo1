@@ -1,0 +1,67 @@
+谢谢说明！你使用的是 CloudWatch Logs Insights（log insights），这与 CloudWatch Dashboard 有些不同，但你依然可以用 Visualization（可视化）配置 + Dashboard JSON 实现添加“阈值线”。
+
+下面是一个完整示例，展示如何：
+
+1. 用 Logs Insights 查询内存使用情况；
+
+
+2. 在图表中添加一条固定的警戒线（如 60%）；
+
+
+3. 将其保存为 Dashboard widget，JSON 示例如下。
+
+
+
+
+---
+
+示例 JSON：Log Insights 图表 + 阈值线
+
+{
+  "type": "log",
+  "x": 0,
+  "y": 0,
+  "width": 12,
+  "height": 6,
+  "properties": {
+    "query": "fields @timestamp, @message, mem_used_percent\n| stats avg(mem_used_percent) as avgMem by bin(1m)",
+    "region": "us-east-1",
+    "title": "Memory Usage",
+    "view": "timeSeries",
+    "stacked": false,
+    "metrics": [],
+    "annotations": {
+      "horizontal": [
+        {
+          "label": "Warning Threshold",
+          "value": 60,
+          "color": "#ff0000", 
+          "fill": "none", 
+          "labelFontColor": "#ff0000"
+        }
+      ]
+    }
+  }
+}
+
+
+---
+
+说明：
+
+query：Logs Insights 查询，假设你有日志字段 mem_used_percent。
+
+annotations.horizontal：添加了一条警戒线在 value: 60。
+
+fill: "none"：让线保持空心（不填充区域）。
+
+labelFontColor: 设置警戒线标签颜色。
+
+
+你可以将这段 JSON 复制到你 CloudWatch Dashboard 的 JSON 编辑器里进行粘贴或嵌入。
+
+
+---
+
+需要我帮你根据你的具体 Logs Insights 查询内容改写一下吗？
+
