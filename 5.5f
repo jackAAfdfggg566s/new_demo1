@@ -1,0 +1,83 @@
+您的问题在于：**直接在 `stats` 语句中添加 `80 as warning_threshold` 会导致 CloudWatch Logs Insights 无法正确渲染图表**，即使日志数据能正常显示。这是因为 CloudWatch 对静态值的可视化支持有限。以下是解决方案：
+
+---
+
+### **正确方法：用 `fields` 添加静态警戒线（兼容图表渲染）**
+#### 原始查询（能显示图表）：
+```sql
+stats avg(pod_memory_usage) as avg_memory by bin(5m)
+```
+
+#### 修改后（添加警戒线且保持图表显示）：
+```sql
+stats avg(pod_memory_usage) as avg_memory by bin(5m)
+| fields @timestamp, avg_memory, 80 as warning_threshold  # 关键点：保留@timestamp
+| sort @timestamp asc
+```
+
+---
+
+### **为什么这样能解决问题？**
+1. **`stats` 语句会丢失时间字段**  
+   当您直接写 `stats avg(x) as y, 80 as line by bin(5m)` 时，`@timestamp` 字段可能被丢弃，导致图表无法识别 X 轴。
+
+2. **`fields` 显式保留时间字段**  
+   通过 `| fields @timestamp, ...` 强制保留时间字段，确保可视化引擎能识别时间序列。
+
+---
+
+### **完整示例（含日志解析）**
+假设日志格式为 `"PodMemory: 75%"`：
+```sql
+fields @timestamp, @message
+| parse @message "PodMemory: *%" as pod_memory_usage
+| stats avg(pod_memory_usage) as avg_memory by bin(5m)
+| fields @timestamp, avg_memory, 80 as warning_threshold  # 添加静态线
+| sort @timestamp asc
+```
+
+---
+
+### **可视化设置**
+1. 运行查询后，切换到 **Visualization** 选项卡。
+2. 选择 **Line chart**，确认：
+   - **X轴**：`@timestamp`
+   - **Y轴**：勾选 `avg_memory` 和 `warning_threshold`
+
+---
+
+### **如果仍然不显示图表**
+1. **检查字段类型**  
+   确保 `pod_memory_usage` 是数值（非字符串）：
+   ```sql
+   | parse @message "PodMemory: *%" as pod_memory_usage
+   | cast(pod_memory_usage as double) as mem_usage  # 强制转换
+   ```
+
+2. **验证查询结果**  
+   先运行原始查询（不带警戒线）确认图表能正常显示，再逐步添加修改。
+
+---
+
+### **替代方案（更稳定）**
+如果上述方法仍不稳定，可以改用 **子查询**：
+```sql
+fields @timestamp, @message
+| parse @message "PodMemory: *%" as pod_memory_usage
+| stats avg(pod_memory_usage) as avg_memory by bin(5m)
+| join (fields 80 as warning_threshold)  # 通过join添加静态值
+| fields @timestamp, avg_memory, warning_threshold
+```
+
+---
+
+### **总结**
+| 方案 | 适用场景 | 示例 |
+|------|----------|------|
+| **`fields` 追加静态值** | 简单警戒线 | `fields @timestamp, avg_memory, 80 as warning_threshold` |
+| **`join` 静态表** | 复杂场景 | `join (fields 80 as warning_threshold)` |
+| **强制类型转换** | 字段类型问题 | `cast(x as double)` |
+
+按此调整后，您的图表应该能同时显示实际内存曲线和静态警戒线。如果仍有问题，请提供：  
+1. 您的完整日志示例（脱敏）  
+2. 当前查询的截图（含结果和报错）
