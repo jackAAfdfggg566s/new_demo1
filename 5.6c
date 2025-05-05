@@ -1,0 +1,45 @@
+好问题！CloudWatch Logs Insights 目前不支持 rand() 函数，所以我们不能用它制造虚假“变化”来画出一条恒定线。
+
+不过我们有个替代技巧可以让恒定线显示出来：构造一张模拟的数据表，手动拼出一条随时间的恒定线。虽然有点绕，但能解决你要“在 Log Insights 图表中显示警戒线”的问题。
+
+
+---
+
+方法：手动构造警戒线数据
+
+将查询改成这样，把实际数据和警戒线拼接在一起：
+
+fields @timestamp, mem_used_percent
+| stats avg(mem_used_percent) as usage by bin(1m)
+| sort bin(1m) asc
+| as usageData
+
+# 拼一个恒定值的线（通过 join 实现）
+| join (
+    fields @timestamp
+    | stats count() as dummy by bin(1m)
+    | sort bin(1m) asc
+    | limit 1000
+    | map threshold = 60
+) as thresholdData on bin(1m)
+| display usageData.usage, thresholdData.threshold
+
+
+---
+
+替代方式更简洁（推荐）：
+
+如果你可以接受直接在 Dashboard 的 Metrics widget 画警戒线，那更简单、更稳定，支持 annotations.horizontal。
+
+
+---
+
+最终建议：
+
+如果你必须使用 Log Insights 查询图表：只能通过上面拼接手法做“假”线；
+
+如果你可以转为 Metric widget：用真实指标并配合警戒线最合适。
+
+
+你希望我帮你从 Logs 创建一个 metric filter 把 mem_used_percent 写成指标，然后用 metrics 图加警戒线吗？这样更高效也更美观。
+
