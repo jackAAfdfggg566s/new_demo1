@@ -1,0 +1,98 @@
+在 GitLab CI/CD 中通过 Ansible Playbook 远程执行 Shell 脚本时，如果脚本是后台运行（`&` 或 `nohup`），默认情况下日志不会实时返回到 CI/CD 界面。以下是几种解决方案，确保日志能输出到 GitLab CI/CD 界面：
+
+---
+
+### **方法 1：禁用后台运行，直接捕获输出**
+如果脚本不需要后台运行，直接让 Ansible 捕获输出并打印到 CI/CD 日志：
+```yaml
+- name: Run remote script and print logs
+  ansible.builtin.shell: /path/to/your_script.sh
+  register: script_output
+  args:
+    executable: /bin/bash  # 指定 Shell 解释器（可选）
+  
+- name: Print script output
+  ansible.builtin.debug:
+    var: script_output.stdout_lines
+```
+
+---
+
+### **方法 2：使用 `tee` 或重定向到文件 + 实时读取**
+如果脚本必须后台运行，可以：
+1. 让脚本输出到文件，并用 `tail -f` 实时读取日志。
+2. 在 Ansible 任务中先启动脚本，再持续读取日志文件。
+
+**Playbook 示例：**
+```yaml
+- name: Run script in background and log to file
+  ansible.builtin.shell: |
+    /path/to/your_script.sh > /tmp/script.log 2>&1 &
+    sleep 2  # 等待脚本启动
+    tail -f /tmp/script.log
+  args:
+    executable: /bin/bash
+  register: script_log
+  async: 0  # 同步执行（确保日志流式输出）
+  poll: 0
+
+- name: Print logs
+  ansible.builtin.debug:
+    var: script_log.stdout_lines
+```
+
+---
+
+### **方法 3：使用 Ansible `async` 和 `poll`（推荐）**
+如果脚本运行时间较长，可以用 Ansible 的异步任务 + 轮询日志：
+```yaml
+- name: Run script asynchronously but poll logs
+  ansible.builtin.shell: |
+    /path/to/your_script.sh > /tmp/script.log 2>&1 &
+    echo $! > /tmp/script.pid  # 保存 PID 以便后续管理
+  args:
+    executable: /bin/bash
+  async: 3600  # 超时时间（秒）
+  poll: 5      # 每 5 秒轮询一次日志
+
+- name: Tail the log file
+  ansible.builtin.command: tail -f /tmp/script.log
+  register: tail_output
+  until: tail_output.stdout.find("Script completed") != -1  # 根据日志关键词退出
+  retries: 60
+  delay: 5
+  ignore_errors: yes
+```
+
+---
+
+### **方法 4：通过 GitLab CI/CD 的 `artifacts` 保存日志**
+如果日志可以事后查看，可以将日志文件保存为 GitLab 产物：
+```yaml
+- name: Run script and save log
+  ansible.builtin.shell: /path/to/your_script.sh > /tmp/script.log 2>&1
+
+- name: Fetch log file
+  ansible.builtin.fetch:
+    src: /tmp/script.log
+    dest: ./script.log
+    flat: yes
+
+# GitLab CI/CD 配置
+job:
+  script:
+    - ansible-playbook playbook.yml
+  artifacts:
+    paths:
+      - script.log
+```
+
+---
+
+### **关键点总结**
+1. **避免直接后台运行**：如果可能，直接让 Ansible 同步执行脚本并捕获输出。
+2. **实时日志流**：用 `tail -f` 或 Ansible 轮询机制实现日志流式输出。
+3. **异步任务管理**：用 `async` 和 `poll` 控制长时间任务，避免 CI/CD 超时。
+4. **日志持久化**：通过 `artifacts` 保存日志文件供后续查看。
+
+根据你的需求选择最适合的方式！
