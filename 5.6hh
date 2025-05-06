@@ -1,0 +1,169 @@
+您提到的报错是因为在 Playbook 中使用了未定义的 `log_stream` 变量。以下是 **完全修正后的解决方案**，包含完整的变量定义和错误处理：
+
+---
+
+### **修正版 Playbook (带完整变量定义)**
+
+```yaml
+---
+- name: Stream logs to GitLab pipeline
+  hosts: target_server
+  vars:
+    log_dir: "/var/log/myapp"     # 明确定义日志目录
+    log_file: "app.log"           # 明确定义日志文件名
+    tail_timeout: 600             # 超时时间(秒)
+
+  tasks:
+    # 1. 验证日志目录和文件是否存在
+    - name: Check log directory
+      ansible.builtin.stat:
+        path: "{{ log_dir }}"
+      register: log_dir_stat
+
+    - name: Verify log file exists
+      ansible.builtin.stat:
+        path: "{{ log_dir }}/{{ log_file }}"
+      register: log_file_stat
+      when: log_dir_stat.stat.exists
+
+    # 2. 动态获取日志路径
+    - name: Set full log path
+      ansible.builtin.set_fact:
+        full_log_path: "{{ log_dir }}/{{ log_file }}"
+      when: 
+        - log_dir_stat.stat.exists
+        - log_file_stat.stat.exists
+
+    # 3. 执行带目录切换的tail命令
+    - name: Tail log file
+      ansible.builtin.shell: |
+        exec tail -n 100 -f "{{ full_log_path }}" |
+        awk '/PROCESS_COMPLETED/ { exit 0 } 
+             { print; fflush() }'
+      args:
+        chdir: "{{ log_dir }}"       # 关键点：先切换目录
+        executable: /bin/bash
+      async: "{{ tail_timeout }}"
+      poll: 0
+      register: tail_stream_result   # 明确定义注册变量
+      when: 
+        - log_dir_stat.stat.exists
+        - log_file_stat.stat.exists
+
+    # 4. 错误处理
+    - name: Handle missing log
+      ansible.builtin.fail:
+        msg: >-
+          Log file not found at {{ log_dir }}/{{ log_file }}.
+          Directory exists: {{ log_dir_stat.stat.exists }}.
+          File exists: {{ log_file_stat.stat.exists }}.
+      when: >-
+        not log_dir_stat.stat.exists or 
+        not log_file_stat.stat.exists
+
+    # 5. 强制输出日志到pipeline
+    - name: Display tail output
+      ansible.builtin.debug:
+        var: tail_stream_result.stdout_lines
+      when: 
+        - tail_stream_result is defined
+        - tail_stream_result.stdout_lines | length > 0
+```
+
+---
+
+### **关键修正点说明**
+
+1. **变量定义**  
+   在 Playbook 开头明确定义所有变量：
+   ```yaml
+   vars:
+     log_dir: "/var/log/myapp"
+     log_file: "app.log"
+     tail_timeout: 600
+   ```
+
+2. **注册变量**  
+   将 tail 命令结果注册到明确的变量名：
+   ```yaml
+   register: tail_stream_result
+   ```
+
+3. **条件检查**  
+   添加完整的文件存在性检查：
+   ```yaml
+   - stat:
+       path: "{{ log_dir }}"
+     register: log_dir_stat
+   ```
+
+4. **目录切换**  
+   使用 `args.chdir` 而非 Shell 级的 `cd`：
+   ```yaml
+   args:
+     chdir: "{{ log_dir }}"
+   ```
+
+5. **错误处理**  
+   当文件不存在时提供清晰的错误信息：
+   ```yaml
+   - fail:
+       msg: "Log file not found at {{ log_dir }}/{{ log_file }}"
+     when: not log_file_stat.stat.exists
+   ```
+
+---
+
+### **GitLab CI/CD 集成示例**
+
+```yaml
+deploy:
+  script:
+    - ansible-playbook -i inventory.ini tail_log.yml \
+      -e "log_dir=/opt/app/logs log_file=deploy.log"
+  after_script:
+    # 清理后台tail进程
+    - ansible target_server -m shell -a \
+      "pkill -f 'tail.*deploy.log' || true"
+```
+
+---
+
+### **常见问题处理**
+
+#### **Q1: 仍然报错 `tail_stream_result undefined`**
+- **原因**：前置任务被跳过导致变量未注册
+- **解决方案**：增加默认值处理
+  ```yaml
+  - debug:
+      var: tail_stream_result.stdout_lines | default([])
+    when: tail_stream_result is defined
+  ```
+
+#### **Q2: 日志仍然不实时显示**
+- **解决方案**：强制禁用输出缓冲
+  ```yaml
+  - shell: |
+      exec stdbuf -o0 tail -f "{{ full_log_path }}"  # 禁用缓冲
+    args:
+      chdir: "{{ log_dir }}"
+  ```
+
+#### **Q3: 需要同时监控多个日志**
+- **解决方案**：使用 `multitail` 或并行任务
+  ```yaml
+  - shell: |
+      cd {{ log_dir }} && 
+      multitail -Q 1 "app.log" "error.log"
+  ```
+
+---
+
+### **最佳实践总结**
+1. **变量先行**：Playbook 开头明确定义所有关键路径和参数
+2. **防御式编程**：对所有文件/目录操作添加存在性检查
+3. **明确注册**：每个会产生输出的任务都注册到唯一变量名
+4. **环境隔离**：CI/CD 和本地运行使用不同的路径命名规则
+5. **资源清理**：在 `after_script` 中终止后台进程
+
+这样即可完全解决变量未定义问题，同时确保日志实时流式输出到 GitLab Pipeline 界面。
