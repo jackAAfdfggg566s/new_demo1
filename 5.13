@@ -1,0 +1,63 @@
+以下是一个 Shell 脚本，能够根据指定的 ALB 名称，列出它关联的 Listener 和每个 Listener 对应的 Target Group 信息。
+
+脚本：get_alb_info.sh
+
+#!/bin/bash
+
+# 输入参数：ALB 名称
+ALB_NAME=$1
+
+if [ -z "$ALB_NAME" ]; then
+  echo "Usage: $0 <alb-name>"
+  exit 1
+fi
+
+echo "Fetching ALB info for: $ALB_NAME"
+
+# 获取 ALB 的 ARN
+ALB_ARN=$(aws elbv2 describe-load-balancers \
+  --query "LoadBalancers[?LoadBalancerName=='$ALB_NAME'].LoadBalancerArn" \
+  --output text)
+
+if [ -z "$ALB_ARN" ]; then
+  echo "Error: ALB '$ALB_NAME' not found."
+  exit 1
+fi
+
+echo "ALB ARN: $ALB_ARN"
+echo
+
+# 获取 Listener 信息
+LISTENERS=$(aws elbv2 describe-listeners --load-balancer-arn "$ALB_ARN" --query "Listeners[*].ListenerArn" --output text)
+
+for LISTENER_ARN in $LISTENERS; do
+  echo "Listener: $LISTENER_ARN"
+
+  # 获取该 Listener 的转发规则
+  RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" --query "Rules[*].Actions[?Type=='forward'].TargetGroupArn" --output text)
+
+  for TG_ARN in $RULES; do
+    # 获取 Target Group 名称
+    TG_NAME=$(aws elbv2 describe-target-groups --target-group-arns "$TG_ARN" --query "TargetGroups[0].TargetGroupName" --output text)
+    echo "  -> Target Group: $TG_NAME ($TG_ARN)"
+  done
+
+  echo
+done
+
+使用方法
+
+chmod +x get_alb_info.sh
+./get_alb_info.sh your-alb-name
+
+这个脚本将输出如下信息格式：
+
+Fetching ALB info for: my-alb
+ALB ARN: arn:aws:elasticloadbalancing:...
+
+Listener: arn:aws:elasticloadbalancing:...:listener/app/...
+  -> Target Group: my-target-group-1 (arn:aws:elasticloadbalancing:...:targetgroup/...)
+  -> Target Group: my-target-group-2 (arn:aws:elasticloadbalancing:...:targetgroup/...)
+
+需要你本地已正确配置 AWS CLI 和权限。如果还想加上 Target 的健康状态信息，我也可以继续帮你加进去。是否需要？
+
