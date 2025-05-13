@@ -1,0 +1,141 @@
+如果 5 分钟后 target 已经不在 NLB 的 Target Group 中（deregister 完成），但它仍然能接受流量，那说明：
+
+> 流量不是通过 NLB 转发过来的，或者 NLB 没有从真正的源头断开该目标。
+
+
+
+以下是几个可能的原因和分析：
+
+
+---
+
+1. 你的服务不是仅通过 NLB 接收流量
+
+检查点：
+
+是否还有其他入口？例如：
+
+Internal LoadBalancer / Ingress（如 ALB）
+
+NodePort 服务暴露在公网或内网
+
+其他 NLB target group
+
+Service type 为 ClusterIP，但有 sidecar 或 proxy 仍在发流量
+
+
+
+解释：
+
+即使一个 target 从某个 NLB 的 target group 中移除，只要它还有其它路径，它就可以继续接收流量。例如你使用了 ExternalTrafficPolicy=Cluster，导致节点上的流量仍能路由到后端 Pod。
+
+
+---
+
+2. NLB 是面向 NodePort，而不是 Pod IP
+
+检查点：
+
+查看你的 EKS Service 是否为：
+
+type: LoadBalancer
+externalTrafficPolicy: Cluster
+
+查看 NLB target group 的 targets 是不是 Node IP + 9996（而不是 pod IP）。
+
+
+解释：
+
+如果 target 是 NodePort（例如 9996），当你删除 pod 或某个 endpoint，Kube-proxy 仍然会将 NodePort 请求转发到其他 pod；
+
+所以 NLB 看起来没有 target，但你的节点仍在监听 9996，NLB 流量还会被转发到其他 pod。
+
+
+
+---
+
+3. NLB 有另一个 target group 或 Listener 没更新
+
+检查点：
+
+检查 NLB 的所有 listener 和所有 target group：
+
+aws elbv2 describe-load-balancers
+aws elbv2 describe-target-groups --load-balancer-arn <your-nlb-arn>
+aws elbv2 describe-listeners --load-balancer-arn <your-nlb-arn>
+
+检查是否还有别的 TG 在监听 9996
+
+
+解释：
+
+你可能 deregister 的是某个 target group，但 NLB 上还有别的 TG 或别的 listener/port 在监听和转发。
+
+
+---
+
+4. NLB 后端 target 实际是 EC2 或 ENI，仍在监听
+
+检查点：
+
+使用 describe-target-health 看看之前 target 的实例 ID / IP 是谁；
+
+然后登录该实例，确认是否还在监听 9996 端口：
+
+netstat -ntlp | grep 9996
+
+
+解释：
+
+即使 target group 中没有了 target，但对应的 EC2 实例或 ENI（Pod ENI）还在监听端口，流量会通过别的路径送达。
+
+
+---
+
+5. 流量来自内部（非通过 NLB）
+
+检查点：
+
+你说“还能接收流量”，那 流量来源是什么？
+
+是从公网来的请求？
+
+还是其他 pod 或内部组件？
+
+
+
+解释：
+
+如果是从内部发出的请求（如 pod 间调用），那是否经过 NLB 并不能阻止服务接收流量。
+
+
+---
+
+总结
+
+即使 NLB target 被移除：
+
+Pod 可能仍在运行并接受流量；
+
+NLB 可能还有其他 path/target/listener；
+
+NodePort 和 kube-proxy 机制可能仍然把请求转发给了 pod；
+
+或者，客户端有 DNS 缓存，绕过了 load balancer，直接请求旧地址（较少见）。
+
+
+
+---
+
+如果你可以提供以下信息，我可以进一步精准定位：
+
+1. Kubernetes Service YAML（type、externalTrafficPolicy、port 等）；
+
+
+2. NLB target group 配置截图或描述；
+
+
+3. target deregister 后仍接收请求的日志示例或来源。
+
+
+
