@@ -1,0 +1,105 @@
+要详细排查“NLB 是通过 NodePort 监听，而不是直接连接到 Pod IP”导致 deregister 后仍能接收流量的问题，你可以按照以下步骤操作：
+
+
+---
+
+目标：确认 NLB target 是否是 NodePort + Node IP，而不是 Pod IP
+
+
+---
+
+第一步：查看 Kubernetes Service 定义
+
+运行以下命令查看你服务的类型与配置：
+
+kubectl get svc <your-service-name> -n <namespace> -o yaml
+
+检查关键字段：
+
+spec:
+  type: LoadBalancer     # 如果是 LoadBalancer 类型，通常由 AWS 创建 NLB
+  ports:
+    - port: 80
+      targetPort: 9996   # 通常指向容器监听端口
+      nodePort: 30996    # <-- 注意：NodePort 被自动分配（如果 externalTrafficPolicy=Cluster）
+  externalTrafficPolicy: Cluster or Local
+
+如果看到 externalTrafficPolicy: Cluster，NLB 的 Target 是节点的 IP + NodePort（比如 9996）；
+
+如果是 Local，则 NLB 会直连 pod 的 ENI（适用于 AWS VPC CNI 中启用 externalTrafficPolicy=Local 的场景）；
+
+
+
+---
+
+第二步：查看 AWS NLB Target Group 的 target 类型
+
+使用 AWS CLI 或控制台查看 NLB target group 的 targets 是什么：
+
+aws elbv2 describe-target-health --target-group-arn <your-target-group-arn>
+
+输出示例：
+
+{
+  "TargetHealthDescriptions": [
+    {
+      "Target": {
+        "Id": "10.0.1.15",       # Target IP 地址
+        "Port": 9996             # Target 端口
+      },
+      "TargetHealth": {
+        "State": "healthy"
+      }
+    }
+  ]
+}
+
+如果 Id 是节点（EC2 实例）的 IP（或者 EC2 实例 ID），Port 是 NodePort（如 9996），那你确认就是通过 NodePort 模式；
+
+如果 Id 是 Pod 的 IP，Port 是容器端口，那你用的是 AWS VPC CNI 直连模式。
+
+
+
+---
+
+第三步：在节点上查看是否还监听 NodePort
+
+登录 NLB 的目标节点（EC2 实例），然后运行：
+
+sudo netstat -ntlp | grep 9996
+
+或
+
+sudo ss -lntp | grep 9996
+
+如果输出中有 kube-proxy（或者 kubelet）监听 9996 端口，说明 NLB 发的流量通过 NodePort 进来，kube-proxy 仍然能转发给存活的 Pod；
+
+即使 target group 不再包含这个节点，NLB 仍然可以通过别的 listener/健康节点转发流量。
+
+
+
+---
+
+第四步：查看 kube-proxy 的转发规则
+
+你也可以验证 kube-proxy 的 NAT 表（iptables）是否仍保留 NodePort 到 Pod 的转发规则：
+
+sudo iptables -t nat -L -n | grep 9996
+
+若仍存在规则，比如：
+
+KUBE-NODEPORTS  tcp  --  0.0.0.0/0  0.0.0.0/0  tcp dpt:9996
+
+那就说明 NodePort 仍生效，即使 NLB 的 target 已移除。
+
+
+
+---
+
+总结判断
+
+
+---
+
+如果你能提供 Service YAML 和 describe-target-health 的输出，我可以帮你确认是哪种情况。
+
