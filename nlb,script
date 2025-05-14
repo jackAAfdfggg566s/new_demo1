@@ -1,0 +1,128 @@
+明白了：你想要一个 自动化脚本，能从 EKS 集群中获取当前 NLB（ALB/NLB）关联的 Pod IP 和端口，然后从多个 Target Group 中自动 deregister 它们。
+
+
+---
+
+目标行为：
+
+从 EKS 集群 查询当前 NLB Service（类型 LoadBalancer）
+
+获取其 TargetGroup ARN
+
+从中提取所有 target IP + port（Pod IP）
+
+移除指定 IP/端口对（或批量全部移除）
+
+
+
+---
+
+实现方式一：针对特定 EKS Service 的两个 TargetGroup 自动移除对应 target
+
+这里是一个完整脚本示例：
+
+
+---
+
+deregister_from_eks_nlb.sh
+
+#!/bin/bash
+
+# 设置基本变量
+CLUSTER_NAME="your-cluster-name"
+SERVICE_NAME="your-service-name"
+NAMESPACE="your-namespace"
+REGION="ap-southeast-2"  # 替换成你的 AWS 区域
+
+# 获取 LoadBalancer 的 DNS 名称
+LB_HOSTNAME=$(kubectl get svc "$SERVICE_NAME" -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+if [[ -z "$LB_HOSTNAME" ]]; then
+  echo "ERROR: Could not find LoadBalancer hostname. Exiting."
+  exit 1
+fi
+
+echo "Found LB hostname: $LB_HOSTNAME"
+
+# 获取 LoadBalancer ARN
+LB_ARN=$(aws elbv2 describe-load-balancers --region "$REGION" \
+  --query "LoadBalancers[?DNSName=='$LB_HOSTNAME'].LoadBalancerArn" --output text)
+
+if [[ -z "$LB_ARN" ]]; then
+  echo "ERROR: Could not find LoadBalancer ARN."
+  exit 1
+fi
+
+echo "Found LB ARN: $LB_ARN"
+
+# 获取所有 target group ARNs
+TG_ARNS=$(aws elbv2 describe-target-groups --region "$REGION" \
+  --load-balancer-arn "$LB_ARN" \
+  --query "TargetGroups[].TargetGroupArn" --output text)
+
+echo "Target Groups:"
+echo "$TG_ARNS"
+
+# 对每个 Target Group，获取 targets 并 deregister
+for TG_ARN in $TG_ARNS; do
+  echo "Processing TG: $TG_ARN"
+
+  # 获取其中的 targets（Id + Port）
+  TARGETS=$(aws elbv2 describe-target-health --region "$REGION" \
+    --target-group-arn "$TG_ARN" \
+    --query "TargetHealthDescriptions[].Target" --output json)
+
+  COUNT=$(echo "$TARGETS" | jq '. | length')
+  echo "Found $COUNT targets"
+
+  for i in $(seq 0 $(($COUNT - 1))); do
+    IP=$(echo "$TARGETS" | jq -r ".[$i].Id")
+    PORT=$(echo "$TARGETS" | jq -r ".[$i].Port")
+
+    echo "Deregistering: $IP:$PORT"
+    aws elbv2 deregister-targets --region "$REGION" \
+      --target-group-arn "$TG_ARN" \
+      --targets "Id=$IP,Port=$PORT"
+  done
+done
+
+echo "All targets deregistered."
+
+
+---
+
+依赖项：
+
+kubectl 正常连接到你的 EKS 集群
+
+安装并配置好 AWS CLI（有权限访问 ELBv2）
+
+安装 jq（用于解析 JSON）
+
+
+
+---
+
+说明：
+
+此脚本对 NLB 或 ALB 都适用，只要它是由 EKS 的 LoadBalancer 类型的 Service 创建的。
+
+它会从所有关联的 Target Group 中找到 IP+端口，然后逐一移除。
+
+
+
+---
+
+是否要加过滤？比如只移除某个 Pod 所在节点或特定端口？
+
+可以加上。比如你只想移除端口是 9996 的：
+
+if [[ "$PORT" == "9996" ]]; then
+  # deregister
+fi
+
+
+---
+
+需要我帮你加过滤特定 Pod 名、端口号、节点或 Deployment 的版本也可以。要加吗？
+
