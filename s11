@@ -1,0 +1,83 @@
+你想要的是在循环过程中动态往数组中插入元素，对吧？下面是一个 Shell 脚本示例，演示如何在循环里构建数组，并在后续使用它进行操作（比如 deregister → sleep → register）。
+
+
+---
+
+示例：动态构建 Target 列表数组并使用
+
+#!/bin/bash
+
+REGION="ap-southeast-2"
+SLEEP_DURATION=600  # 10分钟
+
+# 初始化空数组
+TARGETS=()
+
+# 示例循环：构造 Target（可以替换为你实际的 IP + PORT + TG 来源）
+for port in 443 9996; do
+  IP="10.0.3.45"
+  if [ "$port" -eq 443 ]; then
+    TG_ARN="arn:aws:elasticloadbalancing:...:targetgroup/tg-443/xxx"
+  else
+    TG_ARN="arn:aws:elasticloadbalancing:...:targetgroup/tg-9996/yyy"
+  fi
+
+  # 插入格式 "TG_ARN IP PORT"
+  TARGETS+=("$TG_ARN $IP $port")
+done
+
+# 打印数组内容
+echo "== 构造的 TARGETS 数组 =="
+for entry in "${TARGETS[@]}"; do
+  echo "$entry"
+done
+
+# Step 1: deregister
+echo "== Deregistering =="
+for entry in "${TARGETS[@]}"; do
+  TG_ARN=$(echo "$entry" | awk '{print $1}')
+  IP=$(echo "$entry" | awk '{print $2}')
+  PORT=$(echo "$entry" | awk '{print $3}')
+  echo ">> Deregistering $IP:$PORT from $TG_ARN"
+  aws elbv2 deregister-targets --region "$REGION" \
+    --target-group-arn "$TG_ARN" \
+    --targets "Id=$IP,Port=$PORT" &
+done
+wait
+
+# Step 2: wait
+echo "== Sleeping for $SLEEP_DURATION seconds =="
+sleep "$SLEEP_DURATION"
+
+# Step 3: register
+echo "== Re-registering =="
+for entry in "${TARGETS[@]}"; do
+  TG_ARN=$(echo "$entry" | awk '{print $1}')
+  IP=$(echo "$entry" | awk '{print $2}')
+  PORT=$(echo "$entry" | awk '{print $3}')
+  echo ">> Registering $IP:$PORT to $TG_ARN"
+  aws elbv2 register-targets --region "$REGION" \
+    --target-group-arn "$TG_ARN" \
+    --targets "Id=$IP,Port=$PORT" &
+done
+wait
+
+echo "== Done =="
+
+
+---
+
+说明
+
+使用 TARGETS+=() 动态向数组中添加元素
+
+每个元素用一个字符串保存三项内容，用空格分隔
+
+后续用 awk 取字段（简单明了）
+
+
+
+---
+
+这个模式适用于你想在脚本运行中根据逻辑组合 target 信息再统一处理的场景。是否还想嵌入 kubectl 动态查 IP 的逻辑？我可以一起帮你加进去。
+
