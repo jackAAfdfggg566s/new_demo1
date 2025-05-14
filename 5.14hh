@@ -1,0 +1,102 @@
+非常好，这说明你遇到的是一个特殊但合理的现象，我们来系统地梳理清楚：
+
+
+---
+
+当前现象总结：
+
+你设置了 externalTrafficPolicy: Cluster
+
+NLB Target Group 中的某个 Target 是一个 Pod 的 IP（你已通过 kubectl get pod -o wide 确认）
+
+并非 EC2 的私有 IP
+
+你通过 deregister-targets 移除了这个 IP
+
+但Pod 仍然能接收流量
+
+
+
+---
+
+这个现象是否合理？正常吗？
+
+不正常！
+
+在 externalTrafficPolicy: Cluster 下，NLB Target Group 应该只包含 EC2 实例（IP或ID），不应该包含 Pod 的 IP。
+
+
+---
+
+唯一可能的解释是：
+
+> 你的 Service 在某次变更中曾经使用过 externalTrafficPolicy: Local，因此在创建时 NLB 被配置成了 IP 模式（target type = ip），并“记住”了它。
+后续即使你改回了 Cluster，NLB 的 target group 类型不会自动变更。
+
+
+
+
+---
+
+验证方式：查看 NLB Target Group 类型
+
+你可以用 AWS CLI 或控制台确认：
+
+aws elbv2 describe-target-groups --names <your-tg-name>
+
+结果中看这个字段：
+
+"TargetType": "ip"
+
+如果是 "ip"，表示目标可以是 Pod IP；
+
+如果是 "instance"，那就必须是 EC2 实例 ID；
+
+
+
+---
+
+解决方式：
+
+如果你不希望 NLB 继续指向 Pod IP（而应只指向节点），你需要重建 Service 或 NLB：
+
+方法 A（推荐）：
+
+删除并重建 Service：
+
+kubectl delete svc <your-service-name>
+
+然后重新创建 YAML，确保一开始就是：
+
+externalTrafficPolicy: Cluster
+
+这样 AWS Controller for Kubernetes 会新建一个 Target Type 为 instance 的 NLB Target Group。
+
+> 注意：修改现有 Service 的 externalTrafficPolicy 不会触发 NLB target type 的改变！
+
+
+
+
+---
+
+为什么 deregister 后 Pod 还能收到流量？
+
+就算你用 deregister-targets 移除一个 target IP，但：
+
+NLB 有 deregistration_delay（默认 300 秒）；
+
+NLB 仍可能维持对该 IP 的现有连接（TCP keepalive）；
+
+如果 target group 是 ip 类型，Pod 的 IP 就是直接 target，所以除非 Pod 被杀，或者你彻底移除 target，它仍然会收到流量。
+
+
+
+---
+
+最终建议
+
+
+---
+
+如果你愿意贴出 Service YAML 和 describe-target-groups 输出（可脱敏），我可以帮你确认到底有没有历史遗留的问题。需要吗？
+
