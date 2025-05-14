@@ -1,0 +1,89 @@
+这就解释得通了：
+
+
+---
+
+你的问题核心：
+
+你从 NLB 的 target group 中 移除了 9996 端口对应的 target（Pod IP）；
+
+但这个 Pod 仍能收到请求或保持活跃；
+
+而你 没有移除 443 端口的 target（通常是 HTTPS ingress 流量）。
+
+
+
+---
+
+结论：这是合理的行为，且不是异常。
+
+NLB 支持多端口监听
+
+你可能配置了如下两个 Target Group：
+
+一个监听 TCP/443（或 TLS）
+
+一个监听 TCP/9996
+
+
+这些端口可以映射到同一个后端（例如 Pod IP 或 EC2 实例）：
+
+如果你只从 9996 的 target group 中移除了这个 Pod IP；
+
+但它仍然在 443 的 target group 中；
+
+
+那么该 Pod IP 仍然能通过 443 接收到流量是完全正常的。
+
+
+---
+
+举个例子：
+
+你有这样的监听配置：
+
+你只执行：
+
+aws elbv2 deregister-targets --target-group-arn tg-9996 --targets Id=10.0.3.45,Port=9996
+
+那么：
+
+该 IP 的 :9996 流量会逐渐被 drain 并清除；
+
+但该 IP 的 :8443（或 443）流量仍然活跃；
+
+如果你观察 Pod，还能看到它在处理请求，可能是 443 进来的。
+
+
+
+---
+
+如何彻底让该 Pod 不再接收任何 NLB 流量？
+
+你需要从所有关联的 target group 中移除该 IP/Pod：
+
+aws elbv2 describe-listeners --load-balancer-arn <arn> # 查找所有 listener
+aws elbv2 describe-rules --listener-arn <arn>          # 查找规则与 target group
+aws elbv2 describe-target-health --target-group-arn <tg-443> # 查目标
+
+然后：
+
+aws elbv2 deregister-targets --target-group-arn <tg-443> --targets Id=10.0.3.45,Port=8443
+
+
+---
+
+总结
+
+
+---
+
+如果你希望我帮你找出有哪些 listener/target group 仍指向这个 Pod，你可以提供：
+
+NLB ARN
+
+当前所有 target groups 和 listeners 的配置（可脱敏）
+
+
+我可以教你快速查清全部流向。需要吗？
+
