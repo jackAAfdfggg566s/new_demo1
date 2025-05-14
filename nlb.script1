@@ -1,0 +1,90 @@
+要同时断开一个 Pod（或 IP）在多个 Target Group 中的所有监听端口（如 443 和 9996），再进行 sleep 和 register，可以将脚本拆分成一个函数，这个函数负责：
+
+从所有 Target Group 中同时 deregister 指定 IP；
+
+然后 sleep；
+
+然后 re-register 这个 IP 回所有对应端口；
+
+
+
+---
+
+1. 函数式脚本结构
+
+#!/bin/bash
+
+REGION="ap-southeast-2"
+TARGET_IP="10.0.3.45"
+PORTS=("443" "9996")
+TG_ARNS=("arn:...TG443" "arn:...TG9996")  # 按顺序对应端口
+
+# 同时 deregister 所有端口
+deregister_targets() {
+  echo "== Deregistering $TARGET_IP from all TGs =="
+
+  for idx in "${!TG_ARNS[@]}"; do
+    TG=${TG_ARNS[$idx]}
+    PORT=${PORTS[$idx]}
+    echo ">> Deregistering $TARGET_IP:$PORT from $TG"
+    aws elbv2 deregister-targets --region "$REGION" \
+      --target-group-arn "$TG" \
+      --targets "Id=$TARGET_IP,Port=$PORT" &
+  done
+
+  wait  # 等待所有并发 deregister 完成
+  echo "== All deregistrations completed =="
+}
+
+# Sleep & re-register
+register_targets_after_delay() {
+  echo "Sleeping for 10 minutes..."
+  sleep 600
+
+  echo "== Re-registering $TARGET_IP to all TGs =="
+
+  for idx in "${!TG_ARNS[@]}"; do
+    TG=${TG_ARNS[$idx]}
+    PORT=${PORTS[$idx]}
+    echo ">> Registering $TARGET_IP:$PORT to $TG"
+    aws elbv2 register-targets --region "$REGION" \
+      --target-group-arn "$TG" \
+      --targets "Id=$TARGET_IP,Port=$PORT" &
+  done
+
+  wait
+  echo "== All re-registrations completed =="
+}
+
+# 主流程
+deregister_targets
+register_targets_after_delay
+
+
+---
+
+2. 关键点说明
+
+& 和 wait 实现并发 deregister/register，几乎同时发出请求；
+
+sleep 在中间，确保目标确实在 "断开" 状态下等待；
+
+你可以将上面的结构封装进任何需要“热重启 pod/更新配置/测试切流量”的逻辑中。
+
+
+
+---
+
+3. 如果你想通过 EKS 自动发现 IP + TG 的组合，也可以融合我前面写的自动查询逻辑。
+
+我可以帮你生成一个完整版本，结合：
+
+自动从 Service 查询 TG
+
+自动发现该 Pod 的 IP
+
+一键 deregister + sleep + register
+
+
+是否需要这个增强版？
+
