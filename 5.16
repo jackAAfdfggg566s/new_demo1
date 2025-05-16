@@ -1,0 +1,74 @@
+通过 另一台 EC2 修改目标 EC2 的安全组规则 来实现 RDS 连接中断，理论上可行，但必须满足以下条件：
+
+
+---
+
+关键前提条件
+
+1. 控制 EC2（A机）具备修改安全组的权限：
+
+它的 IAM 角色需要至少有以下权限：
+
+"ec2:RevokeSecurityGroupIngress",
+"ec2:AuthorizeSecurityGroupIngress",
+"ec2:DescribeSecurityGroups"
+
+
+
+2. 你知道目标 EC2（B机）关联的安全组 ID，和连接 RDS 所用端口（如 3306）。
+
+
+3. 控制 EC2 上运行的脚本或自动化工具能调用 AWS CLI 或 SDK。
+
+
+
+
+---
+
+实现方式：使用 AWS CLI 在控制 EC2 上执行命令
+
+示例：阻断 B 机访问 RDS（通过撤销入站规则）
+
+假设目标安全组为 sg-12345678，RDS 的 IP 为 10.0.2.15，端口为 3306：
+
+aws ec2 revoke-security-group-egress \
+  --group-id sg-12345678 \
+  --protocol tcp \
+  --port 3306 \
+  --cidr 10.0.2.15/32
+
+或者，如果你要 撤销入站规则 来阻止 RDS 接收请求（例如你控制 RDS 端的安全组）：
+
+aws ec2 revoke-security-group-ingress \
+  --group-id <RDS_SG_ID> \
+  --protocol tcp \
+  --port 3306 \
+  --source-group sg-12345678
+
+恢复规则（清理）：
+
+aws ec2 authorize-security-group-egress \
+  --group-id sg-12345678 \
+  --protocol tcp \
+  --port 3306 \
+  --cidr 10.0.2.15/32
+
+
+---
+
+优缺点比较
+
+
+---
+
+如果你希望我帮你写一个在“控制 EC2”上运行的脚本，自动修改另一个 EC2 的安全组规则，可以提供以下信息：
+
+目标安全组 ID；
+
+RDS 的私网 IP 和端口；
+
+是否要恢复（回滚）规则；
+
+使用 IAM 角色还是 Access Key 调用 AWS CLI。
+
+
