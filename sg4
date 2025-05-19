@@ -1,0 +1,81 @@
+你在 EC2 实例上没有看到 5432 端口的安全组规则，可能有以下几种情况：
+
+
+---
+
+1. 安全组规则设置在 RDS 的入站规则（常见）
+
+EC2 不会设置入站访问数据库的规则。在 VPC 架构中：
+
+EC2 → RDS 的访问控制，通常由 RDS 安全组的 入站规则 决定。
+
+EC2 实例的安全组一般不需要显式允许出站 5432（默认允许全部出站）。
+
+所以你在 EC2 安全组中通常不会看到 5432 的入站规则，而应该去查看 RDS 实例绑定的安全组 是否允许来自 EC2 的访问。
+
+
+
+---
+
+你可以这样确认：
+
+A. 查看 RDS 安全组
+
+# 先找出 RDS 的安全组 ID（以 RDS 实例 ID 为基础）
+aws rds describe-db-instances \
+  --query "DBInstances[*].{DB:DBInstanceIdentifier,SG:VpcSecurityGroups[*].VpcSecurityGroupId}"
+
+然后查看这些安全组是否有开放 5432 端口（入站）给 EC2 所在的子网或安全组：
+
+aws ec2 describe-security-groups --group-ids sg-xxxxxxxx \
+  --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\`]"
+
+
+---
+
+2. RDS 允许的是 EC2 的安全组而非 CIDR
+
+RDS 安全组的入站规则可能是：
+
+来源：SecurityGroup（即 EC2 实例的安全组），而不是 CIDR（如 10.0.0.0/16）
+
+协议/端口：TCP / 5432
+
+
+你需要查看这些规则是否存在。可以用 AWS 控制台或 CLI：
+
+aws ec2 describe-security-groups --group-ids <rds-sg-id> \
+  --query "SecurityGroups[0].IpPermissions[?ToPort==\`5432\`]"
+
+
+---
+
+3. EC2 默认出站规则已经允许全部端口（包括 5432）
+
+默认的 EC2 安全组出站规则通常是：
+
+All traffic, All protocols, 0.0.0.0/0
+
+所以 你不会看到特定端口如 5432 的出站规则，因为它已经放开了全部。
+
+
+---
+
+总结：
+
+
+---
+
+如需确认 EC2 是否真的能连通 RDS：
+
+telnet <rds-endpoint> 5432
+# 或使用
+nc -zv <rds-endpoint> 5432
+
+如果连不通，那一定是 RDS 的安全组没放通。
+
+
+---
+
+需要我帮你检查 RDS 安全组或写一个自动分析 EC2 和 RDS 安全组连通性的脚本吗？
+
