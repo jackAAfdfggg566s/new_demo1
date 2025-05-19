@@ -1,0 +1,45 @@
+为了运行上述脚本（查找 EC2 实例绑定的安全组，并移除/恢复特定端口的入站规则），你需要在 IAM 中具备以下权限：
+
+
+---
+
+最小 IAM 权限列表（基于脚本行为）
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeSecurityGroups",
+        "ec2:RevokeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupIngress"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+
+---
+
+权限说明
+
+
+---
+
+额外建议
+
+如果你希望限制操作范围更严格（比如只允许修改特定安全组或端口），可以加上资源级别限制和 Condition 语句，但 EC2 安全组大多数情况下只能用 "Resource": "*"，因为它不支持所有操作的资源级别控制。
+
+若你使用了 jq 或其他本地处理工具，它们不需要额外 IAM 权限，仅运行在本地。
+
+
+
+---
+
+如果你使用的是 IAM 角色（如 EC2 实例角色、Lambda 角色），确认该角色也有以上权限。
+
+如需我帮你生成一套更细粒度、带限制条件的 IAM policy，也可以告诉我你的安全组范围或需要限制的操作类型。
+
