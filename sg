@@ -1,0 +1,66 @@
+如果你希望通过 端口号而不是安全组 ID 来阻断 EC2 对 RDS 的连接，其实操作的本质仍然是通过安全组来控制，只不过我们可以：
+
+找到 EC2 当前绑定的安全组；
+
+移除该安全组中允许访问 RDS 指定端口的规则；
+
+等待一段时间；
+
+恢复该规则。
+
+
+
+---
+
+Shell 脚本：基于端口临时阻断访问 RDS（不显式指定安全组 ID）
+
+这个脚本会自动识别 EC2 实例绑定的安全组，并修改相关端口规则。
+
+脚本示例：
+
+#!/bin/bash
+
+# 用户输入
+INSTANCE_ID="i-xxxxxxxxxxxxxx"   # EC2 实例 ID
+RDS_CIDR="172.31.0.0/16"         # RDS IP 或子网段
+PORT=3306                        # RDS 端口（MySQL 为 3306）
+
+# 获取绑定的安全组ID（可能有多个，这里只处理第一个）
+SG_ID=$(aws ec2 describe-instances \
+  --instance-ids "$INSTANCE_ID" \
+  --query "Reservations[0].Instances[0].SecurityGroups[0].GroupId" \
+  --output text)
+
+echo "检测到绑定的安全组 ID: $SG_ID"
+
+# 1. 移除访问规则
+echo "移除访问 RDS 的端口 $PORT 规则..."
+aws ec2 revoke-ingress --group-id "$SG_ID" \
+  --protocol tcp --port "$PORT" --cidr "$RDS_CIDR"
+
+# 2. 等待
+echo "访问已中断，等待 60 秒..."
+sleep 60
+
+# 3. 恢复规则
+echo "恢复访问 RDS 的端口 $PORT 规则..."
+aws ec2 authorize-ingress --group-id "$SG_ID" \
+  --protocol tcp --port "$PORT" --cidr "$RDS_CIDR"
+
+echo "完成！EC2 已恢复对 RDS 的访问。"
+
+
+---
+
+说明：
+
+这个脚本只处理一个安全组（即 EC2 绑定的第一个安全组），如果绑定多个需循环处理。
+
+若你希望自动识别所有出现在入站规则中的 $PORT 并只删除对应 RDS_CIDR 的规则，我可以帮你加上智能匹配。
+
+
+
+---
+
+是否需要我帮你扩展这个脚本来支持多个安全组、日志记录，或并发多个端口测试？
+
