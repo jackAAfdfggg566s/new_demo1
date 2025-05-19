@@ -1,0 +1,111 @@
+很好，你的目标是：
+
+> 查找 EC2 实例绑定的所有安全组中包含 5432 端口（PostgreSQL）的入站规则 → 暂时移除它们 → 等待 5 分钟 → 恢复规则。
+
+
+
+下面是完整的脚本。
+
+
+---
+
+完整 Shell 脚本：断开 EC2 到 RDS 的 5432 端口访问，5 分钟后恢复
+
+#!/bin/bash
+
+INSTANCE_ID="i-xxxxxxxxxxxxxxxxx"   # 替换为你的 EC2 实例 ID
+TARGET_PORT=5432
+DURATION=300   # 等待时间，单位：秒（5 分钟 = 300 秒）
+
+echo "获取实例绑定的安全组..."
+
+# 获取该实例绑定的所有安全组 ID
+SG_IDS=$(aws ec2 describe-instances \
+  --instance-ids "$INSTANCE_ID" \
+  --query "Reservations[0].Instances[0].SecurityGroups[*].GroupId" \
+  --output text)
+
+# 初始化恢复规则列表
+REVOKED_RULES_FILE="revoked_rules.json"
+> "$REVOKED_RULES_FILE"
+
+echo "开始检查并移除入站端口 $TARGET_PORT 的规则..."
+
+for SG_ID in $SG_IDS; do
+  # 获取匹配规则（包括端口范围包含 5432 的）
+  MATCHES=$(aws ec2 describe-security-groups \
+    --group-ids "$SG_ID" \
+    --query "SecurityGroups[0].IpPermissions[?FromPort<=\`$TARGET_PORT\` && ToPort>=\`$TARGET_PORT\`]" \
+    --output json)
+
+  if [[ "$MATCHES" != "[]" ]]; then
+    echo ">> 安全组 $SG_ID 包含匹配规则，正在移除..."
+
+    # 保存规则用于恢复
+    echo "{\"GroupId\":\"$SG_ID\",\"IpPermissions\":$MATCHES}" >> "$REVOKED_RULES_FILE"
+
+    # 执行移除
+    aws ec2 revoke-ingress --group-id "$SG_ID" \
+      --ip-permissions "$MATCHES" > /dev/null
+
+    echo "已移除来自 $SG_ID 的匹配入站规则"
+  fi
+done
+
+echo
+echo "访问 5432 端口已断开，等待 $DURATION 秒..."
+sleep $DURATION
+
+echo
+echo "正在恢复原规则..."
+
+# 恢复所有保存的规则
+while read -r line; do
+  SG_ID=$(echo "$line" | jq -r '.GroupId')
+  PERMS=$(echo "$line" | jq '.IpPermissions')
+
+  aws ec2 authorize-ingress --group-id "$SG_ID" \
+    --ip-permissions "$PERMS" > /dev/null
+
+  echo "已恢复安全组 $SG_ID 的规则"
+done < "$REVOKED_RULES_FILE"
+
+echo
+echo "完成：EC2 的 5432 端口访问已恢复。"
+
+
+---
+
+脚本要求
+
+你需要安装并配置好：
+
+awscli
+
+jq（JSON 处理工具，用于提取和恢复规则）
+
+
+
+可以通过以下命令安装 jq：
+
+sudo apt-get install jq        # Ubuntu / Debian
+sudo yum install jq            # RHEL / CentOS
+brew install jq                # macOS
+
+
+---
+
+注意事项
+
+这个脚本处理的是所有包含 5432 的入站规则，包括精确端口和范围。
+
+仅修改 入站规则（从 EC2 到 RDS 通常是 RDS 的入站）。
+
+如果你控制的是 EC2 的出站规则，请明确，我可以帮你换方向。
+
+
+
+---
+
+是否还希望脚本加入日志输出、失败重试、Dry Run 模式或筛选特定 CIDR（如只断开对某 RDS 的访问）？
+
