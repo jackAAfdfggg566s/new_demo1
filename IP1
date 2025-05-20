@@ -1,0 +1,56 @@
+明白了，如果 aws ec2 describe-instances 命令没有查出结果，可能是以下几种情况之一：
+
+
+---
+
+可能原因：
+
+1. IP 实际并不存在于当前 region 或 VPC 内的实例上。
+
+
+2. 当前 AWS CLI 配置使用的 profile/region 不正确。
+
+
+3. 部分实例没有分配 PrivateIpAddress（如刚启动中的实例）。
+
+
+4. 实例使用的是辅助网卡的 IP，而不是主网卡 eth0 上的 IP。
+
+
+
+
+---
+
+改进命令：匹配所有私有 IP（包括次网卡、弹性网卡上的）
+
+我们可以遍历所有实例的所有网络接口，确保不遗漏：
+
+aws ec2 describe-instances \
+  --query "Reservations[].Instances[?NetworkInterfaces[?starts_with(PrivateIpAddress, '100.74.15.')]].[InstanceId, NetworkInterfaces[].PrivateIpAddress]" \
+  --output table
+
+
+---
+
+备选方法：先查所有实例及 IP，再手动筛选（适用于检查数据）
+
+aws ec2 describe-instances \
+  --query "Reservations[].Instances[].{ID:InstanceId, IP:PrivateIpAddress}" \
+  --output table
+
+然后你可以看看是否有 100.74.15.x 出现在结果中。
+
+
+---
+
+确保你在正确 Region：
+
+你可以加上 --region 参数，比如：
+
+--region ap-southeast-1
+
+
+---
+
+如果你希望我帮你写一个完整的 Bash 脚本，自动列出某 IP 段下所有实例的 ID、Name 标签、私有 IP，我也可以生成。你希望用哪个 CIDR（/24 还是具体 IP 段）？
+
