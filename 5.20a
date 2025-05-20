@@ -1,0 +1,11 @@
+下面是这段内容的专业英文表达，适合用于年终总结中的“风险管理”或“设计思考”部分：
+
+"When designing the experiment options, I carefully evaluated multiple approaches with a focus on security best practices. To minimize exposure, I deliberately avoided using public bastion EC2 instances. Instead, I leveraged IAM roles and AWS Systems Manager (SSM) to securely gain instance access and execute commands. I also led discussions with the team to compare the risks of each approach and ensured alignment on the safest and most efficient solution."
+
+如果你想更简洁一点，也可以使用：
+
+"Designed the experiment with security as a top priority, avoiding public bastion hosts by using IAM roles and SSM for secure access. Facilitated team discussions to evaluate risks across different solutions."
+
+如果你还想加入这个实验的目标（比如断开数据库连接、模拟网络故障等），我可以帮你进一步扩展。
+
+​
