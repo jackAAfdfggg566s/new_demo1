@@ -1,0 +1,32 @@
+在 AWS 中，要查询某个特定 IP 段（如 100.74.15.0/24）内的所有 EC2 实例，推荐使用 AWS CLI + jq 工具来筛选，以下是一个实用的命令：
+
+
+---
+
+使用 AWS CLI 查询某 IP 段内的 EC2 实例：
+
+aws ec2 describe-instances \
+  --query "Reservations[].Instances[?starts_with(PrivateIpAddress, '100.74.15.')].[InstanceId, PrivateIpAddress]" \
+  --output table
+
+
+---
+
+说明：
+
+starts_with(PrivateIpAddress, '100.74.15.') 会筛选所有私有 IP 在 100.74.15.x 范围的实例。
+
+输出会显示匹配的 InstanceId 和 PrivateIpAddress。
+
+需要本地 AWS CLI 已正确配置权限（例如已登录或设置好 profile）。
+
+
+
+---
+
+如果你要精确匹配一个子网（CIDR）而不是前缀匹配？
+
+可以先列出子网，再找匹配的实例。这需要结合 describe-subnets 和 describe-instances 的逻辑过滤。需要我写这部分也可以继续补上。
+
+是否希望查询结果包括标签（Name）或导出为 CSV？我也可以帮你扩展命令。
+
