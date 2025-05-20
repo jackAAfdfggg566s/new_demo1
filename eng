@@ -1,0 +1,18 @@
+下面是这段话的专业英文翻译：
+
+
+---
+
+"The current RDS security group's inbound rule allows access from an IP range covering all EC2 instances. Please update it to define individual rules for each EC2 instance instead. This setup is not secure, and we are preparing to run an experiment where the MI application disconnects from the database."
+
+
+---
+
+你也可以使用更正式的版本，比如：
+
+> "Currently, the RDS security group's inbound rule permits access from a broad IP range that includes all EC2 instances. For enhanced security, we kindly request updating it to specify individual rules per EC2 instance. This change is also required in preparation for an experiment involving intentional disconnection of the MI application from the database."
+
+
+
+需要我补充 AWS 操作建议或 CLI 命令也可以告诉我。
+
