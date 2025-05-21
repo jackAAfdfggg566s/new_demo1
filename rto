@@ -1,0 +1,86 @@
+要判断 EKS 中 Pod 的主备切换时间，你可以使用 kubectl 或 AWS CLI 跟踪 Pod 何时变为 Ready 状态。这里提供多种方法实现这个目标：
+
+
+---
+
+方法一：使用 kubectl get pod -o json 查看 Pod Ready 时间
+
+kubectl get pod <pod-name> -n <namespace> -o json | jq '.status.conditions[] | select(.type=="Ready")'
+
+输出示例：
+
+{
+  "type": "Ready",
+  "status": "True",
+  "lastTransitionTime": "2025-05-20T06:52:12Z"
+}
+
+> lastTransitionTime 表示该 Pod 最后一次进入 Ready 状态的时间，可用于判断主备切换的时间点。
+
+
+
+
+---
+
+方法二：查看所有 Pod 的 Ready 切换时间（用于备切为主）
+
+kubectl get pods -n <namespace> -o json | jq '.items[] | {name: .metadata.name, readyTime: (.status.conditions[] | select(.type=="Ready") | .lastTransitionTime)}'
+
+
+---
+
+方法三：使用 kubectl describe pod 查看 Ready 时间（不精确）
+
+kubectl describe pod <pod-name> -n <namespace>
+
+查看 Conditions: 中的 Ready 条目，并留意 Last Transition Time 或 Events: 中的时间。
+
+
+---
+
+方法四：获取 Pod Ready 时间日志（需启用审计或日志）
+
+你也可以从：
+
+CloudWatch logs（如果容器中记录了角色切换日志）；
+
+Kubernetes Events（临时存在）；
+
+
+kubectl get event --sort-by='.lastTimestamp' -n <namespace>
+
+
+---
+
+总结如何判断主备切换时间：
+
+1. 持续轮询所有 Pod 的 Ready 状态变更时间（可写脚本监控）。
+
+
+2. 记录原主 Pod 的 Ready=False 时间 + 新主 Pod 的 Ready=True 时间。
+
+
+3. 差值即为主备切换时长。
+
+
+
+
+---
+
+Bonus：判断当前主 Pod 是哪个？
+
+如果主/备通过标签、IP、leader election、服务选择器定义，可用如下命令判断：
+
+kubectl get pods -n <namespace> -l role=primary
+
+或者：
+
+kubectl exec <pod> -n <namespace> -- cat /app/leader.txt
+
+（根据你系统的实现）
+
+
+---
+
+如果你能提供主备逻辑的具体机制（如是 Redis Sentinel、StatefulSet 中的 leader、还是服务层决定），我能帮你写出更针对性的脚本或命令。是否需要我帮你写个 bash 脚本监控切换时间？
+
