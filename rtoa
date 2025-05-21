@@ -1,0 +1,85 @@
+明白了，你是想结合 Container Insights 日志，找出一个已被 kill 的“老主” Pod 的结束时间（终止时间），用于判断主备切换时间点。以下是完整的方法思路，帮助你追踪这个 Pod 的“死亡时间”：
+
+
+---
+
+目标：找出被 kill Pod 的结束时间
+
+前提条件：
+
+你已启用 Container Insights（CloudWatch Logs）。
+
+你知道该 Pod 的名字或部分名称。
+
+
+
+---
+
+方法一：使用 CloudWatch Logs Insights 查询
+
+步骤：
+
+1. 打开 AWS 控制台 → CloudWatch → Logs Insights
+
+
+2. 在 log group 中选择：
+
+/aws/containerinsights/<cluster-name>/application
+
+
+3. 使用如下查询语句（替换 <your-pod-name> 关键字）：
+
+
+
+fields @timestamp, @message
+| filter @message like /<your-pod-name>/
+| filter @message like /Killing container|Stopping container|exited|SIGTERM/
+| sort @timestamp desc
+| limit 20
+
+结果说明：
+
+查出来的最后一条包含 "Killing container" 或 "exited with code" 等字样的日志条目，即为该 Pod 的终止时间点。
+
+时间戳 @timestamp 就是你要找的“老主死亡时间”。
+
+
+
+---
+
+方法二：附加资源利用率分析（可选）
+
+切换到：
+
+/aws/containerinsights/<cluster-name>/performance
+
+然后筛选该 Pod 名，观察其 CPU/Memory 使用是否异常导致 kill（比如 OOM、崩溃）。
+
+
+---
+
+最终结果：
+
+你可以通过这种方式定位：
+
+老主 Pod 最后处于 Ready 状态的时间（见前文 kubectl 查询 lastTransitionTime）；
+
+老主 Pod 被 kill 的确切时间（来自 Container Insights 的日志）；
+
+与新主 Pod 成为 Ready 的时间对比，计算主备切换耗时。
+
+
+
+---
+
+是否需要自动化？
+
+如果你有多个主备 Pod，或需定期追踪主备切换，我可以帮你写：
+
+一个 CloudWatch Logs Insights 查询模板；
+
+一个 bash/Python 脚本结合 kubectl 和日志查询自动对比时间差。
+
+
+需要的话直接
+
