@@ -1,0 +1,96 @@
+要查看 已被终止的旧主 Pod 的最后 Ready 时间（或死亡时间），虽然它已被 kill，你还是可以通过以下方法在 Kubernetes 或 AWS 环境中追溯记录：
+
+
+---
+
+方法一：从 Pod 的事件（Events）中查看终止时间
+
+kubectl get events --sort-by='.lastTimestamp' -n <namespace> | grep <old-pod-name>
+
+看是否有类似下面的事件：
+
+Killing container with id ... : Container <name> failed liveness probe...
+
+或：
+
+Pod <old-pod-name> in namespace <ns> terminated
+
+
+---
+
+方法二：查看 Pod 终止前的状态记录（如果尚未被 GC 清除）
+
+如果 Pod 还没完全被 Kubernetes 清理，你可以运行：
+
+kubectl get pod <old-pod-name> -n <namespace> -o json
+
+并查找：
+
+"containerStatuses": [
+  {
+    "lastState": {
+      "terminated": {
+        "finishedAt": "2025-05-20T07:52:30Z",
+        ...
+      }
+    }
+  }
+]
+
+这个 "finishedAt" 就是老主 Pod 最后停止的时间。
+
+
+---
+
+方法三：通过 AWS CloudWatch Logs 或 Container Logs
+
+如果你有将日志发送到 CloudWatch（或容器内记录了状态变更），可以：
+
+1. 打开 CloudWatch Logs。
+
+
+2. 找到该 Pod 对应的日志组。
+
+
+3. 搜索关键词：Shutting down, SIGTERM, terminated, 或 Lost leadership。
+
+
+4. 查看时间戳。
+
+
+
+
+---
+
+方法四：通过 kubectl logs --previous（前提是 Pod 已重启，不是完全删除）
+
+如果 Pod 是 重启而不是删除，你可以查看上一个容器的日志：
+
+kubectl logs <pod-name> -n <namespace> --previous
+
+如果 Pod 是 Leader，日志里可能有：
+
+[INFO] Lost leadership...
+[INFO] Received termination signal at 2025-05-20T07:52:00Z
+
+
+---
+
+方法五：查看 StatefulSet/Deployment 控制器事件
+
+如果你用的是 Deployment 或 StatefulSet，可以查看 controller 事件：
+
+kubectl describe statefulset <name> -n <namespace>
+
+里面会记录 Pod 的启动/删除时间，间接判断主备切换点。
+
+
+---
+
+总结你要做的：
+
+
+---
+
+如果你可以告诉我这个“主备”是用哪种机制实现的（如 Leader Election, Redis Sentinel, Keepalived, 自定义逻辑等），我可以帮你更精准地提取切换时间。是否要我写一个脚本自动记录主备切换时长？
+
