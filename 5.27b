@@ -1,0 +1,63 @@
+好的，我们来一步步排查并确保你能获取到 label 中包含 "aaa" 的内容。以下是一个清晰的使用方式示例：
+
+
+---
+
+目标：找到 label 中 value 包含 aaa 的 Pod
+
+例如：你有一些 Pod，app=xxx-aaa-yyy，我们想找到这类 Pod，并提取 app label 中含有 aaa 的那部分。
+
+
+---
+
+方法一：查看哪些 Pod 的 app label 包含 aaa
+
+kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.metadata.labels.app}{"\n"}{end}' | grep aaa
+
+解释：
+
+-A：列出所有命名空间
+
+jsonpath：打印 namespace, pod name, 和 app label 的值
+
+grep aaa：筛选出 app label 中包含 aaa 的
+
+
+示例输出：
+
+default     mypod-1     xxx-aaa-yyy
+dev         testpod     aaa-zzz
+
+
+---
+
+方法二：只提取出 app label 值中含 aaa 的部分（词段）
+
+kubectl get pods -A -o jsonpath='{range .items[*]}{.metadata.labels.app}{"\n"}{end}' | grep aaa | tr '-' '\n' | grep aaa
+
+这个命令会：
+
+获取所有 Pod 的 app label 值
+
+过滤出含有 aaa 的值
+
+拆分 -，然后提取含 aaa 的词段
+
+
+
+---
+
+如果你运行这些命令没获取到，请确认以下几点：
+
+1. 你的 Pod 是否确实有 app=xxx-aaa-yyy 这样的 label？
+
+
+2. app 是 label 的 key 吗？还是别的（比如 role=xxx-aaa）？
+
+
+3. 你是否只关注某个命名空间？
+
+
+
+如果你愿意，贴出一条 Pod 的完整 label（可用 kubectl get pod PODNAME -o json 查看），我可以帮你写出最精准的提取命令。需要吗？
+
