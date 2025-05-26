@@ -1,0 +1,55 @@
+明白了，你是说：
+
+> 从 label 中提取出包含 aaa 的那部分，比如 app=xxx-aaa-yyy，你想提取出 含有 aaa 的段（如 xxx-aaa-yyy、或 aaa）。
+
+
+
+下面是几种场景和提取方法，供你选择：
+
+
+---
+
+1. 精确提取 label value 中包含 aaa 的那一项
+
+示例数据：
+
+app=xxx-aaa-yyy
+app=aaa-zzz
+app=zzz-bbb
+
+提取 label value 中包含 aaa 的值：
+
+kubectl get pods -l app -o jsonpath='{range .items[*]}{.metadata.labels.app}{"\n"}{end}' | grep aaa
+
+输出：
+
+xxx-aaa-yyy
+aaa-zzz
+
+
+---
+
+2. 只提取包含 aaa 的那一部分（中间词段）
+
+比如你想从 xxx-aaa-yyy 中提取 aaa：
+
+echo "xxx-aaa-yyy" | tr '-' '\n' | grep aaa
+
+输出：
+
+aaa
+
+如果你在批量处理，可以这么写：
+
+kubectl get pods -l app -o jsonpath='{range .items[*]}{.metadata.labels.app}{"\n"}{end}' | grep aaa | while read line; do echo "$line" | tr '-' '\n' | grep aaa; done
+
+
+---
+
+3. 提取所有 Pod 的 label 中 value 含 aaa 的，并显示 Pod 名
+
+kubectl get pods -A -o json | jq -r '
+  .items[] |
+  select(.metadata.labels.app and (.metadata.labels.app | test("aaa"))) |
+  "
+
