@@ -1,0 +1,105 @@
+在 AWS FIS（Fault Injection Simulator）中模拟 EKS Pod 断开 Kafka 连接，且区分对不同类型的 Kafka 服务（例如：一个是用于日志的 Kafka，一个是用于事件流的 Kafka）进行单独断开，尽管它们使用的是相同端口（如 TCP 9092），你仍可以通过 目的地 IP 地址（或 DNS）、Pod label、env 环境变量 等信息进行精细化区分并实施故障模拟。
+
+
+---
+
+✅ 实现目标：分别断开两种 Kafka 的网络连接
+
+你可以采用以下几种方式实现：
+
+
+---
+
+✅ 方法一：使用 iptables 配合 FIS 网络阻断实验
+
+你可以在 FIS 实验模板中使用 aws:eks:inject-network-latency 或自定义 SSM 脚本，精细拦截到特定 Kafka 的连接：
+
+步骤如下：
+
+1. 识别目标 Kafka 的 IP/DNS
+
+例如：
+
+Kafka-A（日志）：kafka-logging.internal:9092
+
+Kafka-B（事件流）：kafka-events.internal:9092
+
+
+
+
+2. 在 FIS 实验中使用自定义 SSM 文本注入 iptables 规则
+
+
+
+# 阻断 Kafka-Logging 的连接
+iptables -A OUTPUT -p tcp -d kafka-logging.internal --dport 9092 -j DROP
+
+或通过 IP 方式：
+
+iptables -A OUTPUT -p tcp -d <Kafka-Logging-IP> --dport 9092 -j DROP
+
+然后再恢复：
+
+iptables -D OUTPUT -p tcp -d kafka-logging.internal --dport 9092 -j DROP
+
+
+---
+
+✅ 方法二：区分 Kafka 客户端配置（在 Pod 层面）
+
+如果你的应用是容器化部署在 EKS 上，通常每个 Pod 都配置了 Kafka 的目标地址。例如，你可以：
+
+1. 通过 Pod Label 区分使用不同 Kafka 的 Pod
+
+app=kafka-logging-client
+
+app=kafka-event-client
+
+
+
+2. 在 FIS 中指定 label selector，作用在具体类型的 Pod 上
+
+
+3. 使用 FIS 的网络故障注入（如延迟、丢包、断流）针对某一类 Pod 进行实验
+
+
+
+"targets": {
+  "KafkaLoggingClients": {
+    "resourceType": "aws:eks:pod",
+    "selectionMode": "ALL",
+    "filters": [
+      {
+        "path": "metadata.labels.app",
+        "values": ["kafka-logging-client"]
+      }
+    ]
+  }
+}
+
+这样就能对不同用途的 Kafka 客户端实现定向故障注入，即便它们都连的是 9092 端口。
+
+
+---
+
+✅ 方法三：在容器中注入代理层（如 Istio 或 Envoy）
+
+如果你使用了服务网格或 Sidecar 模式：
+
+可以通过 Sidecar 控制流量
+
+实验中调用 Sidecar API 注入临时故障，例如拒绝对某些目标地址的连接
+
+
+不过这对部署有额外要求。
+
+
+---
+
+🧩 总结推荐：
+
+
+---
+
+如果你能提供更多关于「如何区分两种 Kafka」的实际部署细节（如：Pod 名、env、DNS 名称、是否有 Sidecar），我可以给你写一个完整的 FIS 模板示例。是否需要？
+
