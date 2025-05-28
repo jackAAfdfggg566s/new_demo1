@@ -1,0 +1,87 @@
+是的，你可以使用脚本或命令动态监控 Pod 的 Ready 状态变化，并记录时间戳。以下是几种实用的方式，适合做自动化监控或调试。
+
+
+---
+
+✅ 推荐：使用 kubectl get pod -w + 自定义解析
+
+这是最简单且无需额外工具的方式：
+
+示例脚本（bash）：
+
+#!/bin/bash
+
+NAMESPACE=default
+POD_NAME=my-pod
+
+echo "Monitoring Pod $POD_NAME in namespace $NAMESPACE..."
+kubectl get pod $POD_NAME -n $NAMESPACE -w | while read line; do
+    # 检查 Ready 字段是否变化
+    READY=$(echo "$line" | awk '{print $2}')  # 例如 1/1 或 0/1
+    STATUS=$(echo "$line" | awk '{print $3}')
+    TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
+    
+    echo "$TIMESTAMP | READY=$READY | STATUS=$STATUS"
+done
+
+持续监听 Pod 状态变化。
+
+每次状态变更时记录时间戳。
+
+
+
+---
+
+✅ 高级方式：使用 kubectl get pod -o jsonpath 循环采样
+
+更精细地抓取 Ready 状态变化时间点：
+
+#!/bin/bash
+
+POD=my-pod
+NS=default
+LAST_STATUS=""
+
+while true; do
+    STATUS=$(kubectl get pod $POD -n $NS -o jsonpath="{.status.conditions[?(@.type=='Ready')].status}")
+    if [[ "$STATUS" != "$LAST_STATUS" ]]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') | Ready Status Changed: $LAST_STATUS -> $STATUS"
+        LAST_STATUS=$STATUS
+    fi
+    sleep 2
+done
+
+
+---
+
+✅ 如果你有 stern 或 kail 工具（辅助日志工具）
+
+可以用来实时查看 Pod 的事件变化（非状态直接，但配合 kubelet 日志也能看出 Ready 状态变化）：
+
+stern pod-name
+# 或
+kail -p pod-name
+
+
+---
+
+✅ 结合 kubectl events（K8s >=1.27）
+
+如果你用的是新版本 Kubernetes，可以直接查 events：
+
+kubectl get events --field-selector involvedObject.name=my-pod -n default --watch
+
+或者脚本方式监控：
+
+watch -n 2 "kubectl get events --field-selector involvedObject.name=my-pod -n default | grep -i readiness"
+
+
+---
+
+小结：
+
+
+---
+
+是否希望我帮你生成一个带参数的脚本（可以传 Pod 名和 Namespace）？
+
