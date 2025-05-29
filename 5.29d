@@ -1,0 +1,85 @@
+你说的对，AWS FIS 目前并不直接支持 aws:eks:disrupt-network 这样的 action，但你可以使用 aws:eks:inject-network-packet-loss 来间接实现“断开连接”模拟，只要设置高比例丢包或使用指定目标 IP。
+
+
+---
+
+✅ 用 aws:eks:inject-network-packet-loss 实现“分别断开两种 Kafka”
+
+📌 原理：
+
+Kafka 使用 TCP 协议，丢包率高到一定程度（比如 100%）时，连接就会被“等效断开”。
+
+你可以通过 设置目标 IP 地址段 来分别控制丢包对象（即分别控制不同类型 Kafka 的连接）。
+
+
+
+---
+
+✅ 示例：断开 Confluent Kafka 连接（假设其 IP 是 172.20.0.0/24）
+
+{
+  "targets": {
+    "MyEksPod": {
+      "resourceType": "aws:eks:pod",
+      "resourceArns": [ "arn:aws:eks:..." ]
+    }
+  },
+  "actions": {
+    "DropConfluentKafka": {
+      "actionId": "aws:eks:inject-network-packet-loss",
+      "parameters": {
+        "percentage": "100",             // 等效于完全断开
+        "duration": "300",               // 秒数
+        "protocol": "tcp",
+        "port": "9092",
+        "remoteIpAddresses": "172.20.0.0/24" // 指定 Confluent Kafka IP 段
+      },
+      "targets": {
+        "Pods": "MyEksPod"
+      }
+    }
+  }
+}
+
+
+---
+
+✅ 示例：断开 MSK Kafka（假设其 IP 是 10.0.1.0/24）
+
+你可以在另一个实验中，或同一实验中另设一个 Action，换 remoteIpAddresses 即可。
+
+
+---
+
+🚧 注意事项
+
+1. remoteIpAddresses 是关键，它实现了“虽然端口一样，但目标不同”的区别处理。
+
+
+2. port 是 Kafka 的端口，比如 9092。
+
+
+3. 若你用 DNS 连接 Kafka，可以用 dig/nslookup 先解析域名拿到 IP。
+
+
+4. 若你 pod 是通过 NAT 出去（比如节点 SNAT），你需要在 remoteIpAddresses 指定 Kafka 实际服务器 IP，而不是 NAT IP。
+
+
+
+
+---
+
+❓你可能还关心：
+
+✅ 是否可精确控制单个 Kafka 连接断开？可以，只要你知道目标 Kafka 的 IP（或 IP 段）。
+
+✅ 是否可以测试恢复？是的，你可以设置 duration 后恢复连接。
+
+✅ 是否能同时断多个目标？可以，用多个 actions，或用多个 IP 段。
+
+
+
+---
+
+需要我帮你生成完整的 AWS FIS 模板（或 Terraform/YAML 格式）吗？也欢迎提供你 Kafka 的域名/IP 格式，我可以帮你拆分得更精准。
+
