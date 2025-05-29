@@ -1,0 +1,145 @@
+明白了！你想通过 Kubernetes Service Name 找到其对应的 NLB 的 DNS 名称，然后逐步：
+
+1. 根据 Service 找到 NLB 的 DNS 名。
+
+
+2. 通过 DNS 名查到 Load Balancer ARN。
+
+
+3. 获取 Listeners（例如端口 443 和 9996）。
+
+
+4. 找出监听 9996 的 Listener。
+
+
+5. 找到对应的 Target Group。
+
+
+6. 执行 deregister → 等待 → register 操作。
+
+
+
+
+---
+
+✅ 脚本目标：从 Kubernetes Service → 操作监听 9996 的 Target Group
+
+
+---
+
+✅ 步骤拆解 + Shell 脚本
+
+#!/bin/bash
+
+set -e
+
+# ⚙️ 配置项
+NAMESPACE="your-namespace"
+SERVICE_NAME="your-service-name"
+PORT="9996"
+WAIT_SECONDS=60
+
+echo "🔍 Step 1: 获取 NLB DNS 名..."
+NLB_DNS=$(kubectl get svc "$SERVICE_NAME" -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+if [ -z "$NLB_DNS" ]; then
+    echo "❌ 未获取到 NLB DNS。检查服务是否为 type=LoadBalancer"
+    exit 1
+fi
+
+echo "✅ NLB DNS: $NLB_DNS"
+
+# Step 2: 找到 Load Balancer ARN
+echo "🔍 Step 2: 查找 Load Balancer ARN..."
+LB_ARN=$(aws elbv2 describe-load-balancers \
+    --query "LoadBalancers[?DNSName=='$NLB_DNS'].LoadBalancerArn" \
+    --output text)
+
+if [ -z "$LB_ARN" ]; then
+    echo "❌ 未找到匹配的 Load Balancer ARN"
+    exit 1
+fi
+
+echo "✅ Load Balancer ARN: $LB_ARN"
+
+# Step 3: 查找监听端口为 9996 的 Listener
+echo "🔍 Step 3: 查找 Listener (端口 $PORT)..."
+LISTENERS=$(aws elbv2 describe-listeners --load-balancer-arn "$LB_ARN")
+LISTENER_ARN=$(echo "$LISTENERS" | jq -r ".Listeners[] | select(.Port==$PORT) | .ListenerArn")
+
+if [ -z "$LISTENER_ARN" ]; then
+    echo "❌ 未找到端口 $PORT 的 Listener"
+    exit 1
+fi
+
+echo "✅ Listener ARN: $LISTENER_ARN"
+
+# Step 4: 获取目标 Target Group ARN
+echo "🔍 Step 4: 获取 Target Group ARN..."
+TG_ARN=$(echo "$LISTENERS" | jq -r ".Listeners[] | select(.Port==$PORT) | .DefaultActions[0].TargetGroupArn")
+
+if [ -z "$TG_ARN" ]; then
+    echo "❌ 没有找到对应的 Target Group"
+    exit 1
+fi
+
+echo "✅ Target Group ARN: $TG_ARN"
+
+# Step 5: 获取 Targets
+echo "🔍 Step 5: 获取当前注册 Targets..."
+TARGETS=$(aws elbv2 describe-target-health \
+    --target-group-arn "$TG_ARN" \
+    --query "TargetHealthDescriptions[*].Target.Id" \
+    --output text)
+
+if [ -z "$TARGETS" ]; then
+    echo "⚠️ 没有已注册的 Targets"
+    exit 1
+fi
+
+echo "✅ 当前 Targets: $TARGETS"
+
+# 构建 --targets 参数
+TARGET_ARGS=$(for id in $TARGETS; do echo -n "Id=$id "; done)
+
+# Step 6: Deregister
+echo "🛑 Step 6: Deregister targets..."
+aws elbv2 deregister-targets --target-group-arn "$TG_ARN" --targets $TARGET_ARGS
+
+# Step 7: 等待
+echo "⏱️ 等待 $WAIT_SECONDS 秒..."
+sleep $WAIT_SECONDS
+
+# Step 8: Register again
+echo "✅ Step 8: Register targets again..."
+aws elbv2 register-targets --target-group-arn "$TG_ARN" --targets $TARGET_ARGS
+
+echo "🎉 完成"
+
+
+---
+
+✅ 依赖工具
+
+aws cli
+
+kubectl
+
+jq（用于解析 JSON）
+
+
+
+---
+
+🧠 附加说明
+
+你可以改造此脚本，加入 kubectl get svc 的 label selector，批量处理服务。
+
+如果 target 是 IP 类型（不是 EC2 实例 ID），也可以通过 Target.Id 和 Target.Port 获取并构建 target 参数。
+
+
+
+---
+
+是否需要我为 IP 模式（如 NLB-IP 模式 Service）写一个版本？或者你希望这个脚本做成 cron job 或集成到 FIS？
+
