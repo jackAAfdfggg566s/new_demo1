@@ -1,0 +1,130 @@
+你可以编写一个 shell 脚本来自动化以下任务：
+
+1. 获取 EKS 集群中对应 NLB 的 Target Group 列表。
+
+
+2. 找到监听端口为 9996 的 Target Group。
+
+
+3. 获取其目标（Targets）。
+
+
+4. 执行 deregister-targets，等待一段时间。
+
+
+5. 执行 register-targets 重新注册。
+
+
+
+
+---
+
+✅ 前提条件：
+
+你已安装并配置好 aws cli，并有权限操作：
+
+elbv2 (NLB 操作)
+
+eks
+
+
+已知：
+
+EKS 的 NLB ARN 或名称
+
+NLB 的 target group 名称规律（或者你要过滤端口 9996）
+
+
+
+
+---
+
+✅ 示例脚本（Bash）
+
+#!/bin/bash
+
+set -e
+
+# 变量配置（请替换）
+CLUSTER_NAME="your-eks-cluster"
+PORT="9996"
+
+# 获取所有 Target Groups 相关信息
+echo "Fetching Target Groups..."
+TARGET_GROUP_ARN=$(aws elbv2 describe-target-groups \
+    --query "TargetGroups[?Port==\`${PORT}\`].TargetGroupArn" \
+    --output text)
+
+if [ -z "$TARGET_GROUP_ARN" ]; then
+    echo "No Target Group found for port $PORT"
+    exit 1
+fi
+
+echo "Target Group for port $PORT: $TARGET_GROUP_ARN"
+
+# 获取当前注册的 Targets
+TARGETS=$(aws elbv2 describe-target-health \
+    --target-group-arn "$TARGET_GROUP_ARN" \
+    --query "TargetHealthDescriptions[*].Target.Id" \
+    --output text)
+
+if [ -z "$TARGETS" ]; then
+    echo "No targets registered."
+    exit 1
+fi
+
+echo "Registered targets: $TARGETS"
+
+# 构建 --targets 参数
+TARGET_ARGS=$(for id in $TARGETS; do echo -n "Id=$id "; done)
+
+# Deregister Targets
+echo "Deregistering targets..."
+aws elbv2 deregister-targets \
+    --target-group-arn "$TARGET_GROUP_ARN" \
+    --targets $TARGET_ARGS
+
+# 等待一段时间（例如 60 秒）
+WAIT_SECONDS=60
+echo "Waiting $WAIT_SECONDS seconds before re-registering..."
+sleep $WAIT_SECONDS
+
+# Register Targets
+echo "Registering targets again..."
+aws elbv2 register-targets \
+    --target-group-arn "$TARGET_GROUP_ARN" \
+    --targets $TARGET_ARGS
+
+echo "Done."
+
+
+---
+
+✅ 脚本说明：
+
+查找指定端口（9996）的 Target Group
+
+自动读取其下的 EC2 targets
+
+注销，然后延迟，再重新注册
+
+脚本兼容一个或多个 Targets
+
+
+
+---
+
+✅ 可选改进：
+
+如果你的 Target 是 IP 而非 EC2，可以调整：
+
+--query "TargetHealthDescriptions[*].Target.[Id,Port]"
+
+如果你使用的是 IP 类型 NLB（如 Kubernetes service.beta.kubernetes.io/aws-load-balancer-type: nlb-ip），则注册的 targets 是 IP 地址而非实例 ID。
+
+
+
+---
+
+需要我帮你适配 IP 类型的 target group 吗？或者你想把它封装成一个 cron 或自动 FIS 脚本也可以。
+
