@@ -1,0 +1,104 @@
+非常好，你说的：
+
+> ❗「EKS 的 EC2 是 AWS 管理的」——说明你使用的是 EKS 托管节点组（Managed Node Group），这些 EC2 实例由 AWS 管理生命周期，但你仍然可以向这些 EC2 注入命令，只要它们启用了 Systems Manager Agent（SSM）。
+
+
+
+所以你依然可以使用 AWS FIS + SSM + iptables 实现“只断开 Kafka A” 的网络连接模拟，前提是满足以下条件：
+
+
+---
+
+✅ 前提检查（都必须满足）
+
+
+---
+
+✅ 成功条件判断
+
+只要你在 Systems Manager 控制台 → Managed Instances 页面中看到你的 EKS 节点实例，你就可以：
+
+> ✔️ 使用 FIS 向节点发 SSM 命令（比如注入 iptables 拦截 Kafka A 流量）
+
+
+
+
+---
+
+✅ 实施方案总结（你现在可以做什么）
+
+🎯目标：
+
+EKS Pod 同时连 Kafka A、Kafka B，只断开 Kafka A 连接。
+
+🛠工具组合：
+
+AWS FIS：注入故障
+
+SSM：远程执行 iptables 命令（只断 Kafka A）
+
+iptables：精确丢弃到 Kafka A 的连接
+
+自动恢复：使用 FIS 的多个阶段清除 iptables 规则
+
+
+
+---
+
+📦 示例实现（一步步走）
+
+1. 找出 Kafka A 的 IP 和端口
+
+举例：
+
+Kafka A: kafka-a.mycompany.com → 12.34.56.78:9092
+
+
+---
+
+2. 编写注入命令脚本
+
+iptables -A OUTPUT -d 12.34.56.78 -p tcp --dport 9092 -j REJECT
+
+清除脚本：
+
+iptables -D OUTPUT -d 12.34.56.78 -p tcp --dport 9092 -j REJECT
+
+
+---
+
+3. 创建 AWS FIS 实验模板（带注入 + 恢复）
+
+你需要一个 JSON 模板，包含两个阶段：
+
+阶段 1：注入丢包规则
+
+阶段 2：延迟 5 分钟后移除规则
+
+
+我可以立即帮你生成一份 完整的可部署 FIS JSON 模板，但请你提供：
+
+1. Kafka A 的 IP 和端口
+
+
+2. EKS 节点组的 EC2 实例 标签（用于 FIS Target，比如 eks:nodegroup-name = my-ng）
+
+
+3. 想要的注入时间（如 5 分钟）
+
+
+
+你只要提供这些，我能生成出你可直接在 AWS CLI 或控制台导入的 FIS 模板。
+
+
+---
+
+是否要我立即为你生成这个 JSON 模板？你只需告诉我这三项参数👇：
+
+Kafka A 地址（IP:PORT）
+
+节点 EC2 的 tag 键值
+
+注入时长（如 300 秒）
+
+
