@@ -1,0 +1,86 @@
+你的问题是：
+
+> ❓“限制 EKS 出站不行吗？”
+
+
+
+👇这里给你直接、准确的答案：
+
+
+---
+
+✅ 可以限制 EKS 出站流量，但要分清在哪一层做：
+
+
+---
+
+✅ 推荐你使用的：NetworkPolicy 限制 EKS Pod 出站流量
+
+原因：
+
+你只能登录 EKS，无法动 Kafka 的 SG
+
+Pod 默认共用节点网络，改 SG 不管用
+
+NetworkPolicy 是 Kubernetes 原生方案，控制粒度最精细
+
+
+示例：阻止访问 Kafka 的 IP 和端口（9092）
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-kafka-egress
+  namespace: your-namespace
+spec:
+  podSelector:
+    matchLabels:
+      app: your-app
+  policyTypes:
+  - Egress
+  egress:
+  # 允许去任何地方，除了 Kafka IP
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.10.10.123/32  # Kafka 的 IP
+
+
+---
+
+❗为什么节点安全组限制出站不行？
+
+Pod 的流量出站走的是 EC2 节点；
+
+EC2 节点出站 SG 默认是允许所有（0.0.0.0/0）；
+
+修改 SG 会影响整个节点，你无法只限制某个 Pod。
+
+
+除非你使用了：
+
+> ✅ EKS Security Groups for Pods，给每个 Pod 单独绑定 ENI 并应用 SG。
+
+
+
+但这需要集群配置、IAM 权限、CNI 插件支持，并非默认启用。
+
+
+---
+
+✅ 最简方案总结：
+
+> 🚀在你现在的权限范围内，最可靠的做法就是加一个 NetworkPolicy，拦住 Kafka 的 IP 或端口（9092）出站访问。
+
+
+
+如果你告诉我：
+
+Kafka 的 IP 或域名；
+
+Pod 的 namespace 和 label；
+
+
+我可以帮你生成这条策略，贴上就能用。是否继续？
+
