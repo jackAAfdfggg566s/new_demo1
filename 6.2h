@@ -1,0 +1,74 @@
+明白了！你问的是：
+
+> 为了阻止某个客户端访问特定的 Kafka 集群，SSM Agent 应该安装在哪一端？Kafka 端？客户端（比如 EKS）端？
+
+
+
+
+---
+
+✅ 正确答案：
+
+> ✅ SSM Agent 应该安装在 Kafka 所在的服务器上。
+
+
+
+
+---
+
+🧠 为什么？
+
+因为你想通过 iptables 来控制谁可以连接 Kafka，这是网络层的入站规则（Ingress），所以：
+
+
+---
+
+🔧 操作路径应该是：
+
+1. Kafka 集群部署在 EC2 上（或其它支持 SSM 的机器）
+
+
+2. 你用 AWS SSM Run Command 连到这些 Kafka 服务器
+
+
+3. 运行命令来设置防火墙规则，例如：
+
+
+
+iptables -A INPUT -s <client_ip> -d <kafka_ip> -p tcp --dport 9092 -j DROP
+
+这样就实现了：
+
+> 让某个来源的客户端不能连接特定 Kafka 集群
+
+
+
+
+---
+
+✅ 示例场景
+
+你有两个 Kafka：
+
+某个 EKS Pod 的 IP 是 10.0.2.35，你希望它只能访问 Kafka A，不允许访问 Kafka B。
+
+你应该：
+
+连接到 Kafka B 所在的 EC2（通过 SSM）
+
+执行：
+
+
+iptables -A INPUT -s 10.0.2.35 -d 10.0.0.11 -p tcp --dport 9092 -j DROP
+
+
+---
+
+✅ 总结一句话：
+
+> 👉 SSM Agent 应该装在 Kafka 所在的机器上，因为你要从 Kafka 端控制入站连接。
+
+
+
+如果你希望我写一个可以直接用的 SSM 脚本命令或文档模板，我可以马上生成。需要吗？
+
