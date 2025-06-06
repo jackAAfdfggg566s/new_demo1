@@ -1,0 +1,142 @@
+你提到的关键词包括：
+
+FIS 实验（AWS FIS, 即 Fault Injection Simulator）
+
+blockhole（应是 "blackhole"，常用于网络失效模拟）
+
+sidecar
+
+NET_ADMIN
+
+Kyverno 策略限制
+
+
+这些拼起来基本是在说：
+
+> 你要在 Kubernetes 中运行 网络失效实验（如黑洞流量），通过 sidecar 容器 或主容器，使用 NET_ADMIN 权限修改网络行为（比如 iptables drop/blackhole），以实现类似 FIS 实验 的效果 —— 但被 Kyverno 安全策略阻止了。
+
+
+
+
+---
+
+✅ 是的，支持，但你需要做以下工作来让它顺利运行：
+
+
+---
+
+🧩 场景背景（你要做的事）
+
+你正在构建类似 AWS FIS 的实验功能，比如：
+
+使用 iptables 模拟网络黑洞（blackhole）
+
+Drop 掉某些目的 IP / 域名
+
+Delay 或 reject 网络请求
+
+利用 sidecar 注入“干扰”行为
+
+
+这些行为都需要容器具备：
+
+NET_ADMIN 权限（控制网络路由 / iptables）
+
+有时还需要 NET_RAW（控制原始 socket）
+
+
+
+---
+
+🔐 一、如何获得 NET_ADMIN 权限（必要条件）
+
+1. 配置 Pod 的 securityContext：
+
+securityContext:
+  capabilities:
+    add: ["NET_ADMIN"]
+
+加在你执行实验动作的容器上（比如 sidecar）。
+
+
+---
+
+2. 避免 Kyverno 拦截（有策略的集群上）
+
+你需要确认以下任一方式：
+
+✅ 方法 A：将实验命名空间设置为 “privileged”
+
+kubectl label namespace chaos-testing \
+  pod-security.kubernetes.io/enforce=privileged
+
+或在 Kyverno 策略中设置：
+
+exclude:
+  resources:
+    namespaces:
+      - chaos-testing
+
+
+---
+
+✅ 方法 B：修改相关 Kyverno 策略规则
+
+找到拦截 NET_ADMIN 的策略名（如 baseline-policy, disallow-capabilities），然后：
+
+放宽规则，允许 NET_ADMIN；
+
+或创建一个专属的豁免规则匹配特定 label：
+
+
+match:
+  resources:
+    selector:
+      matchLabels:
+        chaos-role: "injector"
+
+然后在 YAML 中添加：
+
+metadata:
+  labels:
+    chaos-role: "injector"
+
+
+---
+
+🧪 二、Sidecar 注入控制流量（chaos engineering 模式）
+
+你可以在 sidecar 容器中加上控制 iptables 规则的工具：
+
+使用 iptables, tc, iproute2，例如：
+
+
+iptables -A OUTPUT -d <ip> -j DROP
+
+模拟黑洞场景（blackhole）
+
+
+
+---
+
+📦 推荐工具（用于 Kubernetes Chaos 实验）：
+
+LitmusChaos：CNCF 项目，支持 Sidecar + NET_ADMIN 的 chaos 实验
+
+Chaos Mesh：来自 PingCAP，支持网络失效、黑洞、延迟等
+
+Kube-monkey：简单的 chaos monkey 工具
+
+
+这些工具默认会申请 NET_ADMIN 权限，并有 Helm chart 支持。
+
+
+---
+
+✅ 总结：
+
+
+---
+
+如果你提供你使用的工具（LitmusChaos？自定义 sidecar？）或 YAML，我可以帮你配置得更准确。要不要我帮你写一个支持 NET_ADMIN 的完整 YAML 示例？
+
