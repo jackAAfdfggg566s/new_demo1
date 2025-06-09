@@ -1,0 +1,39 @@
+明白了，你的目标是：
+
+> 从日志中提取 fixAA-xxx 形式的唯一 ID，统计这些唯一 ID 的总数量（即有多少种不同的 xxx）
+
+
+
+
+---
+
+✅ Logs Insight 查询语句如下：
+
+fields @message
+| filter @message like /fixAA-[a-zA-Z0-9_-]+/
+| parse @message "fixAA-*" as fix_id
+| stats count_distinct(fix_id) as unique_fix_id_count
+
+
+---
+
+🔍 输出解释：
+
+count_distinct(fix_id)：表示统计有多少种不重复的 fix_id。
+
+最终你会得到一列，叫 unique_fix_id_count，就是你要的 唯一 ID 总数。
+
+
+
+---
+
+如需同时查看每个 ID 的计数，也可以这样扩展：
+
+fields @message
+| filter @message like /fixAA-[a-zA-Z0-9_-]+/
+| parse @message "fixAA-*" as fix_id
+| stats count(*) as total by fix_id
+| display count_distinct(fix_id) as unique_fix_id_count
+
+这个方式可以同时看到每个 ID 的次数和总共有多少个唯一 ID。需要更进一步的聚合分析也可以继续加条件。需要我帮你适配具体日志样本也可以贴出来。
+
