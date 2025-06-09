@@ -1,0 +1,48 @@
+你想要通过 AWS CloudWatch Logs Insight 查询日志中包含关键字 fixAA-xxx，并统计不同 xxx 的唯一 ID 出现次数，可以使用如下 Logs Insight 查询语句：
+
+
+---
+
+✅ 示例查询语句：
+
+fields @message
+| filter @message like /fixAA-[a-zA-Z0-9_-]+/
+| parse @message "fixAA-*" as fix_id
+| stats count(*) as total by fix_id
+| sort total desc
+
+
+---
+
+🔍 说明：
+
+filter @message like /fixAA-[a-zA-Z0-9_-]+/：匹配包含类似 fixAA-123、fixAA-abc_xyz 的日志。
+
+parse @message "fixAA-*" as fix_id：提取 fixAA- 后的部分作为 fix_id。
+
+stats count(*) as total by fix_id：对每个 fix_id 统计出现次数。
+
+sort total desc：按数量降序排列。
+
+
+
+---
+
+🛠 如果你的日志格式更复杂：
+
+假设日志是结构化的，比如 JSON 或带有特定字段，比如：
+
+{"id": "fixAA-123", "status": "done"}
+
+你可以使用：
+
+fields id
+| filter id like /fixAA-/
+| parse id "fixAA-*" as fix_id
+| stats count(*) as total by fix_id
+
+
+---
+
+如果你能贴出一条日志样本，我可以帮你精确写出最匹配的 parse 表达式。你也可以告诉我是否 fixAA-xxx 出现在字段中，还是纯文本中。
+
