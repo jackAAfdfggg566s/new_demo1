@@ -1,0 +1,61 @@
+明白了，你是想排查为什么 Kyverno 拦截了 NET_ADMIN 权限，或确认是否正确地排除了某些 Pod/Namespace。以下是排查思路和命令：
+
+
+---
+
+✅ 1. 查看触发的 Kyverno Policy 和 Rule
+
+你可以通过事件或 Kyverno 的 CLI 工具查看策略执行情况：
+
+查看事件中是否有 Kyverno 拒绝的日志
+
+kubectl get events --all-namespaces | grep kyverno
+
+
+---
+
+✅ 2. 使用 Kyverno CLI 进行策略模拟（建议）
+
+安装 kyverno-cli，然后运行：
+
+kyverno apply your-policy.yaml --resource your-pod.yaml
+
+这会告诉你哪条规则失败了，帮助你排查具体是哪一项限制了 NET_ADMIN。
+
+
+---
+
+✅ 3. 检查当前策略中是否包含 NET_ADMIN 限制
+
+查看所有策略中是否有禁止添加 NET_ADMIN 的条目：
+
+kubectl get cpol -o yaml | grep -A 10 'NET_ADMIN'
+
+或者逐个查看 policy：
+
+kubectl get cpol -o name | while read p; do kubectl get $p -o yaml | grep NET_ADMIN && echo "Found in $p"; done
+
+
+---
+
+✅ 4. 查看是否有 Exclude 规则生效
+
+查看该 policy 中是否已经配置了 exclude，但你的 pod/namespace 不符合条件：
+
+kubectl get cpol <policy-name> -o yaml
+
+重点查看下面是否配置正确：
+
+exclude:
+  resources:
+    namespaces:
+    - test-namespace
+    selector:
+      matchLabels:
+        allow-netadmin: "true"
+
+
+---
+
+✅ 5. **测试一个 Pod 被拦截
+
