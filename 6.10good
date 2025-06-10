@@ -1,0 +1,64 @@
+你可以通过 CloudWatch Logs Insights 查询语句，来筛选出日志中包含 fix-xxx，并提取出不同的 xxx（例如 tradeId），再进行去重统计。
+
+
+---
+
+✅ 假设你的日志格式如下（任意包含）：
+
+... fix-123456 ...
+... fix-abcde ...
+... fix-789xyz ...
+
+
+---
+
+✅ Logs Insights 查询语句如下：
+
+fields @message
+| filter @message like /fix-[\w-]+/
+| parse @message /fix-(?<tradeId>[\w-]+)/
+| stats count_distinct(tradeId) as unique_tradeId_count
+
+
+---
+
+🔍 说明：
+
+filter @message like /fix-[\w-]+/：筛选出包含 fix-xxx 的日志。
+
+parse @message /fix-(?<tradeId>[\w-]+)/：提取出 fix-xxx 中的 xxx 并命名为 tradeId。
+
+count_distinct(tradeId)：统计唯一 tradeId 的数量。
+
+
+
+---
+
+✅ 如果你还想输出每个 tradeId 出现的次数：
+
+fields @message
+| filter @message like /fix-[\w-]+/
+| parse @message /fix-(?<tradeId>[\w-]+)/
+| stats count(*) as occurrences by tradeId
+| sort occurrences desc
+
+
+---
+
+✅ 如果你有多个 log group，可以在 Logs Insights 中一次性查询：
+
+1. 进入 CloudWatch Logs Insights。
+
+
+2. 在查询顶部选择多个 log group。
+
+
+3. 复制上述语句粘贴进去运行。
+
+
+
+
+---
+
+如果你提供一段典型的日志内容（脱敏后），我可以帮你定制更准确的 parse 语句。需要吗？
+
