@@ -1,0 +1,75 @@
+在 GitLab CI/CD 中远程连接服务器（例如使用 ssh user@host）时，有三种常见方式来处理认证密码，推荐使用 SSH Key 而不是密码，因为密码方式不安全也难以自动化。
+
+
+---
+
+✅ 推荐方式：使用 SSH 密钥（无密码认证）
+
+步骤：
+
+1. 在本地或 Runner 上生成 SSH Key（如果还没生成）
+
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa_gitlab -N ""
+
+2. 把 公钥（id_rsa_gitlab.pub） 添加到目标机器 ~/.ssh/authorized_keys
+
+cat ~/.ssh/id_rsa_gitlab.pub | ssh user@remote-host 'cat >> ~/.ssh/authorized_keys'
+
+3. 把 私钥（id_rsa_gitlab） 放到 GitLab CI/CD 的变量中：
+
+打开 GitLab 项目 → Settings → CI/CD → Variables
+
+添加变量：
+
+
+Key	Value（粘贴整个私钥内容）
+
+SSH_PRIVATE_KEY	-----BEGIN RSA PRIVATE KEY----- ...
+
+
+4. 在 .gitlab-ci.yml 中使用：
+
+before_script:
+  - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+  - eval $(ssh-agent -s)
+  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+  - mkdir -p ~/.ssh
+  - chmod 700 ~/.ssh
+  - ssh-keyscan remote-host >> ~/.ssh/known_hosts
+
+tail_log_job:
+  stage: tail_log
+  script:
+    - ssh user@remote-host "tail -n 0 -F /path/to/log.log | awk '/FINISH/ {exit} 1'"
+
+
+---
+
+⚠️ 不推荐：明文密码方式（极不安全）
+
+GitLab CI/CD 不支持交互输入密码。如果你非得用密码（不推荐），可以尝试如下 hack：
+
+使用 sshpass（需要 Runner 安装支持）：
+
+script:
+  - apt-get update && apt-get install -y sshpass
+  - sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no user@remote-host "tail -F /var/log/xxx.log"
+
+并将 $SSH_PASSWORD 设置为 GitLab CI/CD 中的变量。
+
+
+---
+
+总结
+
+方法	安全性	自动化支持	推荐等级
+
+SSH Key	✅高	✅ 完美支持	⭐⭐⭐⭐⭐
+密码 + sshpass	❌低	⚠️ 有点麻烦	⭐
+
+
+
+---
+
+是否需要我帮你一键生成完整 .gitlab-ci.yml + 密钥配置说明？你只要复制粘贴就能用。
+
