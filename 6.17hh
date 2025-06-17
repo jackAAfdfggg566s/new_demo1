@@ -1,0 +1,74 @@
+不是，上面例子是直接在 GitLab CI 中通过 ssh 执行远程 shell 脚本 的方式。它更轻量，不依赖 Ansible。如果你确实在使用 Ansible Playbook 运行任务，下面是 同样功能的 Ansible 实现方式：
+
+
+---
+
+✅ 目标：Ansible Playbook 实现 tail 某个远程文件，直到出现关键字再退出，并把内容输出到 GitLab 终端
+
+
+---
+
+✅ Playbook 示例（tail_until_keyword.yml）
+
+- hosts: remote-host
+  gather_facts: no
+  vars:
+    a: "/var/log/"
+  tasks:
+    - name: Read filename from /tmp/filename
+      shell: cat /tmp/filename
+      register: path_result
+
+    - name: Tail the file until keyword appears
+      shell: |
+        full_path="{{ a }}{{ path_result.stdout }}"
+        echo ">>> Tailing file: $full_path"
+        tail -F "$full_path" | awk '/PROCESS DONE/ { print "*** Keyword found: " $0"; exiting."; exit } 1'
+      register: tail_output
+
+    - name: Show tail output
+      debug:
+        var: tail_output.stdout_lines
+
+
+---
+
+✅ 使用说明：
+
+匹配关键字：PROCESS DONE（你可以替换成任意你想匹配的词）
+
+输出行：所有 tail 到的行，直到匹配关键字
+
+退出机制：一旦 awk 匹配就立即退出 tail，防止卡住
+
+打印在 GitLab 终端：通过 debug 模块输出 tail_output.stdout_lines，你能在 Job 日志中看到完整内容
+
+
+
+---
+
+✅ GitLab CI 中运行这个 Playbook
+
+tail_until_keyword:
+  stage: monitor
+  script:
+    - ansible-playbook -i inventory.ini tail_until_keyword.yml
+
+
+---
+
+✅ 补充建议：
+
+如果你希望 tail 的输出实时流到 GitLab 终端，Ansible 默认是缓冲的，你可能需要用 async+poll 或直接用 ssh 实时性会更高。
+
+你也可以把 awk 换成 grep --line-buffered 实现同样逻辑，但 awk 控制力更好。
+
+
+
+---
+
+是否需要我提供：
+✅ 更实时输出的 Ansible 方案？
+✅ 把 tail 到关键字之前的所有行都存下来/写日志文件？
+你只需告诉我关键字或目标行为，我可继续帮你优化。
+
