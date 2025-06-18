@@ -1,0 +1,98 @@
+明白了，你的目标是：
+
+> 在 GitLab CI/CD 脚本中执行数据库查询（如 MySQL、PostgreSQL 等），将查询结果：
+
+1. ✅ 打印到控制台；
+
+
+2. ✅ 同时保存到文件；
+
+
+3. ✅ 提供日志文件下载导出功能（Artifacts）。
+
+
+
+
+
+
+---
+
+✅ 1. 示例：以 MySQL 查询为例
+
+假设你使用的是 MySQL，并且环境变量中已有 MYSQL_USER, MYSQL_PASSWORD, MYSQL_HOST, MYSQL_DB 等。
+
+db_query_job:
+  stage: query
+  image: mysql:8
+  variables:
+    MYSQL_PWD: $MYSQL_PASSWORD  # 避免在命令行中暴露密码
+  script:
+    - mkdir -p logs
+    - echo "查询数据库..." | tee logs/db_query.log
+
+    # 执行查询，保存输出，同时打印
+    - |
+      mysql -h "$MYSQL_HOST" -u "$MYSQL_USER" "$MYSQL_DB" \
+        -e "SELECT * FROM your_table LIMIT 10;" \
+        2>&1 | tee -a logs/db_query.log
+
+    - echo "查询完成" | tee -a logs/db_query.log
+
+  artifacts:
+    paths:
+      - logs/db_query.log
+    when: always
+    expire_in: 7 days
+
+
+---
+
+✅ 2. PostgreSQL 示例
+
+如果你用的是 PostgreSQL：
+
+image: postgres:15
+script:
+  - mkdir -p logs
+  - echo "查询 PostgreSQL..." | tee logs/db_query.log
+  - |
+    PGPASSWORD=$PG_PASSWORD psql -h $PG_HOST -U $PG_USER -d $PG_DB \
+      -c "SELECT * FROM your_table LIMIT 10;" \
+      2>&1 | tee -a logs/db_query.log
+
+
+---
+
+✅ 3. 效果：
+
+控制台显示完整查询结果；
+
+日志写入 logs/db_query.log；
+
+Job 执行后，在 GitLab 网页界面点击「Download artifacts」可下载这个查询日志。
+
+
+
+---
+
+✅ 4. 输出格式建议（可选）：
+
+如需更整洁输出（例如 CSV）：
+
+mysql -e "SELECT * FROM your_table;" -B -N > logs/result.csv
+
+或：
+
+psql -c "COPY (SELECT * FROM your_table) TO STDOUT WITH CSV HEADER;" > logs/result.csv
+
+然后你也可以：
+
+artifacts:
+  paths:
+    - logs/result.csv
+
+
+---
+
+需要我帮你按你使用的数据库类型（MySQL/PostgreSQL/SQLite/其他）写一份具体脚本吗？你只要告诉我数据库类型和查询内容就行。
+
