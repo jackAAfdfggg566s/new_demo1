@@ -1,0 +1,50 @@
+你说得对，kubectl get events 默认只显示类似 2m、30s 这样的“相对时间”，不直接显示完整时间戳。
+
+但你可以用 -o wide 或 -o json 获取准确的时间戳。
+
+
+---
+
+✅ 方法 1：用 kubectl get events -o wide 显示更多字段（有时不显示完整时间）
+
+kubectl get events -n <namespace> --sort-by=.lastTimestamp -o wide
+
+这可能会显示更详细的 LAST SEEN，但还是相对时间，不是绝对时间。
+
+
+---
+
+✅ 方法 2：用 JSON 输出，获取准确时间戳（推荐）
+
+kubectl get events -n <namespace> -o json | jq '.items[] | select(.involvedObject.name | test("your-pod-name")) | {type: .type, reason: .reason, message: .message, time: .lastTimestamp}'
+
+例如（需要 jq 工具）：
+
+kubectl get events -n my-namespace -o json | jq '.items[] | select(.involvedObject.name | test("my-app")) | {reason: .reason, message: .message, time: .lastTimestamp}'
+
+你会看到结果类似：
+
+{
+  "reason": "Killing",
+  "message": "Stopping container my-container",
+  "time": "2025-06-18T04:25:01Z"
+}
+
+这个 "time" 就是你要的精确删除时间。
+
+
+---
+
+✅ 方法 3：纯 shell 不用 jq（提取 lastTimestamp）：
+
+kubectl get events -n <namespace> -o jsonpath='{range .items[?(@.reason=="Killing")]}{.involvedObject.name} {.lastTimestamp}{"\n"}{end}'
+
+
+---
+
+✅ 总结
+
+默认 kubectl get events 只显示相对时间，你可以用 -o json + jq 或 jsonpath 来获取精确的 UTC 时间戳，这样就可以准确地拿到老 Pod 的删除时间点，进而计算 RTO。
+
+需要我帮你写一个完整的命令，给定具体的 pod 名、label 或 namespace 吗？
+
