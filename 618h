@@ -1,0 +1,89 @@
+好的！你希望用 密码登录 + 从远程文件读取路径 + 拼接 + 实时 tail + 关键词退出，以下是完整可运行的 .gitlab-ci.yml 示例，基于 sshpass + Alpine 环境：
+
+
+---
+
+✅ GitLab CI 示例（使用密码方式）
+
+image: alpine:latest
+
+variables:
+  SSH_USER: ec2-user
+  REMOTE_HOST: 1.2.3.4
+  REMOTE_PATH_A: /var/log/apps
+  REMOTE_PATH_FILE: /tmp/path.txt
+  SSH_PASSWORD: your_password_here  # 或放到 GitLab CI/CD 变量中
+
+before_script:
+  - apk update && apk add sshpass openssh bash coreutils
+
+tail_log:
+  stage: tail_log
+  script:
+    - echo "通过 sshpass 登录远程主机，读取路径并实时 tail..."
+    - |
+      sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$REMOTE_HOST 'bash -s' <<'EOF'
+        set -e
+        PATH_A="/var/log/apps"
+        PATH_B=$(cat /tmp/path.txt)
+        FULL_PATH="$PATH_A/$PATH_B"
+        echo "日志完整路径: $FULL_PATH"
+        tail -n 0 -F "$FULL_PATH" | awk "/FINISH/ {print; exit} 1"
+      EOF
+
+
+---
+
+🔐 安全设置建议（GitLab CI/CD）
+
+1. 不要把密码硬编码在 .gitlab-ci.yml，应该这样配置：
+
+
+
+Key	Value	Options
+
+SSH_PASSWORD	your_password	Masked + Protected
+SSH_USER	ec2-user 或实际用户名	可选变量
+REMOTE_HOST	远程服务器 IP 或域名	可选变量
+
+
+
+---
+
+✅ 输出效果示例
+
+日志完整路径: /var/log/apps/myapp.log
+[20:30:00] job started
+[20:30:01] doing stuff...
+[20:30:02] FINISH
+
+当 FINISH 出现后，awk 会触发 exit，Job 结束。
+
+
+---
+
+⚠️ 注意事项
+
+项目	内容
+
+登录失败	报错 Permission denied → 检查用户名/密码
+sshpass 安装失败	Alpine 一定用 apk add sshpass openssh
+StrictHostKeyChecking=no	防止首次登录卡住提示
+tail 没输出	确保你读的日志文件是活跃日志（持续追加）
+
+
+
+---
+
+如果你还需要加：
+
+超时自动退出
+
+输出超长限制
+
+多文件 tail
+我可以帮你扩展。
+
+
+是否也想加一段逻辑：如果 /tmp/path.txt 不存在，就 fail 并打印报错？
+
