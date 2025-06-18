@@ -1,0 +1,121 @@
+你想通过 kubectl 获取：
+
+> ✅ Pod 被删除后重建所需的 RTO（恢复时间目标，Recovery Time Objective），即：
+🕒 Pod 被删除的时间 到 新 Pod Ready 的时间之间的间隔。
+
+
+
+
+---
+
+✅ 理解目标
+
+假设 Pod 属于一个 Deployment/StatefulSet，被自动重建：
+
+你需要：
+
+1. 记录旧 Pod 被删除的时间。
+
+
+2. 找到新 Pod 的创建时间。
+
+
+3. 等待直到新 Pod Ready。
+
+
+4. 计算时间差（RTO）。
+
+
+
+
+---
+
+✅ 方法1：基于事件 + Pod 启动状态（命令组合）
+
+🧪 示例命令步骤：
+
+# 获取最近 Pod 删除时间（用事件查看）
+kubectl get event --sort-by=.lastTimestamp | grep -i delete | grep <pod-name>
+
+> 输出如：
+2025-06-18T02:34:12Z  Deleted pod my-app-abc123
+
+
+
+然后找同名 ReplicaSet 新启动的 Pod：
+
+kubectl get pod -l app=my-app -o json | jq '.items[] | {name: .metadata.name, startTime: .status.startTime, conditions: .status.conditions}'
+
+或者用 describe：
+
+kubectl describe pod <new-pod-name> | grep -A10 "Conditions"
+
+或：
+
+kubectl get pod <pod> -o=jsonpath='{.status.startTime}'
+kubectl get pod <pod> -o=jsonpath='{.status.conditions[?(@.type=="Ready")].lastTransitionTime}'
+
+然后你可以用 date 命令手动计算时间差。
+
+
+---
+
+✅ 方法2：用脚本自动计算某个 Pod 重建 RTO
+
+🧩 假设你有 Pod label：app=my-app，我们删除旧 Pod 并计算新 Pod Ready 的耗时。
+
+#!/bin/bash
+
+# 获取当前 pod name
+OLD_POD=$(kubectl get pod -l app=my-app -o jsonpath="{.items[0].metadata.name}")
+echo "Old pod: $OLD_POD"
+
+# 获取旧 pod 删除时间
+DELETE_TIME=$(date +%s)
+kubectl delete pod "$OLD_POD"
+
+# 等待新 pod ready
+echo "Waiting for new pod..."
+kubectl wait --for=condition=Ready pod -l app=my-app --timeout=120s
+
+# 获取新 pod 的创建时间和 ready 时间
+NEW_POD=$(kubectl get pod -l app=my-app -o jsonpath="{.items[0].metadata.name}")
+START_TIME=$(kubectl get pod "$NEW_POD" -o jsonpath="{.status.startTime}")
+READY_TIME=$(kubectl get pod "$NEW_POD" -o jsonpath="{.status.conditions[?(@.type=='Ready')].lastTransitionTime}")
+
+# 转换时间格式为秒
+START_TIME_EPOCH=$(date -d "$START_TIME" +%s)
+READY_TIME_EPOCH=$(date -d "$READY_TIME" +%s)
+
+# 计算耗时
+RTO=$((READY_TIME_EPOCH - DELETE_TIME))
+
+echo "RTO: $RTO seconds (from delete to ready)"
+
+
+---
+
+✅ 方法3：使用 kubectl get events 结合 jq 或 grep
+
+快速查看删除 + 创建 + Ready 时间：
+
+kubectl get events --sort-by=.lastTimestamp | grep -E 'Deleted|Created|Started|Ready' | grep my-app
+
+
+---
+
+⏱ 总结
+
+步骤	工具
+
+获取删除时间	kubectl get events 或 kubectl delete
+获取新 pod 创建/ready 时间	kubectl get pod -o jsonpath
+自动化	用脚本（如 bash + kubectl wait）
+准确性	最准确的是 Ready 的 .lastTransitionTime 字段
+
+
+
+---
+
+如果你能提供 Pod 的 Label 或控制器类型（Deployment/StatefulSet），我可以帮你写一个完全自动化的 RTO 检测脚本。是否需要？
+
