@@ -1,0 +1,88 @@
+明白了，需求升级为：
+
+> ✅ 在 GitLab Pipeline 中，先把本地的 config 文件同步到远程机器（比如 /tmp/config.yaml），再执行远程脚本并 tail 日志。
+
+
+
+
+---
+
+✅ 完整 .gitlab-ci.yml 示例（含上传文件 + 远程执行 + 实时日志）
+
+stages:
+  - deploy
+
+deploy-and-monitor:
+  stage: deploy
+  script:
+    - echo "🔧 开始上传配置文件并远程执行脚本..."
+
+    # 定义变量
+    - REMOTE_USER=myuser
+    - REMOTE_HOST=your.remote.host
+    - REMOTE_PASS=your_password
+    - REMOTE_DIR=/tmp
+    - CONFIG_FILE=config.yaml
+    - SCRIPT=start.sh
+    - LOG_FILE=my.log
+
+    # 将 config 文件上传到远端（使用 sshpass + scp）
+    - echo "📤 上传配置文件..."
+    - sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no "$CONFIG_FILE" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+
+    # 执行远端脚本 + 实时 tail 日志
+    - echo "🚀 执行远程脚本并 tail 日志..."
+    - |
+      sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" '
+        cd '"$REMOTE_DIR"' &&
+
+        echo "✅ 已进入远程目录，开始后台运行脚本..." &&
+        nohup ./'"$SCRIPT"' > /dev/null 2>&1 &
+
+        echo "⏳ 等待日志文件出现..." &&
+        while [ ! -s '"$LOG_FILE"' ]; do sleep 1; done
+
+        echo "📄 开始 tail 日志..." &&
+        stdbuf -oL tail -f '"$LOG_FILE"'
+      '
+
+
+---
+
+📁 结构要求：
+
+你的 GitLab 仓库里需要包含以下文件：
+
+.gitlab-ci.yml
+config.yaml         ✅ 要上传的配置文件
+start.sh            ✅ 脚本已提前在远端机器 `/tmp` 或其他目录中（或你也可以同步它）
+
+
+---
+
+✅ 如果 start.sh 也想从 GitLab 同步到远端
+
+在上传 config 时，顺便上传 start.sh：
+
+# 同步 config.yaml 和 start.sh
+    - sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no "$CONFIG_FILE" "$SCRIPT" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR/"
+
+
+---
+
+🛡️ 安全建议（可选）：
+
+避免使用明文密码，建议在 GitLab CI 中使用 CI/CD Secret 变量：
+
+
+- REMOTE_PASS=$REMOTE_PASS
+
+然后在 GitLab → Settings → CI/CD → Variables 中添加：
+
+REMOTE_PASS = your_password
+
+
+---
+
+如果你还需要支持多个 config 文件或远端路径需要创建子目录，也可以继续扩展，我可以帮你写。需要吗？
+
