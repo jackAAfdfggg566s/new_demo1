@@ -1,0 +1,81 @@
+好，既然你要用 sshpass 来实现 GitLab CI/CD 脚本中：
+
+> ✅ 通过跳板机 SSH（使用用户名 + 密码 而不是私钥），
+✅ 登录后执行 psql 查询数据库，
+✅ 并将查询结果打印到控制台并写入日志文件。
+
+
+
+下面是完整的做法👇
+
+
+---
+
+✅ GitLab CI/CD 示例（使用 sshpass 登录跳板机并执行 psql）
+
+query_via_bastion:
+  stage: query
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache sshpass openssh
+  script:
+    - mkdir -p logs
+
+    # 执行远程 SSH，运行 psql 查询，并 tee 到日志文件
+    - |
+      sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$BASTION_HOST << EOF | tee logs/db_query.log
+        export PGPASSWORD="$PG_PASSWORD"
+        psql -h $PG_HOST -U $PG_USER -d $PG_DB -c "SELECT * FROM your_table LIMIT 10;"
+EOF
+
+  artifacts:
+    paths:
+      - logs/db_query.log
+    when: always
+    expire_in: 7 days
+
+
+---
+
+✅ 你需要在 GitLab CI/CD → Settings → Variables 设置以下变量：
+
+变量名	用途
+
+SSH_USER	跳板机用户名，例如 ec2-user、ubuntu
+SSH_PASSWORD	跳板机登录密码（明文存储在 CI Variable 中，注意权限！）
+BASTION_HOST	跳板机公网 IP 或 DNS
+PG_HOST	数据库地址（从跳板机能访问，比如内网 IP）
+PG_USER	PostgreSQL 用户名
+PG_PASSWORD	PostgreSQL 密码
+PG_DB	PostgreSQL 数据库名
+
+
+
+---
+
+✅ 效果说明：
+
+sshpass 实现跳板机免交互 SSH 登录；
+
+psql 查询执行后，结果通过 tee 打印 + 保存；
+
+查询结果日志文件 logs/db_query.log 可从 GitLab 页面下载（artifacts）。
+
+
+
+---
+
+🔐 安全提醒：
+
+sshpass 会在命令行中明文暴露密码，不建议用于生产环境；
+
+更推荐改为使用 SSH key 登录，安全性高得多；
+
+如果一定要用密码，确保 GitLab CI 的变量是 Masked + Protected。
+
+
+
+---
+
+是否需要支持多行 SQL 脚本？或者远程执行 bash 脚本？可以继续扩展这个结构。需要我写一个支持 .sql 文件上传执行的版本吗？
+
