@@ -1,0 +1,90 @@
+你要在 GitLab Agent 的 CI/CD pipeline 中运行 SQL 查询，并且 传入时间参数，通常是以下结构：
+
+
+---
+
+✅ 场景描述：
+
+数据库：PostgreSQL（或其他）
+
+查询：通过 .sh 脚本或 psql 命令执行
+
+GitLab CI 传入：时间参数（如起止时间）
+
+
+
+---
+
+✅ 示例结构：
+
+1. .gitlab-ci.yml 示例
+
+stages:
+  - query-db
+
+query_with_time:
+  stage: query-db
+  script:
+    - chmod +x run_query.sh
+    - ./run_query.sh "2025-06-26 00:00:00" "2025-06-26 23:59:59"
+
+
+---
+
+2. run_query.sh 脚本内容（假设用 psql）
+
+#!/bin/bash
+
+START_TIME="$1"
+END_TIME="$2"
+
+echo "Running query from $START_TIME to $END_TIME"
+
+psql "host=$DB_HOST dbname=$DB_NAME user=$DB_USER password=$DB_PASS" -c "
+  SELECT *
+  FROM your_table
+  WHERE created_at BETWEEN '$START_TIME' AND '$END_TIME';
+"
+
+
+---
+
+3. 🔐 安全建议：用 GitLab CI Variables 存数据库连接信息
+
+# GitLab UI → Settings → CI/CD → Variables（环境变量）
+DB_HOST=your-db.example.com
+DB_USER=readonly_user
+DB_PASS=your_password
+DB_NAME=my_database
+
+在脚本里从变量中读取：
+
+psql "host=$DB_HOST dbname=$DB_NAME user=$DB_USER password=$DB_PASS"
+
+
+---
+
+⏳ 想传递“当前时间”怎么办？
+
+script:
+  - NOW=$(date '+%F %T')
+  - ONE_HOUR_AGO=$(date -d '-1 hour' '+%F %T')
+  - ./run_query.sh "$ONE_HOUR_AGO" "$NOW"
+
+
+---
+
+🧪 其他建议：
+
+如果你是从远程 EC2 连接数据库，可以加 ssh 或 sshpass 包装 psql；
+
+如果是 MySQL，用 mysql -e 替代；
+
+需要保存结果加 > result.csv 或 COPY ... TO STDOUT WITH CSV.
+
+
+
+---
+
+需要我帮你写一个完整 PostgreSQL 查询脚本（或其他数据库），可贴你的 SQL 或目标时间格式。
+
