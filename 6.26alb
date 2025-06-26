@@ -1,0 +1,134 @@
+要查看 AWS ALB（Application Load Balancer）在 EKS Pod 故障切换（failover）时的响应时间，可以从以下几个角度进行分析：
+
+
+---
+
+✅ 核心目标：
+
+> 查看 Pod 故障后新 Pod Ready，到 ALB 健康检查识别新 Pod 并转发流量的这段耗时。
+
+
+
+
+---
+
+🔍 分析路径
+
+1. ALB 健康检查日志（推荐）
+
+如果你启用了 ALB 的访问日志（Access Logs），你可以：
+
+查看某个 target（pod）的健康检查情况；
+
+通过 target: unhealthy → healthy 的时间差，判断 ALB 切换用了多久。
+
+
+操作步骤：
+
+1. 确保已启用 ALB 的访问日志，位置在：
+
+EC2 > Load Balancer > Attributes > Enable Access Logs
+
+保存到 S3 bucket。
+
+
+
+2. 分析日志中如下字段：
+
+elb_status_code, target_status_code, target:port, received_bytes, sent_bytes, ...
+
+
+3. 找出某个 Pod IP 端口在某个时间点由 target_status_code=0（失败）变为 200（成功）的时间差。
+
+
+
+
+---
+
+2. CloudWatch Metrics（直观可视）
+
+ALB 会在 CloudWatch 自动产生如下指标：
+
+Metric 名称	含义
+
+TargetResponseTime	目标响应时间
+HealthyHostCount	健康的目标数量
+UnHealthyHostCount	不健康的目标数量
+HTTPCode_Target_5XX_Count	目标端返回的 5xx 数量
+
+
+你可以：
+
+创建一个 CloudWatch Dashboard 或 Insights 查询；
+
+观察 UnHealthyHostCount 降为 0 的时间 和 请求恢复正常的时间；
+
+对比故障 Pod 异常开始 和 替换 Pod 被标记为 healthy 的时间差。
+
+
+
+---
+
+3. ALB Target Group 健康检查设置
+
+查看如下配置影响 failover 时间：
+
+设置项	含义
+
+HealthyThresholdCount	连续 N 次健康才认为目标是 healthy
+UnhealthyThresholdCount	连续 N 次失败才认为目标 unhealthy
+HealthCheckIntervalSeconds	检查间隔秒数，默认 30s
+HealthCheckTimeoutSeconds	单次检查超时时间
+
+
+➡️ 理论最慢切换时间 ≈
+
+（UnhealthyThresholdCount * Interval）+（Pod 重启时间）+（HealthyThresholdCount * Interval）
+
+👉 举个例子：
+
+健康检查间隔 10 秒，3 次才认为 healthy；
+
+Pod 从失败到替代 pod 启动耗时 20 秒；
+
+那么 ALB 可能在 50 秒内恢复流量。
+
+
+
+---
+
+4. Pod 层日志
+
+你可以通过以下方式查看 Pod 变更时间点：
+
+kubectl get events --sort-by=.lastTimestamp -n your-namespace
+
+关注：
+
+Killing old pod
+
+Started new pod
+
+Readiness probe passed 事件
+
+
+这些时间点可以和 ALB 日志或 CloudWatch 指标配合比对，推算 ALB 识别新 pod 的时间。
+
+
+---
+
+✳️ 总结
+
+工具/方法	作用
+
+ALB Access Log	精确看到流量和目标切换时间
+CloudWatch Metrics	直观看到目标健康状态变化
+kubectl events	查看 pod 重建和 ready 时间点
+Health check 设置	决定 failover 快慢的关键参数
+
+
+
+---
+
+如需帮你分析具体日志或配置（比如 S3 日志样例、CloudWatch 查询等），欢迎贴具体内容，我可以进一步帮你分析时间线。
+
