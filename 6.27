@@ -1,0 +1,74 @@
+Got it，你的场景是：
+
+> GitLab CI/CD 使用 sshpass 去远程执行一个脚本 xxx.sh，并传入两个带空格的参数（例如 start_time 和 end_time）。但是参数中有空格，导致远程脚本收到的是多个参数，而不是完整的两个时间。
+
+
+
+
+---
+
+✅ 正确方式：使用引号转义整个参数
+
+这是 Bash + SSH 的经典问题，你需要在 CI 脚本中使用两层引号，确保参数在传给 sshpass ssh 时不被拆分。
+
+
+---
+
+✅ 示例解决方案：
+
+假设变量：
+
+variables:
+  START_TIME: "2024-06-26 10:00:00"
+  END_TIME: "2024-06-26 11:00:00"
+
+GitLab .gitlab-ci.yml 脚本：
+
+script:
+  - sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no user@host \
+    "bash /path/to/xxx.sh \"${START_TIME}\" \"${END_TIME}\""
+
+👆这里要点：
+
+外面一层 " 包住整条远程命令
+
+参数部分用 \"...\" 包住，以防止被拆分
+
+
+
+---
+
+✅ 远程脚本 /path/to/xxx.sh 示例：
+
+#!/bin/bash
+
+start_time="$1"
+end_time="$2"
+
+echo "Start time: $start_time"
+echo "End time: $end_time"
+
+# 示例查询
+psql -U user -d db -c "SELECT * FROM table WHERE created_at BETWEEN '$start_time' AND '$end_time';"
+
+
+---
+
+🔍 验证技巧：
+
+你可以加一句调试输出，确认远程收到的是什么：
+
+echo "Args received: $#"
+for i in "$@"; do echo "-> $i"; done
+
+
+---
+
+🛠️ 如果还不行，请提供你这句命令原始写法
+
+像这样贴出来（脱敏）：
+
+sshpass -p 'xxx' ssh user@host "bash xxx.sh $START_TIME $END_TIME"
+
+这样我可以精确告诉你哪一步错了（尤其是否你是 CI 变量展开早了）。
+
