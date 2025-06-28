@@ -1,0 +1,91 @@
+明白，我们来逐步定位问题，给你一个最小可运行、100%有效的版本，你可以一步一步测试。
+
+
+---
+
+✅ 最小可运行的远程脚本：xxx.sh
+
+请你直接复制下面内容保存成 xxx.sh，然后在远程服务器手动运行它测试：
+
+#!/bin/bash
+
+START_TIME="$1"
+END_TIME="$2"
+TYPE="$3"
+
+# 显式打印接收的参数
+echo "START_TIME=[$START_TIME]"
+echo "END_TIME=[$END_TIME]"
+echo "TYPE=[$TYPE]"
+
+# 映射 TYPE 到 KEYWORD
+if [ "$TYPE" == "1" ]; then
+  KEYWORD="ErrorTypeA"
+elif [ "$TYPE" == "2" ]; then
+  KEYWORD="WarningTypeB"
+elif [ "$TYPE" == "30" ]; then
+  KEYWORD="UnknownFailure"
+else
+  echo "Unknown type: $TYPE"
+  exit 1
+fi
+
+# 清理变量值中的多余字符
+KEYWORD=$(echo "$KEYWORD" | tr -d '\r' | xargs)
+
+# 显式打印 KEYWORD
+echo "KEYWORD=[$KEYWORD]"
+
+# 构造 SQL
+SQL="SELECT * FROM logs WHERE log_time BETWEEN '$START_TIME' AND '$END_TIME' AND message = '$KEYWORD';"
+
+# 显式打印 SQL
+echo "Running SQL:"
+echo "$SQL"
+
+# 执行 SQL（你要确认 dbuser、mydb 是正确的）
+psql -U dbuser -d mydb -t -c "$SQL"
+
+
+---
+
+✅ 本地测试命令（不走 CI，先本地验证）
+
+bash xxx.sh "2025-06-01 00:00:00" "2025-06-28 23:59:59" "1"
+
+你必须确认能本地手动运行成功，结果有数据。
+
+
+---
+
+✅ 如果你用 GitLab 远程执行，请这样写（注意引号！）
+
+sshpass -p "mypassword" ssh user@host "bash ~/xxx.sh '2025-06-01 00:00:00' '2025-06-28 23:59:59' '1'"
+
+🔴 每个参数都用 ' 单引号包起来，防止空格被分裂。
+
+
+---
+
+🔍 如果还是查不到，请贴出以下信息：
+
+1. echo "KEYWORD=[$KEYWORD]" 输出结果
+
+
+2. echo "$SQL" 打印出的最终 SQL
+
+
+3. 手动用 psql 跑这个 SQL 能查到吗？
+
+
+4. 实际数据库 message 字段中到底是什么内容？（你可以跑：）
+
+
+
+SELECT DISTINCT message FROM logs LIMIT 10;
+
+
+---
+
+🧠 说明：如果你直接把字符串写死就可以，而变量不行，说明变量里的值和你预期不一致（多了空格/换行/编码问题），
+
