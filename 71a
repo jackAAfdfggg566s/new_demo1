@@ -1,0 +1,95 @@
+非常清楚了，你的情况是：
+
+
+---
+
+✅ 结构总结：
+
+你用 GitLab CI + sshpass 登入远端机器
+
+然后远端执行一个 .sh 脚本（比如 run_remote.sh）
+
+但 .sql 文件只在 GitLab Agent 本地，远程机器没有这份 .sql 文件
+
+所以报错：psql: could not open file "xxx.sql": No such file or directory
+
+
+
+---
+
+❗问题本质：远程机器根本没有 .sql 文件
+
+你执行的是远程脚本，所以：
+
+psql -f ./query.sql
+
+会在“远程机器”里找 query.sql，但你没传过去，自然就找不到。
+
+
+---
+
+✅ 正确做法：将 .sql 文件传到远程，再执行
+
+你有两个解决方案可以选：
+
+
+---
+
+✅ 方案 1：CI 中先用 scp/rsync 把 .sql 文件拷过去
+
+script:
+  - sshpass -p "$PASS" scp ./query.sql user@remote:/tmp/query.sql
+  - sshpass -p "$PASS" ssh user@remote "bash /path/to/run_remote.sh /tmp/query.sql"
+
+然后你在远程脚本 run_remote.sh 中写：
+
+#!/bin/bash
+SQL_PATH="$1"
+psql -U your_user -d your_db -f "$SQL_PATH"
+
+
+---
+
+✅ 方案 2：直接把 SQL 内容通过 stdin 传给远端（无需传文件，更轻量）
+
+在 CI 中这样写：
+
+script:
+  - sshpass -p "$PASS" ssh user@remote "psql -U your_user -d your_db" < ./query.sql
+
+解释：
+
+psql 会从标准输入（stdin）接收 SQL 语句
+
+query.sql 仍然保留在 GitLab 本地，不需要复制到远程
+
+
+✅ 这种方式特别适合短小的 .sql 脚本，简单快捷且无需额外文件传输
+
+
+---
+
+🧪 补充调试建议
+
+在 GitLab CI 中加入调试命令：
+
+script:
+  - ls -l ./query.sql      # 确保你本地有
+  - sshpass ... ssh user@remote 'ls -l /tmp'  # 确认远程有没有传上去
+
+
+---
+
+✅ 总结
+
+方案	是否需要传文件	是否支持大 SQL 文件	推荐度
+
+scp + ssh	✅ 是	✅ 是	👍 稳定通用
+ssh < query.sql	❌ 否	❌ 不适合大型 SQL	👍 快速简单
+
+
+
+---
+
+如你愿意贴出你现在的 .gitlab-ci.yml 和调用脚本，我可以帮你改完整方案。
+
