@@ -1,0 +1,56 @@
+如果你的 .sql 文件和 .sh 脚本在同一级目录下，比如结构是这样的：
+
+project-root/
+└── scripts/
+    ├── run.sh
+    └── query.sql
+
+你在 run.sh 脚本里可以这样写，用脚本自己的路径找到 .sql 文件：
+
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SQL_FILE="$SCRIPT_DIR/query.sql"
+
+echo "Using SQL file: $SQL_FILE"
+psql -U your_user -d your_db -f "$SQL_FILE"
+
+
+---
+
+✅ 为什么这么写？
+
+$(dirname "$0") 得到的是脚本相对路径，比如 ./scripts
+
+cd "$(dirname "$0")" && pwd 会变成脚本的绝对目录路径
+
+再拼接 query.sql，就能保证在任何地方执行都能找到
+
+
+
+---
+
+❗常见错误写法（不要这么写）
+
+psql -f query.sql
+
+这依赖于“当前目录”，而 GitLab CI/CD 的当前目录可能不是 scripts/，所以会找不到文件。
+
+
+---
+
+✅ 调试建议
+
+在 .sh 脚本中加：
+
+echo "当前目录是：$(pwd)"
+ls -l
+
+确认执行时的路径和你预期是否一致。
+
+
+---
+
+如你愿意贴出你现有脚本或 .gitlab-ci.yml，我可以帮你更正实际路径。
+
