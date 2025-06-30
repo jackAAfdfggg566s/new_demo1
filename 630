@@ -1,0 +1,88 @@
+谢谢补充，你的结构是：
+
+script:
+  - sshpass -p "$SSH_PASSWORD" ssh "$SSH_USER@$SSH_HOST" "bash ~/query.sh '$START_TIME' '$END_TIME' '$TYPE'"
+
+你说「加上 if 就报错」，基本确认问题出在 远程 query.sh 文件的语法不完整（很可能是漏了 fi），而不是 YAML 传参方式错。
+
+
+---
+
+✅ 你当前 YAML + 脚本 三参数结构完全示范
+
+📁 .gitlab-ci.yml
+
+variables:
+  START_TIME: "2025-06-28 00:00:00"
+  END_TIME: "2025-06-28 23:59:59"
+  TYPE: "1"
+
+stages:
+  - run
+
+query_db:
+  stage: run
+  script:
+    - sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" "bash ~/query.sh '$START_TIME' '$END_TIME' '$TYPE'"
+
+
+---
+
+📁 远程脚本 query.sh（放在目标机器 ~/query.sh）
+
+#!/bin/bash
+
+START_TIME="$1"
+END_TIME="$2"
+TYPE="$3"
+
+# 类型判断
+if [ "$TYPE" -eq 1 ]; then
+  TYPE_STRING="apple"
+elif [ "$TYPE" -eq 2 ]; then
+  TYPE_STRING="banana"
+elif [ "$TYPE" -eq 30 ]; then
+  TYPE_STRING="cherry"
+else
+  echo "未知类型: $TYPE"
+  exit 1
+fi
+
+echo "开始时间: $START_TIME"
+echo "结束时间: $END_TIME"
+echo "类型字符串: $TYPE_STRING"
+
+# 示例SQL（确认无语法错才执行）
+psql -U your_user -d your_db -c "
+  SELECT * FROM your_table
+  WHERE create_time >= '$START_TIME'
+    AND create_time <= '$END_TIME'
+    AND type = '$TYPE_STRING';
+"
+
+
+---
+
+✅ 检查方式
+
+1. 登录到远程机器，运行：
+
+bash -n ~/query.sh
+
+确保没有语法错误。
+
+
+2. 如果你是用 Windows 编辑器改过 query.sh，可能换行是 CRLF，要转换：
+
+dos2unix ~/query.sh
+
+
+3. 确保最后一行没有漏掉 fi（这是最多见的错误）
+
+
+
+
+---
+
+🔧 如果你想让我直接修复你那段代码，请发出你当前的 query.sh 内容，我一眼就能帮你指出是哪一行错的。你可以直接复制粘贴发上来。
+
