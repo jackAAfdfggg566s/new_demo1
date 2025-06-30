@@ -1,0 +1,95 @@
+✅ 太好了，你说清楚了：
+
+
+---
+
+❗ 你现在的情况是：
+
+你在 .gitlab-ci.yml 中写：
+
+script:
+  - sshpass -p "$PWD" ssh user@host "bash xxx.sh"
+
+xxx.sh 是存在于 GitLab CI runner 本地（GitLab 仓库里）
+
+🚨 但远程服务器根本 没有这个脚本，所以会报 No such file or directory
+
+
+
+---
+
+✅ 正确做法（直接用本地脚本执行远程命令）
+
+你不能用：
+
+ssh user@host "bash xxx.sh"
+
+因为这会在远程找 xxx.sh，但远程并没有这个文件。
+
+
+---
+
+✅ 正解：把本地 xxx.sh 通过标准输入发给远程执行
+
+script:
+  - sshpass -p "$SSH_PASSWORD" ssh "$SSH_USER@$SSH_HOST" "bash -s '$TRADE_TYPE' '$START_TIME' '$END_TIME'" < ./xxx.sh
+
+> 这条命令的意思是：
+✅ “把本地的 xxx.sh 内容通过标准输入 (<) 发送到远程机器执行，并传入 3 个参数”。
+
+
+
+
+---
+
+🔧 示例 .gitlab-ci.yml：
+
+variables:
+  TRADE_TYPE: "1"
+  START_TIME: "2025-06-28 00:00:00"
+  END_TIME: "2025-06-28 23:59:59"
+
+stages:
+  - query
+
+query:
+  stage: query
+  script:
+    - sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" \
+        "bash -s '$TRADE_TYPE' '$START_TIME' '$END_TIME'" < ./run_query_AR_received.sh
+
+
+---
+
+🔧 本地脚本 run_query_AR_received.sh
+
+#!/bin/bash
+
+TRADE_TYPE="$1"
+START_TIME="$2"
+END_TIME="$3"
+
+echo "TRADE_TYPE=$TRADE_TYPE"
+echo "START_TIME=$START_TIME"
+echo "END_TIME=$END_TIME"
+
+# 假设执行 SQL
+# psql -c "SELECT ... WHERE type='$TRADE_TYPE' AND time BETWEEN '$START_TIME' AND '$END_TIME'"
+
+
+---
+
+🧪 测试建议：
+
+你也可以本地测试这句命令是否跑得通：
+
+ssh user@host "bash -s '1' '2025-06-28 00:00:00' '2025-06-28 23:59:59'" < ./xxx.sh
+
+
+---
+
+如果你希望把这个脚本上传到远程（只传一次）然后执行，那我也可以帮你写 scp + ssh 的组合。
+但你目前用的「本地脚本 + ssh 执行」方案，用 bash -s < 是最优解 ✅
+
+需要我帮你改你现有的 .gitlab-ci.yml 吗？你可以贴上来我直接帮你写一份可运行版本。
+
