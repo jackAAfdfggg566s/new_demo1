@@ -1,0 +1,89 @@
+✅ 你说得完全正确：如果你的 pipeline（或 job）是 manual 手动执行的，那它 默认不会被定时任务（Scheduler）触发。
+
+
+---
+
+🚫 为什么 Scheduler 不触发 manual job？
+
+在 GitLab CI 中：
+
+job_manual:
+  script: echo "Do something"
+  when: manual
+
+上面这个 job 必须你手动点“Play”才能执行
+
+即使设置了定时任务，它也不会自动运行，因为它是手动类型
+
+
+
+---
+
+✅ 如何解决？三种方法：
+
+✅ 方法一：改成自动运行（推荐）
+
+如果你希望这个 job 可以被定时触发，应该移除 when: manual 或改成 when: on_schedule。
+
+job_from_schedule:
+  script: echo "Run from schedule"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  when: on_schedule
+
+这样它在手动执行 pipeline 时不会触发，但在定时任务中会自动跑。
+
+
+---
+
+✅ 方法二：使用 rules: 区分不同来源
+
+你可以让 job 在定时任务中自动运行，但在平时保留为 manual：
+
+job_mixed:
+  script: echo "Scheduled job or manual"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: always
+    - when: manual
+
+效果：
+
+定时触发（scheduler）时会自动运行 ✅
+
+手动点击 “Run pipeline” 时仍然是手动执行 ✅
+
+
+
+---
+
+✅ 方法三：分开写两个 job（一个自动一个手动）
+
+job_auto:
+  script: echo "I run from schedule"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+
+job_manual:
+  script: echo "I run manually"
+  when: manual
+
+
+---
+
+🧪 测试建议
+
+你可以先写一个最小 .gitlab-ci.yml 来测试：
+
+scheduled_test:
+  script: echo "Scheduled run success"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+
+然后去 UI 设置一个 Schedule，几分钟后看有没有触发。这样可以快速验证你的定时设置是否有效。
+
+
+---
+
+需要我帮你把原本的 manual job 改造成支持 Scheduler 启动的版本吗？可以贴一下你的 job，我来改给你。
+
