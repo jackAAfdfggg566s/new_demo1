@@ -1,0 +1,148 @@
+你现在的目标是：
+
+> ✅ 在 GitLab CI/CD 中，从第一个 stage（或 job）传递参数/变量到第二个 stage/job，包括可能的延迟执行（比如 sleep 3 分钟）。
+
+
+
+
+---
+
+🔧 GitLab 原生不支持跨 job 动态传值（比如 shell 中 export 再传给下一个 job），但可以通过以下几种方案实现你的目标。
+
+
+---
+
+✅ 方法一：使用 artifact + 文件传参（最稳定推荐）
+
+✅ 原理：
+
+第一个 job 把变量写入文件作为 artifact
+
+第二个 job 读取 artifact 文件，加载变量
+
+
+
+---
+
+🧪 示例：
+
+stages:
+  - prepare
+  - deploy
+
+generate_params:
+  stage: prepare
+  script:
+    - echo "VAR_TO_PASS=abc123" > params.env
+    - echo "其他变量可以继续追加" >> params.env
+  artifacts:
+    paths:
+      - params.env
+
+run_after_delay:
+  stage: deploy
+  script:
+    - echo "等待 3 分钟..."
+    - sleep 180
+    - source params.env
+    - echo "从文件中读取参数：$VAR_TO_PASS"
+
+
+---
+
+✅ 方法二：使用 GitLab 的 needs + artifacts:paths
+
+如果你用 needs: 保证 job 顺序，还能加快 pipeline 并发运行性能。
+
+run_after_delay:
+  stage: deploy
+  needs: [generate_params]
+  script:
+    - sleep 180
+    - source params.env
+    - echo "读取：$VAR_TO_PASS"
+
+
+---
+
+✅ 方法三：使用 rules:variables + YAML anchor（仅静态传参）
+
+适用于你在 CI 文件中写死参数，不能从 job 动态产生的场景：
+
+.default_vars: &default_vars
+  variables:
+    DEPLOY_ENV: staging
+    BUILD_TAG: "v1.2"
+
+job1:
+  stage: prepare
+  <<: *default_vars
+  script:
+    - echo "准备任务，环境是 $DEPLOY_ENV"
+
+job2:
+  stage: deploy
+  <<: *default_vars
+  script:
+    - echo "部署任务，版本是 $BUILD_TAG"
+
+> ❗注意：这种方式是静态变量，不能“从 job1 输出变量给 job2”
+
+
+
+
+---
+
+✅ 方法四：使用 GitLab CI_JOB_TOKEN + API 上传动态参数（进阶）
+
+在 job1 中调用 GitLab API，写入环境变量/临时存储
+
+在 job2 中读取
+
+
+⚠️ 太复杂，不建议除非你有很多跨 pipeline 参数传递场景
+
+
+---
+
+✅ 最终推荐：简单传参的完整版本
+
+stages:
+  - prepare
+  - deploy
+
+job_prepare:
+  stage: prepare
+  script:
+    - echo "TOKEN_ABC=123xyz" > vars.env
+  artifacts:
+    paths:
+      - vars.env
+
+job_deploy:
+  stage: deploy
+  needs: [job_prepare]
+  script:
+    - echo "等待 3 分钟..."
+    - sleep 180
+    - source vars.env
+    - echo "我拿到了参数：$TOKEN_ABC"
+
+
+---
+
+✅ 补充说明：你还可以这样使用变量
+
+# vars.env 文件内容
+HOST_IP=1.2.3.4
+JAR_PATH=/opt/app.jar
+
+# 第二个 job 中使用：
+source vars.env
+ssh $USER@$HOST_IP "java -jar $JAR_PATH"
+
+
+---
+
+如果你告诉我你传的是什么参数（host 地址、日志路径、部署路径等），我可以帮你优化变量文件结构，比如生成 .env 或 JSON。要不要？
+
