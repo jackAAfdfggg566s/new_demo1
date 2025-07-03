@@ -1,0 +1,151 @@
+你有 4 台机器，需要通过 GitLab CI/CD 实现：
+
+> ✅ 依次（或并发）启动 Java 程序 → 等 1 分钟 → 再执行另一步操作（可能是日志监控/验证等）
+
+
+
+目标是：每台机器分步骤运行，并且参数可控、流程自动化
+
+
+---
+
+✅ 目标结构简化：
+
+假设机器是：
+
+host1.example.com
+
+host2.example.com
+
+host3.example.com
+
+host4.example.com
+
+
+Java 启动命令假设是：
+
+ssh user@hostX "java -jar /opt/app.jar"
+
+等待 1 分钟后，再执行：
+
+ssh user@hostX "tail -f /opt/app.log"
+
+
+---
+
+✅ 推荐实现方式（参数化 + 控制顺序）
+
+✅ 使用 GitLab CI job + 参数变量 + sleep 控制
+
+
+---
+
+🧩 示例 .gitlab-ci.yml
+
+stages:
+  - start
+  - wait_and_check
+
+# 启动 Java 程序
+start_java:
+  stage: start
+  script:
+    - echo "启动 Java 程序在 $TARGET_HOST"
+    - ssh user@$TARGET_HOST "nohup java -jar /opt/app.jar > /opt/app.log 2>&1 &"
+  variables:
+    TARGET_HOST: ""
+
+# 等待 1 分钟后查看日志
+check_java_log:
+  stage: wait_and_check
+  needs: [start_java]
+  script:
+    - echo "等待 1 分钟..."
+    - sleep 60
+    - echo "连接 $TARGET_HOST，开始查看日志："
+    - ssh user@$TARGET_HOST "tail -n 20 /opt/app.log"
+  variables:
+    TARGET_HOST: ""
+
+
+---
+
+✅ 启动多个机器：使用 动态变量启动多条 pipeline
+
+你可以通过 手动触发 + 变量传参 的方式运行多个 pipeline，例如：
+
+手动输入：
+
+TARGET_HOST=host1.example.com
+
+TARGET_HOST=host2.example.com
+
+
+
+---
+
+✅ 或者分成多个 job 并行控制
+
+start_java_host1:
+  stage: start
+  script:
+    - ssh user@host1 "nohup java -jar /opt/app.jar > /opt/app.log 2>&1 &"
+
+check_log_host1:
+  stage: wait_and_check
+  needs: [start_java_host1]
+  script:
+    - sleep 60
+    - ssh user@host1 "tail -n 20 /opt/app.log"
+
+重复写 host2 ~ host4 即可。
+
+
+---
+
+✅ 更智能做法：使用模板 + extends 复用逻辑
+
+如果你不想复制代码，可以定义模板 job：
+
+.start-template:
+  script:
+    - ssh user@$TARGET_HOST "nohup java -jar /opt/app.jar > /opt/app.log 2>&1 &"
+
+.check-template:
+  script:
+    - sleep 60
+    - ssh user@$TARGET_HOST "tail -n 20 /opt/app.log"
+
+然后这样使用：
+
+start_host1:
+  stage: start
+  extends: .start-template
+  variables:
+    TARGET_HOST: host1.example.com
+
+check_host1:
+  stage: wait_and_check
+  extends: .check-template
+  needs: [start_host1]
+  variables:
+    TARGET_HOST: host1.example.com
+
+
+---
+
+✅ 总结方案对比
+
+实现方式	优点	缺点
+
+job + 参数变量	灵活、可重复	需要手动触发每个
+多 job 静态写死 host1~host4	简单直观	不灵活，代码多
+模板 + extends	易维护、统一改动	配置稍复杂
+GitLab trigger + 子 pipeline	适合更大规模系统	配置最复杂
+
+
+
+---
+
+需要我直接给你一份完整支持 4 台主机、模板复用、并支持并发/顺序执行的 GitLab CI 文件吗？我可以快速生成。
+
