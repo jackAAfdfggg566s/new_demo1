@@ -1,0 +1,106 @@
+你想要：
+
+> ✅ 在 GitLab CI/CD 中，先运行一个 pipeline（或 job），然后等 3 分钟后自动运行另一个 pipeline/job。
+
+
+
+这可以用以下几种方式实现，取决于你要“延迟”的是：
+
+
+---
+
+🔧 情况 1：两个 job 在同一个 pipeline 中，第二个延迟 3 分钟执行
+
+最推荐 ✅，直接在 .gitlab-ci.yml 中控制 job 延迟。
+
+✅ 示例：
+
+stages:
+  - first
+  - second
+
+job_a:
+  stage: first
+  script:
+    - echo "这是第一个任务"
+
+job_b:
+  stage: second
+  script:
+    - echo "等待 3 分钟..."
+    - sleep 180
+    - echo "这是第二个任务"
+  needs: [job_a]  # 确保 job_a 成功后再跑
+
+
+---
+
+🕒 情况 2：两个完全独立的 pipeline，第二个延迟 3 分钟运行
+
+GitLab 原生并不支持“pipeline 等待 N 分钟后触发另一个 pipeline”，但你可以：
+
+✅ 方法 A：使用 trigger job + sleep
+
+trigger_next:
+  stage: final
+  script:
+    - echo "等待 3 分钟后触发下一个 pipeline"
+    - sleep 180
+    - curl --request POST \
+        --form token=$TRIGGER_TOKEN \
+        --form ref=main \
+        https://gitlab.com/api/v4/projects/PROJECT_ID/trigger/pipeline
+
+🔐 你需要：
+
+到另一个项目里设置一个 Trigger Token
+
+拿到 PROJECT_ID（可在项目设置中看到）
+
+
+
+---
+
+✅ 方法 B：两个 pipeline 各自调度，前者完成后触发后者（不太实时）
+
+可以通过 GitLab 的 rules 和 trigger 机制来做，但不适合严格控制“延迟时间”。
+
+
+---
+
+💡 Bonus：使用 rules + when: delayed（不太适合你的需求）
+
+这是 GitLab 的 job 级别延迟机制：
+
+delayed_job:
+  stage: second
+  script:
+    - echo "我是延迟执行的 job"
+  when: delayed
+  start_in: 3 minutes
+
+🚫 缺点：
+
+它不是“等前一个 job 完成 + 延迟”，而是从 pipeline 启动开始计时
+
+所以不适用于“等 job_a 完成后再等 3 分钟执行 job_b”
+
+
+
+---
+
+✅ 总结对照表
+
+目标	推荐方式	备注
+
+job 内延迟 3 分钟	sleep 180	✅ 最简单稳定
+pipeline A 后 3 分钟触发 pipeline B	curl 触发 + sleep	✅ 可控但需要 trigger token
+job 启动后延迟开始（无依赖 job）	when: delayed + start_in	⚠️ 从 pipeline 开始计时
+精准“完成 + 延迟”控制	job A → job B + sleep	✅ 推荐用于 CI 流水线控制
+
+
+
+---
+
+如果你告诉我两个 pipeline 是同项目的不同分支、还是不同项目，我可以帮你直接写一套 trigger + 延迟 脚本，要不要？
+
