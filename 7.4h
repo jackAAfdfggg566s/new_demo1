@@ -1,0 +1,155 @@
+好的！你现在是使用 GitLab Kubernetes Agent（GitLab Agent for Kubernetes） 的方式跑 pipeline，也就是：
+
+✅ 使用的是 kubernetes executor 而不是 docker executor。
+
+
+---
+
+❗这会导致一个核心问题：
+
+> Kubernetes executor 下每个 job 是 一个独立的 Pod，每次 job 结束后 Pod 会被销毁，上一次运行的内容不会自动保留到下一次。
+
+
+
+
+---
+
+🚫 所以你不能在同一个 job 里使用 docker run 运行不同镜像，也无法在一个 job 里动态切换 image。
+
+
+---
+
+✅ 那该怎么做？
+
+我们换一种方法：通过多个 job + needs: 串联 + artifacts: 传递文件，来做到“每次先运行 jar，再 check，共循环 5 次”。
+
+
+---
+
+✅ 推荐结构（简化写法）
+
+虽然 GitLab CI 不支持 job 循环，但我们可以用 YAML anchor（锚点）+ needs 串联，写 10 个 job 的简洁结构。
+
+
+---
+
+✨ 示例 .gitlab-ci.yml（完整 5 次循环）
+
+stages:
+  - run
+  - check
+
+# 通用模板：运行jar
+.run_jar_template: &run_jar_template
+  stage: run
+  script:
+    - echo "运行 jar for job $CI_JOB_NAME"
+    - java -jar your-app.jar > output.log
+  artifacts:
+    paths:
+      - output.log
+    expire_in: 1 hour
+
+# 通用模板：check 日志
+.check_template: &check_template
+  stage: check
+  script:
+    - echo "检查日志 for job $CI_JOB_NAME"
+    - cat output.log
+    - if grep -q "ERROR" output.log; then
+        echo "检查失败 ❌";
+        exit 1;
+      else
+        echo "检查通过 ✅";
+      fi
+
+run_1:
+  <<: *run_jar_template
+  image: openjdk:17
+
+check_1:
+  <<: *check_template
+  image: alpine
+  needs: [run_1]
+
+run_2:
+  <<: *run_jar_template
+  image: openjdk:17
+  needs: [check_1]
+
+check_2:
+  <<: *check_template
+  image: alpine
+  needs: [run_2]
+
+run_3:
+  <<: *run_jar_template
+  image: openjdk:17
+  needs: [check_2]
+
+check_3:
+  <<: *check_template
+  image: alpine
+  needs: [run_3]
+
+run_4:
+  <<: *run_jar_template
+  image: openjdk:17
+  needs: [check_3]
+
+check_4:
+  <<: *check_template
+  image: alpine
+  needs: [run_4]
+
+run_5:
+  <<: *run_jar_template
+  image: openjdk:17
+  needs: [check_4]
+
+check_5:
+  <<: *check_template
+  image: alpine
+  needs: [run_5]
+
+
+---
+
+✅ 工作原理
+
+run_x 使用 openjdk 镜像运行 jar
+
+check_x 使用 alpine 镜像检查 jar 的日志输出
+
+每轮 job 用 needs: 精准指定上一个 job，确保顺序执行
+
+使用 artifacts: 传递 output.log 给下一步
+
+
+
+---
+
+✅ 你的 runner 是 GitLab Agent（Kubernetes），没问题：
+
+每个 job 是 Pod，指定 image 就会拉对应镜像（openjdk 或 alpine）
+
+文件传递通过 artifacts，GitLab 会自动保存并下载
+
+
+
+---
+
+🔁 是否能进一步“动态循环”？目前 GitLab CI 不原生支持循环 job（比如写一个 job 自动执行 5 次），所以这个方案是最稳定的办法。
+
+
+---
+
+如果你觉得写 10 个 job 代码还是太多，我也可以：
+
+用 shell 生成 .gitlab-ci.yml
+
+或用 child pipeline 自动生成 job
+
+
+需要我哪种方式来帮你写一个精简版本？还是你想贴下你的 .jar 名和 check 条件，我直接帮你出完整版本？
+
