@@ -1,0 +1,121 @@
+你想要在 GitLab CI/CD 中执行一个流程大致如下：
+
+1. 启动 Java 应用（后台运行）；
+
+
+2. 实时监控 output.log，持续几分钟；
+
+
+3. 如果 log 中出现报错（关键字如 Exception、ERROR），CI 报错退出；
+
+
+4. 如果 log 一切正常，进入下一个 stage。
+
+
+
+
+---
+
+✅ 实现思路（Bash + GitLab CI）
+
+我们用一个 Job 来：
+
+启动 Java 程序；
+
+tail 日志；
+
+超时自动继续；
+
+捕捉异常自动 fail。
+
+
+
+---
+
+🧩 假设准备环境
+
+启动命令为：java -jar myapp.jar > output.log 2>&1 &
+
+log 文件路径：output.log
+
+监控时间：比如 3 分钟
+
+
+
+---
+
+✅ 示例 GitLab CI Job
+
+check_java_log:
+  stage: check_log
+  script:
+    # 启动 Java 应用（后台运行）
+    - nohup java -jar myapp.jar > output.log 2>&1 &
+
+    # 等待应用初始启动
+    - echo "Waiting for Java app to start..."
+    - sleep 10
+
+    # 实时监控日志 3 分钟，若出现错误立即退出
+    - |
+      echo "Checking logs for 3 minutes..."
+      timeout 180 bash -c '
+        tail -n 0 -F output.log | while read line; do
+          echo "$line" | grep -Ei "Exception|ERROR" && exit 1
+        done
+      '
+
+    # 上面超时后会继续到这里（说明没发现报错）
+    - echo "No error found in log, proceeding..."
+
+
+---
+
+🧠 说明：
+
+timeout 180：只检查 3 分钟；
+
+tail -F：实时监听新写入的内容；
+
+grep -Ei "Exception|ERROR"：大小写匹配常见错误关键词；
+
+一旦发现异常，exit 1，GitLab job 会中断并标记失败；
+
+没有问题就自动进入下一 stage。
+
+
+
+---
+
+✅ 衔接下一个 Job（示意）
+
+check_java_log:
+  stage: check_log
+  script:
+    # ...如上
+
+run_next_stage:
+  stage: run_next
+  script:
+    - echo "Next stage: everything OK"
+  needs:
+    - job: check_java_log
+      artifacts: false
+
+
+---
+
+✅ 可选增强功能（如你需要）
+
+✅ 把错误信息写入 error.log 供后续排查；
+
+✅ 改为 grep 某些“成功关键字”而不是错误；
+
+✅ 如果 Java 本身会 hang 可额外加 watchdog。
+
+
+
+---
+
+是否要我帮你做一份完整的 .gitlab-ci.yml 例子或加 SSH 到远端执行（比如你之前提到的场景）？
+
