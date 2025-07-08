@@ -1,0 +1,140 @@
+你要实现的 GitLab CI/CD 逻辑大致可以总结为：
+
+> 先远程运行一个 Java 脚本（预计运行半小时~一小时），然后持续观察状态：
+
+如果 Java 进程消失（退出），
+
+且 日志包含特定字符串 xxx，
+
+则表示 运行成功，继续执行后续 Job。
+
+否则认为失败，Job 报错退出。
+
+
+
+
+下面是一个 完整解决方案思路和代码，适合在 GitLab CI/CD 使用。
+
+
+---
+
+✅ 1. 脚本设计目标（在 GitLab CI/CD 中执行）
+
+我们假设你通过 sshpass 远程执行如下逻辑：
+
+1. 启动 Java 程序（后台运行）
+
+
+2. 记录 PID
+
+
+3. 进入循环：每30秒检查：
+
+Java 进程是否还在
+
+如果不在，看日志是否包含“运行成功”
+
+
+
+4. 如果成功，退出 0
+
+
+5. 如果失败（进程崩了或超时），退出非 0
+
+
+
+
+---
+
+✅ 2. 示例脚本：monitor_java.sh
+
+#!/bin/bash
+
+REMOTE_HOST="user@your-host"
+JAVA_CMD="java -jar /path/to/app.jar"
+LOG_PATH="/path/to/output.log"
+SUCCESS_KEYWORD="运行成功"
+TIMEOUT_MINUTES=90
+
+# Step 1: 启动 Java 程序（后台）
+sshpass -p yourpassword ssh -o StrictHostKeyChecking=no $REMOTE_HOST "
+  nohup $JAVA_CMD > $LOG_PATH 2>&1 & echo \$! > /tmp/java.pid
+"
+
+echo "Java 程序已启动，正在监控..."
+
+# Step 2: 持续检查
+ELAPSED=0
+SLEEP_INTERVAL=30  # 每30秒检查一次
+
+while [ $ELAPSED -lt $((TIMEOUT_MINUTES * 60)) ]; do
+  sleep $SLEEP_INTERVAL
+  ELAPSED=$((ELAPSED + SLEEP_INTERVAL))
+
+  PROCESS_CHECK=$(sshpass -p yourpassword ssh $REMOTE_HOST 'pgrep -f "java -jar /path/to/app.jar"')
+  if [ -z "$PROCESS_CHECK" ]; then
+    echo "Java 进程已经退出，检查日志..."
+
+    LOG_CONTENT=$(sshpass -p yourpassword ssh $REMOTE_HOST "cat $LOG_PATH")
+    if echo "$LOG_CONTENT" | grep -q "$SUCCESS_KEYWORD"; then
+      echo "✅ 检测到日志包含成功标识，流程完成"
+      exit 0
+    else
+      echo "❌ Java 退出，但未检测到成功标识，流程失败"
+      exit 1
+    fi
+  else
+    echo "Java 仍在运行... 等待中 (${ELAPSED}s / $((TIMEOUT_MINUTES * 60))s)"
+  fi
+done
+
+echo "❌ 超过超时时间 ($TIMEOUT_MINUTES 分钟)，仍未完成"
+exit 1
+
+
+---
+
+✅ 3. GitLab .gitlab-ci.yml 示例：
+
+stages:
+  - run
+  - monitor
+  - next
+
+run_java:
+  stage: run
+  script:
+    - bash monitor_java.sh
+
+> 后续你可以加 next_step job，前提是 run_java 成功了。
+
+
+
+
+---
+
+✅ 4. 说明
+
+✅ 日志关键字可替换成你自己的，比如 "Success finished!"
+
+✅ 进程监控通过 pgrep -f 检测
+
+✅ 支持 远程运行（通过 sshpass）
+
+❗你需要保证：
+
+远端机器安装了 Java
+
+可通过 SSH 执行命令
+
+路径正确，权限允许写日志文件
+
+
+
+
+---
+
+如果你使用 GitLab Runner 执行 Shell 本地任务，也可以将 Java 和监控都放在一台机器上跑而无需 SSH。
+
+要不要我改成适合你自己 GitLab agent + sshpass 的版本？或者你贴一下你现在的启动逻辑，我来帮你封装完整。
+
