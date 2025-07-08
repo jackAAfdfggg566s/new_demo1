@@ -1,0 +1,95 @@
+你说 pgrep 判断不出 Java 进程，这种情况很常见，可能是因为：
+
+
+---
+
+❗ pgrep -f 判断失败的几种原因：
+
+原因	说明
+
+启动命令中路径太长	pgrep 匹配不到完整 jar 路径
+java 是间接启动的	比如 sh -c, nohup, bash xxx.sh 启动的程序
+多个 java 在跑，不知道哪个是你要的	可能匹配错了或者匹配不到目标
+shell 脚本没有引用路径变量	如你脚本用 $JAR_PATH 启动，但匹配时没写全名
+
+
+
+---
+
+✅ 推荐替代方案：自己记录 PID！
+
+这是最稳定、准确的方式。
+
+
+---
+
+✅ 示例脚本：start_java_with_pid.sh
+
+#!/bin/bash
+
+JAR_PATH="/your/path/to/app.jar"
+LOG_PATH="/your/path/to/output.log"
+PID_FILE="/tmp/java_app.pid"
+
+# 如果 PID 文件存在，且进程还在，就认为 Java 已在运行
+if [ -f "$PID_FILE" ]; then
+  OLD_PID=$(cat "$PID_FILE")
+  if kill -0 "$OLD_PID" 2>/dev/null; then
+    echo "⚠️ Java 已在运行（PID: $OLD_PID），不重复启动。"
+    exit 0
+  else
+    echo "🟡 PID 文件存在，但进程不在，准备重新启动。"
+    rm -f "$PID_FILE"
+  fi
+fi
+
+# 启动 Java
+echo "✅ 启动 Java 中..."
+nohup java -jar "$JAR_PATH" > "$LOG_PATH" 2>&1 &
+
+# 记录新进程 PID
+echo $! > "$PID_FILE"
+echo "✅ Java 已启动（PID: $(cat $PID_FILE)），日志：$LOG_PATH"
+
+
+---
+
+✅ 使用方式：
+
+bash start_java_with_pid.sh
+
+
+---
+
+✅ 优势：
+
+不依赖 pgrep，不会被启动方式影响
+
+明确记录了进程 PID，便于监控、杀掉、日志分析
+
+更适合和 GitLab CI/CD 配合使用
+
+
+
+---
+
+❓你还可以检查什么？
+
+如果你想调试为什么 pgrep -f 匹配不到，可以试试：
+
+ps aux | grep java
+
+你会看到所有 Java 进程的完整命令行，检查：
+
+有没有包含 .jar 文件名
+
+有没有路径不一致
+
+你匹配的关键词是不是太短或不精确
+
+
+
+---
+
+如你愿意，可以把你实际的 java -jar 启动命令贴一下，我可以直接帮你写一个适配的匹配判断语句，或者整合进 GitLab。
+
