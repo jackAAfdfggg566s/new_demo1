@@ -1,0 +1,132 @@
+明白了！你现在想要实现的功能是：
+
+
+---
+
+✅ GitLab CI/CD 启动 Java 脚本并持续观察其状态
+
+判定条件：
+
+1. 本地（GitLab Runner）运行 java -jar xxx.jar，预计运行半小时~1小时。
+
+
+2. 启动时写入 PID 文件。
+
+
+3. 定时检查：
+
+如果 Java 进程还在 → 等待继续。
+
+如果 Java 进程退出了，且日志中包含 "运行成功" 或你指定的关键词 → Job 成功。
+
+否则 Job 失败。
+
+
+
+
+
+---
+
+✅ 实现方式概览：
+
+我们会写一个 shell 脚本 run_and_monitor_java.sh，用于：
+
+启动 Java
+
+写入日志 & PID 文件
+
+循环检测
+
+超时控制
+
+
+
+---
+
+✅ 1. run_and_monitor_java.sh 脚本内容：
+
+#!/bin/bash
+
+JAR_PATH="/path/to/your/app.jar"
+LOG_PATH="/tmp/java_output.log"
+PID_FILE="/tmp/java_app.pid"
+SUCCESS_KEY="运行成功"      # 你期望看到的日志关键字
+MAX_WAIT_MINUTES=90         # 最长运行时间
+CHECK_INTERVAL=30           # 每隔30秒检查一次
+
+# Step 1: 启动 Java
+echo "🚀 启动 Java 应用..."
+nohup java -jar "$JAR_PATH" > "$LOG_PATH" 2>&1 &
+JAVA_PID=$!
+echo $JAVA_PID > "$PID_FILE"
+echo "✅ Java 已启动，PID: $JAVA_PID，日志: $LOG_PATH"
+
+# Step 2: 循环检查
+echo "⏳ 开始监控 Java 状态，最长 $MAX_WAIT_MINUTES 分钟..."
+
+elapsed=0
+while [ $elapsed -lt $((MAX_WAIT_MINUTES * 60)) ]; do
+  sleep $CHECK_INTERVAL
+  elapsed=$((elapsed + CHECK_INTERVAL))
+
+  # 判断进程是否还在
+  if kill -0 "$JAVA_PID" 2>/dev/null; then
+    echo "🟢 Java 正在运行中（PID: $JAVA_PID），已等待 $elapsed 秒..."
+  else
+    echo "⚠️ Java 进程已退出，检查日志..."
+
+    if grep -q "$SUCCESS_KEY" "$LOG_PATH"; then
+      echo "✅ 日志中包含成功标识，任务完成！"
+      exit 0
+    else
+      echo "❌ Java 已退出，但日志未检测到成功标识，任务失败。"
+      exit 1
+    fi
+  fi
+done
+
+echo "⏰ 超时 $MAX_WAIT_MINUTES 分钟，Java 仍未完成，任务失败。"
+exit 1
+
+
+---
+
+✅ 2. .gitlab-ci.yml 配置：
+
+stages:
+  - run
+
+run_java_job:
+  stage: run
+  script:
+    - bash run_and_monitor_java.sh
+
+
+---
+
+✅ 3. 效果说明
+
+场景	结果
+
+Java 正常跑完，日志中含有 "运行成功"	✅ Job 成功
+Java 提前退出，但日志没写成功	❌ Job 失败
+Java 超时还没退出	❌ Job 失败
+
+
+
+---
+
+🛠️ 可选扩展：
+
+✅ 你可以把 SUCCESS_KEY 改成 "Successfully completed!" 等英文关键词
+
+✅ 你可以加上 FAIL_KEY="Exception" 检查日志失败关键词
+
+✅ 也可以把脚本运行 log 也追加进 GitLab 控制台方便追踪
+
+
+
+---
+
+要不要我帮你再加上远程运行（比如通过 sshpass）或支持并发任务？你现在的 java -jar 是什么路径/格式？可以帮你精确写。
+
