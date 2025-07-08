@@ -1,0 +1,137 @@
+好的！你想把原来的“2分钟内检查是否有 error 就退出”的逻辑，改成：
+
+
+---
+
+✅ “一分钟内出现指定关键字 xxx 就继续，否则失败退出”
+
+也就是说：
+
+> ❌ 没有关键字就失败，✅ 出现了就继续后续流程。
+
+
+
+
+---
+
+🧩 适用场景示例
+
+比如你在启动 Java 程序后，要等待日志中打印出像 "Service started" 或 "Ready" 或 "FIS trigger received" 才继续执行下一步。
+
+
+---
+
+✅ 修改后的 bash 示例逻辑（用于 .gitlab/cycle.yml）
+
+你可以把这个逻辑加在子 pipeline 的某个 job 中，比如 wait_for_keyword：
+
+wait_for_log_keyword:
+  stage: wait
+  script:
+    - |
+      LOG_PATH="/home/youruser/app/output.log"
+      KEYWORD="xxx"
+      TIMEOUT=60
+      INTERVAL=5
+      SECONDS_WAITED=0
+
+      echo "⏳ 等待最多 $TIMEOUT 秒，直到日志中出现关键字 '$KEYWORD'..."
+
+      while [ $SECONDS_WAITED -lt $TIMEOUT ]; do
+        if grep -iq "$KEYWORD" "$LOG_PATH"; then
+          echo "✅ 找到关键字 '$KEYWORD'，继续执行"
+          exit 0
+        fi
+        sleep $INTERVAL
+        SECONDS_WAITED=$((SECONDS_WAITED + $INTERVAL))
+      done
+
+      echo "❌ 超时 $TIMEOUT 秒，未找到关键字 '$KEYWORD'"
+      exit 1
+
+
+---
+
+✅ 用法说明
+
+参数	含义
+
+LOG_PATH	远程日志路径（你需要确认）
+KEYWORD	要匹配的关键字，比如 "Ready"
+TIMEOUT	最多等待时间（单位：秒）
+INTERVAL	检查频率，比如每 5 秒查一次
+
+
+
+---
+
+✅ 整合到 .gitlab/cycle.yml 示例：
+
+stages:
+  - start
+  - wait
+  - next
+
+start_java:
+  stage: start
+  script:
+    - echo "🚀 启动 Java 程序第 $CYCLE_ID 次"
+    - ssh $SSH_USER@$SSH_HOST 'cd /home/youruser/app && nohup java -jar app.jar > output.log 2>&1 &'
+
+wait_for_log_keyword:
+  stage: wait
+  script:
+    - echo "⏳ 等待日志中出现关键字 'xxx'"
+    - ssh $SSH_USER@$SSH_HOST '
+        LOG_PATH="/home/youruser/app/output.log"
+        KEYWORD="xxx"
+        TIMEOUT=60
+        INTERVAL=5
+        SECONDS_WAITED=0
+        while [ $SECONDS_WAITED -lt $TIMEOUT ]; do
+          if grep -iq "$KEYWORD" "$LOG_PATH"; then
+            echo "✅ 找到关键字 $KEYWORD"
+            exit 0
+          fi
+          sleep $INTERVAL
+          SECONDS_WAITED=$((SECONDS_WAITED + $INTERVAL))
+        done
+        echo "❌ 没找到关键字，失败退出"
+        exit 1
+      '
+
+
+---
+
+✅ 可选改进
+
+✅ 把关键字设为变量：LOG_KEYWORD: "Service ready"
+
+✅ 用 tail -F 实时读日志，结合 timeout 更实时
+
+✅ 捕获多个关键字（用 egrep -i "ready|success"）
+
+
+
+---
+
+✅ 总结你要的逻辑变化：
+
+原逻辑	现在的逻辑
+
+✅ 2分钟内检查是否有 error → 失败	✅ 1分钟内必须出现 xxx → 才继续
+否则继续	否则失败退出
+
+
+
+---
+
+如果你告诉我：
+
+✅ 日志文件名和路径
+
+✅ 你期望的关键字（比如 "Ready" or "Application started"）
+
+
+我可以帮你生成这段代码嵌入你的完整 .gitlab/cycle.yml。要吗？
+
