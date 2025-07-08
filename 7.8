@@ -1,0 +1,76 @@
+如果你希望 GitLab CI/CD Job 一直 持续关注远程日志（比如 tail -f）长达1小时，一旦出现 error 就退出失败，出现 success 就退出成功，可以用下面这种方式：
+
+
+---
+
+✅ GitLab CI Job：持续监控远程日志（最长1小时）
+
+check_remote_log_stream:
+  stage: monitor
+  script:
+    - |
+      sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST << 'EOF'
+        LOG_FILE="/path/to/output.log"
+        TIMEOUT=3600  # 最长检查秒数（3600 秒 = 1 小时）
+        START_TIME=$(date +%s)
+
+        echo "🔍 Start monitoring \$LOG_FILE ..."
+
+        tail -n 0 -F "\$LOG_FILE" | while read -r line; do
+          echo "\$line"
+
+          # 如果出现 error
+          echo "\$line" | grep -iq "error" && {
+            echo "❌ Detected 'error' in log."
+            exit 1
+          }
+
+          # 如果出现 success
+          echo "\$line" | grep -iq "success" && {
+            echo "✅ Detected 'success' in log."
+            exit 0
+          }
+
+          # 检查是否超时
+          CURRENT_TIME=\$(date +%s)
+          if [ \$((CURRENT_TIME - START_TIME)) -gt \$TIMEOUT ]; then
+            echo "⚠️ Timeout after 1 hour. No result found."
+            exit 1
+          fi
+        done
+      EOF
+
+
+---
+
+📌 说明：
+
+tail -n 0 -F "$LOG_FILE"：从日志当前尾部开始读取，持续监听更新内容。
+
+grep -iq "error"：忽略大小写查找 error，发现即失败退出。
+
+grep -iq "success"：发现即成功退出。
+
+TIMEOUT 限制最多运行 1 小时，避免 GitLab Runner 卡死。
+
+
+
+---
+
+🧪 注意事项：
+
+1. tail 是在远程机器执行的，因此确保你的远程机器 tail, grep, date 等命令是可用的。
+
+
+2. CI 任务有时长限制（通常默认 1 小时），可以在项目设置中调整 Job Timeout。
+
+
+3. 如果你使用 SSH key 而不是密码，可替换 sshpass 逻辑。
+
+
+
+
+---
+
+需要我根据你的日志内容、Java 进程路径或机器环境帮你改成更完整的？可以发一下我来接着补。
+
