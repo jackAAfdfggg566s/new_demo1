@@ -1,0 +1,198 @@
+太好了，了解更清楚了：
+
+
+---
+
+✅ 你的完整目标是：
+
+> 在 GitLab CI/CD 中，自动执行 3 次 Cycle，每个 Cycle 的流程如下：
+
+
+
+1. State1（启动 Java 程序）：远程服务器上执行
+
+
+2. 等待 2 分钟检查日志中是否有 error
+
+有错误：整个 Pipeline 失败退出
+
+
+
+3. State2（调用 AWS FIS）：
+
+这是 已有的另一个 GitLab Job / Pipeline
+
+使用不同的 image，比如 AWS CLI 环境
+
+
+
+4. 持续监控 Java 程序日志，直到结束（最多 1 小时）
+
+中途发现 error → 失败退出
+
+
+
+5. State3（已有 Job）：检查最终状态或验证结果
+
+
+
+
+---
+
+✅ 建议的 GitLab CI/CD 多 Job 多 Stage 实现方式：
+
+我们把每个 Cycle 拆分成多个 Job，每个 Job 做一件事，用 needs: 来顺序控制执行，并通过 artifacts 传递状态（比如日志、PID 文件）。
+
+你提到 State2/State3 已是现成 pipeline/job，我们就让主 Job 调用这些子 pipeline（或 include）或直接用 trigger:。
+
+
+---
+
+✅ 样例结构：执行一个 Cycle（可复用3次）
+
+stages:
+  - start-java
+  - wait-check
+  - fis
+  - monitor
+  - validate
+
+variables:
+  REMOTE_LOG: "/home/youruser/app/output.log"
+  REMOTE_HOST: "your.remote.host"
+  SSH_USER: "ec2-user"
+
+start_java:
+  stage: start-java
+  script:
+    - sshpass -p "$SSH_PASSWORD" ssh $SSH_USER@$REMOTE_HOST "
+        cd /home/youruser/app &&
+        : > $REMOTE_LOG &&
+        nohup java -jar myapp.jar > $REMOTE_LOG 2>&1 &
+        echo \$! > java.pid
+      "
+  artifacts:
+    paths: [java.pid]
+
+wait_and_check:
+  stage: wait-check
+  needs: [start_java]
+  script:
+    - |
+      sshpass -p "$SSH_PASSWORD" ssh $SSH_USER@$REMOTE_HOST bash <<'EOS'
+        LOG="$REMOTE_LOG"
+        for i in {1..24}; do  # 2分钟内每5秒检查一次
+          echo "Checking for error..."
+          grep -iq "error" "$LOG" && {
+            echo "❌ Detected error in log."
+            exit 1
+          }
+          sleep 5
+        done
+        echo "✅ No error found after 2 minutes."
+      EOS
+
+call_fis:
+  stage: fis
+  needs: [wait_and_check]
+  image: amazon/aws-cli
+  script:
+    - aws fis start-experiment --cli-input-json file://fis-experiment.json
+    # 或者你用 trigger 调用已有 pipeline/job
+
+monitor_java:
+  stage: monitor
+  needs: [call_fis]
+  script:
+    - |
+      sshpass -p "$SSH_PASSWORD" ssh $SSH_USER@$REMOTE_HOST bash <<'EOS'
+        LOG="$REMOTE_LOG"
+        PID=$(cat java.pid)
+        MAX_SECS=3600
+        START=$(date +%s)
+
+        while kill -0 $PID 2>/dev/null; do
+          grep -iq "error" "$LOG" && {
+            echo "❌ Detected error mid-run"
+            kill $PID
+            exit 1
+          }
+          NOW=$(date +%s)
+          if [ $((NOW - START)) -gt $MAX_SECS ]; then
+            echo "⏰ Timeout"
+            kill $PID
+            exit 1
+          fi
+          sleep 10
+        done
+
+        echo "✅ Java finished"
+      EOS
+
+check_state3:
+  stage: validate
+  needs: [monitor_java]
+  script:
+    - echo "🎯 Run your existing State3 check here"
+
+
+---
+
+✅ 重复 Cycle（方式选择）
+
+如果你要自动重复 3 次，可以：
+
+✅ 方式一：调用同一个 child pipeline 多次（推荐）
+
+用 trigger: 触发自己定义的 cycle pipeline：
+
+run_cycle1:
+  stage: control
+  trigger:
+    include: .gitlab/cycle.yml
+    strategy: depend
+
+run_cycle2:
+  stage: control
+  trigger:
+    include: .gitlab/cycle.yml
+    strategy: depend
+
+run_cycle3:
+  stage: control
+  trigger:
+    include: .gitlab/cycle.yml
+    strategy: depend
+
+或者在循环中调用 REST API 重复触发 child pipeline。
+
+
+---
+
+🧠 优势：
+
+多 stage/job 拆分清晰、易于 debug
+
+可监控每个环节状态
+
+兼容你已有的 State2 (FIS) 和 State3 job
+
+支持通过 artifacts/变量传递中间状态（如 PID、日志）
+
+
+
+---
+
+✅ 你可以告诉我：
+
+State2（FIS） 是 job 还是 pipeline？
+
+State3 是 job 还是可以封装？
+
+是否希望我帮你出完整 .gitlab-ci.yml + .gitlab/cycle.yml？
+
+你 Java 是不是每次都在远程固定目录跑？日志是否唯一？
+
+
+我可以给你一套完整三轮自动执行的 GitLab 方案。你只要补充一点点信息。是否继续？
+
