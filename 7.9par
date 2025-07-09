@@ -1,0 +1,58 @@
+可以！你只需要在 Python 脚本中加一个判断逻辑，如果没有传参数，就用默认值。下面是修改后的例子：
+
+
+---
+
+✅ Python 脚本 hello.py（带默认值）
+
+import sys
+
+# 如果传了参数就用，否则用默认值
+if len(sys.argv) > 1:
+    name = sys.argv[1]
+else:
+    name = "默认用户"
+
+print(f"你好，{name}！")
+
+
+---
+
+✅ 用法：
+
+✅ 1. 传参运行：
+
+python hello.py Jack
+
+输出：
+
+你好，Jack！
+
+✅ 2. 不传参数运行：
+
+python hello.py
+
+输出：
+
+你好，默认用户！
+
+
+---
+
+这个适用于简单情况。如果你用 argparse，也可以加默认值：
+
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--name', default="默认用户", help="输入你的名字")
+args = parser.parse_args()
+
+print(f"你好，{args.name}！")
+
+运行方式：
+
+python hello.py --name Jack     # → 你好，Jack！
+python hello.py                 # → 你好，默认用户！
+
+要不要我再帮你改成 shell 脚本调用的形式？
+
