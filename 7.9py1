@@ -1,0 +1,44 @@
+你想在 Python 中定义一个变量，获取当前目录下所有以 .summary 结尾的文件名，可以用标准库的 os 或 pathlib 来实现。
+
+
+---
+
+✅ 推荐做法（使用 pathlib，更现代）
+
+from pathlib import Path
+
+summary_files = [f.name for f in Path('.').glob('*.summary')]
+
+print(summary_files)
+
+Path('.') 表示当前目录
+
+glob('*.summary') 匹配所有 .summary 结尾的文件
+
+f.name 是文件名，不含路径
+
+
+
+---
+
+✅ 或者你喜欢 os 的写法：
+
+import os
+
+summary_files = [f for f in os.listdir('.') if f.endswith('.summary')]
+
+print(summary_files)
+
+
+---
+
+✅ 如果你只想取其中一个，比如第一个文件名：
+
+first_summary = summary_files[0] if summary_files else None
+print(first_summary)
+
+
+---
+
+需要按修改时间排序，或只取最新的 .summary 文件，也可以扩展。你是否想排序或选一个？
+
