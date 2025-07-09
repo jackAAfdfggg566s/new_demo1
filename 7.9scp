@@ -1,0 +1,100 @@
+非常好！你想实现的完整目标是：
+
+> ✅ 在 GitLab CI 中运行脚本，脚本会在远端生成日志文件（比如 .log, .summary）
+✅ 然后将这些文件通过 scp 拷贝回 GitLab runner 本地
+✅ 最后把它们 保存为 GitLab artifacts
+
+
+
+我一步一步帮你搭好，分为三部分：
+
+
+---
+
+✅ 第 1 步：脚本在远端生成日志文件（你已有）
+
+比如远端生成了这些文件：
+
+/opt/app/app.log
+/opt/app/app.summary
+
+
+---
+
+✅ 第 2 步：从 GitLab CI runner 使用 scp 拉回这些文件
+
+你在 .gitlab-ci.yml 的 script 中这样写：
+
+🧾 .gitlab-ci.yml 示例
+
+stages:
+  - run
+  - collect
+
+variables:
+  REMOTE_USER: jack
+  REMOTE_HOST: 192.168.1.100
+  REMOTE_PASS: $SSH_PASS   # 在 GitLab Secret 里设置这个变量
+
+run_java:
+  stage: run
+  script:
+    - chmod +x run_and_monitor.sh
+    - ./run_and_monitor.sh
+
+collect_logs:
+  stage: collect
+  script:
+    # 创建本地目录保存日志
+    - mkdir -p logs
+    # 从远端拉日志文件回来
+    - sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST:/opt/app/*.log" logs/ || true
+    - sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST:/opt/app/*.summary" logs/ || true
+  artifacts:
+    paths:
+      - logs/
+    expire_in: 1 week
+
+
+---
+
+✅ 第 3 步：保存为 GitLab CI 的 artifacts
+
+这部分在上面的 collect_logs job 里已经配置好了：
+
+artifacts:
+  paths:
+    - logs/
+  expire_in: 1 week
+
+这样，在 GitLab job 执行完后，你就可以在 Job 页面下载 logs/ 目录下的日志文件了。
+
+
+---
+
+📝 结果：
+
+文件	存放位置	
+
+app.log, app.summary	远端生成 /opt/app/	
+logs/*.log, logs/*.summary	拉回到 GitLab CI runner	
+Artifacts	保留在 GitLab Job 中可下载	
+
+
+
+---
+
+⚠️ 常见问题
+
+问题	解决方式
+
+scp 提示权限	确保目标用户能访问日志路径
+没有 .summary 文件时报错	加 `
+多 job 之间共享变量	可写到 artifacts:reports 中或用 cache 共享文件
+
+
+
+---
+
+要不要我把这个 scp + artifact 整合到你已有的 run_and_monitor.sh 结尾，自动收集日志？这样就可以只用一个脚本+一个 job。你愿意贴下现有 .gitlab-ci.yml 吗？
+
