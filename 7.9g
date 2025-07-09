@@ -1,0 +1,109 @@
+好，我们来把你需要的整个流程整合起来 ✅：
+包括远程启动 Java、监控进程状态、退出后远程执行多行日志分析命令（用 sshpass <<'EOF'），并在本地决定成功或失败。
+
+
+---
+
+✅ 脚本：remote_run_and_monitor.sh
+
+#!/bin/bash
+
+# 配置
+REMOTE_USER="your_user"
+REMOTE_HOST="your.remote.host"
+REMOTE_PASS="your_password"
+JAR_PATH="/opt/app/app.jar"
+LOG_PATH="/opt/app/app.log"
+PID_FILE="/tmp/java_app.pid"
+SUCCESS_KEY="运行成功"
+MAX_WAIT_MINUTES=90
+CHECK_INTERVAL=30
+
+# 启动远程 Java 应用
+echo "🚀 正在远程启动 Java 应用..."
+sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" <<EOF
+cd $(dirname "$JAR_PATH")
+nohup java -jar "$JAR_PATH" > "$LOG_PATH" 2>&1 &
+echo \$! > "$PID_FILE"
+EOF
+
+echo "✅ Java 已启动，开始监控进程状态..."
+
+# 开始轮询
+elapsed=0
+while [ $elapsed -lt $((MAX_WAIT_MINUTES * 60)) ]; do
+  sleep $CHECK_INTERVAL
+  elapsed=$((elapsed + CHECK_INTERVAL))
+
+  IS_ALIVE=$(sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "kill -0 \$(cat $PID_FILE) 2>/dev/null && echo alive || echo dead")
+
+  if [ "$IS_ALIVE" = "alive" ]; then
+    echo "🟢 Java 正在运行中，已等待 $elapsed 秒..."
+  else
+    echo "⚠️ Java 已退出，执行远程日志检查..."
+
+    # ✅ 多行日志检查逻辑（带 EOF，带 if）
+    SUCCESS_LOG=$(sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" <<'EOF'
+cd /opt/app
+
+if grep -q "运行成功" app.log; then
+  echo "[FOUND_SUCCESS]"
+  echo "✅ 匹配内容如下："
+  grep "运行成功" app.log
+else
+  echo "[NO_SUCCESS]"
+  echo "❌ 未找到成功标志，日志结尾如下："
+  tail -n 10 app.log
+fi
+EOF
+)
+
+    # ✅ 本地判断日志检查结果
+    if echo "$SUCCESS_LOG" | grep -q "\[FOUND_SUCCESS\]"; then
+      echo "✅ 日志确认运行成功："
+      echo "$SUCCESS_LOG"
+      exit 0
+    else
+      echo "❌ 日志未包含成功标志，任务失败："
+      echo "$SUCCESS_LOG"
+      exit 1
+    fi
+  fi
+done
+
+echo "⏰ 超时 $MAX_WAIT_MINUTES 分钟，Java 仍未完成，任务失败。"
+exit 1
+
+
+---
+
+✅ 说明关键点：
+
+区域	说明
+
+sshpass <<EOF 第一个	用于远程启动 Java，带写入 PID
+sshpass <<'EOF' 第二个	多行日志命令（grep、if、tail）都写在 EOF ... fi 之间
+fi	远程逻辑块结束，最后 EOF 一定在 fi 的下一行顶格写
+[FOUND_SUCCESS]	标记日志检查成功，本地用 grep 判断
+所有变量	都在本地脚本中定义并传入远程
+
+
+
+---
+
+🧪 你可以先测试：
+
+bash remote_run_and_monitor.sh
+
+Java 正常跑完 + 有“运行成功” → ✅ 成功退出
+
+Java 提前退出 + 日志无关键字 → ❌ 失败退出
+
+Java 超时没跑完 → ❌ 超时失败
+
+
+
+---
+
+需要我帮你改成支持密钥登录版本？或你 Java 启动命令很特别（比如有参数），也可以直接帮你适配。是否要上传 JAR？也能顺便整进去。
+
