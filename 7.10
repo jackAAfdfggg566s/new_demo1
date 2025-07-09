@@ -1,0 +1,84 @@
+你想在 GitLab CI 中 查看远端机器 /data 目录的剩余磁盘空间，可以通过 SSH 登录远端机器，执行 df 命令，并打印输出或加判断。
+
+下面是 ✅ 完整可用方案，包括脚本和 .gitlab-ci.yml 配置：
+
+
+---
+
+✅ 1. SSH命令查看 /data 剩余空间
+
+sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "df -h /data"
+
+输出示例：
+
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sdb1       100G   40G   60G  40% /data
+
+
+---
+
+✅ 2. GitLab .gitlab-ci.yml 示例
+
+你可以专门加一个 job 去检查磁盘空间：
+
+check_disk:
+  stage: check
+  script:
+    - echo "🔍 检查远端 /data 剩余空间..."
+    - sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "df -h /data"
+
+> ⚠️ 你需要在 GitLab 的 CI/CD Variables 中添加以下变量：
+
+REMOTE_USER（例如 ec2-user 或 ubuntu）
+
+REMOTE_HOST（远端主机 IP 或域名）
+
+REMOTE_PASS（远端密码，建议设置为 protected）
+
+
+
+
+
+---
+
+✅ 3. 可选：提取剩余空间数值（比如 Avail 字段）
+
+avail=$(sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "df -h /data | awk 'NR==2 {print \$4}'")
+echo "🗂️ /data 剩余空间: $avail"
+
+
+---
+
+✅ 4. 可选加判断（比如小于10G报警）
+
+avail_gb=$(sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "$REMOTE_USER@$REMOTE_HOST" "
+  df -BG --output=avail /data | tail -n 1 | tr -dc '0-9'
+")
+
+echo "📦 /data 可用空间为 ${avail_gb}G"
+
+if [ "$avail_gb" -lt 10 ]; then
+  echo "❌ 空间不足！剩余不到 10G"
+  exit 1
+else
+  echo "✅ 空间足够"
+fi
+
+
+---
+
+🧪 结果：CI job 输出示意
+
+📦 /data 可用空间为 23G
+✅ 空间足够
+
+或：
+
+📦 /data 可用空间为 8G
+❌ 空间不足！剩余不到 10G
+
+
+---
+
+需要我帮你封装成一个 check_remote_disk.sh 文件供复用，或者集成到某个 pipeline 前做前置检查吗？只要告诉我你流程在哪一步加就行。
+
