@@ -1,0 +1,90 @@
+你要实现的是：
+在 GitLab CI/CD 中使用 sshpass 登录远程机器，tail 某个日志文件，实时查看内容，如果日志中出现关键词（例如 xxx）就退出；或者如果 Java 进程结束也退出。
+
+我们可以用以下 shell 脚本结构来实现这个需求。
+
+
+---
+
+✅ 方案示例
+
+#!/bin/bash
+
+REMOTE_HOST="user@remote-host"
+PASSWORD="your_password"
+LOG_FILE="/path/to/output.log"
+KEYWORD="xxx"
+
+# ssh 到远端机器执行以下逻辑
+sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no "$REMOTE_HOST" 'bash -s' <<'ENDSSH'
+LOG_FILE="/path/to/output.log"
+KEYWORD="xxx"
+
+# 获取 java 进程 PID
+JAVA_PID=$(pgrep -f java)
+
+# 如果没找到 Java 进程，直接退出
+if [ -z "$JAVA_PID" ]; then
+  echo "Java process not running"
+  exit 1
+fi
+
+# 开启后台进程监听 Java 状态
+(
+  while true; do
+    if ! kill -0 "$JAVA_PID" 2>/dev/null; then
+      echo "Java process has exited"
+      touch /tmp/java_exited.flag
+      break
+    fi
+    sleep 1
+  done
+) &
+
+# 用 tail -n +1 是从头读，也可以换成 -F 持续读新日志
+tail -n 0 -F "$LOG_FILE" | while read -r line; do
+  echo "$line" | grep -q "$KEYWORD" && echo "Found keyword: $KEYWORD" && break
+  # 如果 Java 已退出，也退出
+  [ -f /tmp/java_exited.flag ] && echo "Java exited, stopping tail" && break
+done
+ENDSSH
+
+
+---
+
+✅ 功能说明
+
+sshpass 登录远程主机；
+
+获取 Java 进程 PID；
+
+后台启动一个循环，定时检查 Java 是否还在运行；
+
+使用 tail -F 监听日志输出；
+
+日志行中如果包含关键词 xxx，退出；
+
+如果 Java 进程结束，也退出；
+
+用 touch 创建 /tmp/java_exited.flag 标记 Java 已退出。
+
+
+
+---
+
+✅ 注意事项
+
+sshpass 安全性不高，建议用 key 登录；
+
+如果日志输出很慢，建议 tail -n 0 -F 而不是 tail -f；
+
+你可以把 KEYWORD 等作为参数传进去；
+
+如果你用 GitLab CI 配置变量，建议在 CI Job 中将这些传参写入脚本。
+
+
+
+---
+
+如果你需要这个逻辑封装成一个更简洁的脚本或支持更多功能（如超时、多个关键词），我可以帮你进一步扩展。是否希望把整个逻辑变成 GitLab .gitlab-ci.yml job？
+
