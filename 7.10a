@@ -1,0 +1,108 @@
+在 GitLab CI 中，你可以通过脚本执行数据库查询命令（如 psql, mysql, sqlite3 等），将查询结果保存到一个 Shell 变量中供后续使用。下面给出具体示例。
+
+
+---
+
+✅ 假设：你使用 PostgreSQL (psql) 查询
+
+❓目标：查询某个字段，保存到变量中
+
+
+---
+
+✅ 示例一：使用 psql 查询，保存到变量中
+
+stages:
+  - query
+
+query_db:
+  stage: query
+  image: postgres:14
+  variables:
+    DB_USER: myuser
+    DB_HOST: myhost
+    DB_NAME: mydb
+    DB_PASS: $PG_PASSWORD  # GitLab CI 变量中设置好 PG_PASSWORD
+  script:
+    # 安装 sshpass 和其他命令，如果是远端也可以加 sshpass
+    - export PGPASSWORD="$DB_PASS"
+    - |
+      result=$(psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -t -c "SELECT count(*) FROM my_table WHERE status = 'active';" | xargs)
+      echo "查询结果是: $result"
+
+    # 条件判断（示例）
+    - if [ "$result" -gt 10 ]; then
+        echo "✅ 有超过 10 个 active 记录";
+      else
+        echo "❌ 不足 10 个记录";
+        exit 1;
+      fi
+
+
+---
+
+✅ 解说：
+
+命令	说明
+
+-t	去掉标题和边框，干净输出
+`	xargs`
+export PGPASSWORD=...	避免手动输入密码
+
+
+
+---
+
+✅ 示例二：远程执行 SQL，保存查询结果
+
+如果你是用 sshpass 登录远端机器查询数据库：
+
+query_remote:
+  script:
+    - result=$(sshpass -p "$SSH_PASS" ssh "$USER@$HOST" "psql -U dbuser -d mydb -t -c \"SELECT count(*) FROM mytable\" | xargs")
+    - echo "远端查询结果：$result"
+
+
+---
+
+✅ 示例三：MySQL 查询并保存变量
+
+result=$(mysql -u root -p"$MYSQL_PASS" -e "SELECT COUNT(*) FROM users;" mydb -N)
+
+> -N 是去掉列名，输出纯数据。
+
+
+
+
+---
+
+✅ 后续使用变量
+
+你可以：
+
+进行条件判断（比如 if [ "$result" = "xxx" ]）
+
+写入文件供下一 job 使用（配合 artifacts）
+
+上传查询结果当作 artifacts
+
+
+
+---
+
+❗️注意事项：
+
+1. 数据库命令输出如果有换行或空格，建议用 xargs 清理：
+
+value=$(命令 | xargs)
+
+
+2. GitLab Runner 上如果没有 psql/mysql，你要选对镜像（如 postgres:14）
+
+
+
+
+---
+
+需要我帮你集成成一个 GitLab Job 模板，或者通过 SSH 跑远程 SQL 并自动解析出某个值吗？你用的是哪种数据库？我可以给你具体版本。
+
