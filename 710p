@@ -1,0 +1,87 @@
+在 GitLab CI 中，你可以用 Base64 加密的密码 作为 CI/CD Variable，然后在运行时解密使用，保护敏感信息（如 SSH 密码、数据库密码等）。
+
+下面是一个完整示例，包括：
+
+
+---
+
+✅ 1. 在 GitLab 中设置 Base64 编码的密码变量
+
+你可以手动编码密码：
+
+echo -n 'MyRealPassword123!' | base64
+
+输出示例：
+
+TXlSZWFsUGFzc3dvcmQxMjMh
+
+然后在 GitLab 中设置一个 CI/CD 变量，例如：
+
+名称	值
+
+ENCODED_PASSWORD	TXlSZWFsUGFzc3dvcmQxMjMh
+
+
+建议勾选 ✅ Protected + Masked
+
+
+---
+
+✅ 2. .gitlab-ci.yml 中解密使用该变量
+
+stages:
+  - test
+
+decrypt_example:
+  stage: test
+  script:
+    # 解码 base64 密码到变量
+    - PASSWORD=$(echo "$ENCODED_PASSWORD" | base64 -d)
+    
+    # 示例：使用密码（比如 sshpass）
+    - echo "Decoded password is: $PASSWORD"
+    # 例如：sshpass -p "$PASSWORD" ssh user@host echo ok
+
+> ⚠️ 注意：base64 -d 在 macOS 是 base64 -D，GitLab Runner 通常是 Linux 所以用 -d 没问题
+
+
+
+
+---
+
+✅ 3. 使用方式示例：SSH 登录远程主机
+
+ssh_connect:
+  stage: test
+  script:
+    - PASSWORD=$(echo "$ENCODED_PASSWORD" | base64 -d)
+    - sshpass -p "$PASSWORD" ssh -o StrictHostKeyChecking=no user@remotehost 'echo hello from remote'
+
+
+---
+
+🧾 可选变量命名建议
+
+原始密码变量	编码后变量
+
+SSH_PASS →	ENCODED_SSH_PASS
+DB_PASS →	ENCODED_DB_PASS
+
+
+
+---
+
+✅ 小结
+
+步骤	描述
+
+echo -n '密码' | base64	加密密码
+GitLab ➝ CI/CD ➝ Variables 中添加 ENCODED_PASSWORD	存储
+.gitlab-ci.yml 中用 base64 -d 解密	使用
+
+
+
+---
+
+需要我帮你生成一个用 base64 的远程空间检查模板也支持这个方式吗？可以自动解密 SSH_PASS 后传给 sshpass。
+
