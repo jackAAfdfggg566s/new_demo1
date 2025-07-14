@@ -1,0 +1,125 @@
+是的，你完全可以在 GitLab CI/CD 中使用 “下拉框”手动触发一个统一的 Job 名（比如 state），而 不在 UI 中暴露所有 5 个内部 job，这通常借助：
+
+一个手动触发的“入口 Job”
+
+再通过 needs、trigger、或脚本内部逻辑选择性调用其他 Job
+
+
+
+---
+
+✅ 示例目标
+
+你想要的效果是：
+
+> Pipeline 页面只显示一个手动 Job 叫 state，点击后可以执行后续多个 job（5 个之一或全部）。
+
+
+
+
+---
+
+✅ 方案一：一个 manual Job，调用后续 job
+
+stages:
+  - trigger
+  - run
+
+# 下拉框只看到这个
+state:
+  stage: trigger
+  script:
+    - echo "This is the trigger job"
+  when: manual
+  allow_failure: false
+
+# 后续 job，默认不跑，除非手动点击 state 后触发
+job1:
+  stage: run
+  script: echo "Running job1"
+  needs: [state]
+
+job2:
+  stage: run
+  script: echo "Running job2"
+  needs: [state]
+
+job3:
+  stage: run
+  script: echo "Running job3"
+  needs: [state]
+
+job4:
+  stage: run
+  script: echo "Running job4"
+  needs: [state]
+
+job5:
+  stage: run
+  script: echo "Running job5"
+  needs: [state]
+
+✅ 效果：
+
+Pipeline 页面只显示一个 manual Job 叫 state。
+
+点击后，才会依赖地触发后续 job1~job5。
+
+你也可以在 state 里面用变量或脚本，决定具体执行哪几个。
+
+
+
+---
+
+✅ 方案二：使用 rules: 控制显示和触发
+
+你可以用一个变量控制哪个 Job 启用，这样 UI 页面就只显示你要的那个 job。
+
+job1:
+  script: echo "Run job1"
+  rules:
+    - if: '$TARGET_JOB == "job1"'
+      when: manual
+
+job2:
+  script: echo "Run job2"
+  rules:
+    - if: '$TARGET_JOB == "job2"'
+      when: manual
+
+在 Pipeline run 时通过 变量选择（比如设置 TARGET_JOB=job1），只显示一个 job。
+
+但这个方法需要你点击“Run pipeline”时传变量，不是通过 UI 的“下拉按钮”。
+
+
+---
+
+✅ 方案三：使用 Child Pipeline（更高级）
+
+如果你想点击 state，然后由它触发另一个子 pipeline（包含 job1~job5），那可以：
+
+state:
+  stage: trigger
+  trigger:
+    include: child-jobs.yml
+  when: manual
+
+子 pipeline 里就放 job1~5，主界面看不到它们，只看到 state 入口。
+
+
+---
+
+🔚 总结推荐
+
+方案	优点	缺点	适合情况
+
+needs: + manual trigger	简单，UI 只显示一个按钮	后续 job全跑	job 固定
+rules: + 变量控制	控制显示 job 名	需要传变量	想动态选择 job
+trigger: 子 pipeline	主 pipeline 界面简洁	配置稍复杂	job 很多想隐藏
+
+
+
+---
+
+如你发一下 .gitlab-ci.yml 结构和这 5 个 job 的执行逻辑（是否需要选择性运行），我可以帮你写一份定制化的简洁配置。
+
