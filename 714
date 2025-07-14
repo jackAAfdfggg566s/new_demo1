@@ -1,0 +1,117 @@
+在 GitLab CI/CD 中，如果你有很多 手动触发（when: manual）的 pipeline 或 job，导致 Pipeline 列表变得很长、杂乱，可以用以下几种方法来整理和改善视图体验：
+
+
+---
+
+✅ 解决方案汇总
+
+1. 使用 workflow: rules 控制 pipeline 是否生成
+
+如果你根本不想让 pipeline 出现在列表中（除非某些条件满足），可以用 workflow: rules 控制 pipeline 是否被创建。
+
+示例：
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+      when: always
+    - when: never
+
+这样，只有通过 scheduler 定时触发才会生成 pipeline，其余情况不会出现在列表中。
+
+
+---
+
+2. 使用 rules: 控制单个 job 的可见性
+
+你可以为手动 job 加条件，只在特定情况下出现，例如特定分支：
+
+my_manual_job:
+  script: echo "Run this manually"
+  when: manual
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+这样，只有在 main 分支的 pipeline 页面才看到这个手动 job。
+
+
+---
+
+3. 将多个 manual job 合并为一个菜单式 job（trigger or needs:）
+
+可以创建一个“主 job”，然后内部触发其他 job，简化手动触发入口。
+
+示例：一个菜单式手动 job
+
+trigger_all:
+  stage: trigger
+  script: echo "Choose one to trigger manually"
+  when: manual
+  needs:
+    - job1
+    - job2
+
+
+---
+
+4. 使用多 pipeline 文件（include）+ 分组项目
+
+你可以将某些不常用的 job 放入另一个 .gitlab-ci-other.yml 文件中，只在特定场景用：
+
+include:
+  - local: '.gitlab-ci-other.yml'
+    rules:
+      - if: '$INCLUDE_EXTRA == "true"'
+
+然后通过设置 CI/CD 变量 INCLUDE_EXTRA=true 来触发加载。
+
+
+---
+
+5. 加注释或折叠名称统一管理
+
+如果你的手动 job 名称混乱，建议统一命名：
+
+manual:build:dev:
+  script: do dev build
+  when: manual
+
+manual:build:test:
+  script: do test build
+  when: manual
+
+或者将多个 job 放到同一个 stage，减少纵向空间。
+
+
+---
+
+6. 使用 Tags、Filters 管理 pipeline 显示
+
+在 GitLab 的 Pipeline 列表页，使用 搜索条件过滤，例如：
+
+
+ref:main source:push
+
+或者按作者、标签、状态进行筛选。
+
+
+---
+
+✅ 推荐组合方案
+
+对于“太多手动 job + pipeline 页面太长”的常见情况，最实用的组合是：
+
+workflow: rules 控制不必要的 pipeline 不生成。
+
+合并相似 job。
+
+给 job 加 rules: 限定只在必要分支显示。
+
+非核心 job 放入另一个 .gitlab-ci-*.yml 文件，按需加载。
+
+
+
+---
+
+如果你能提供一个 .gitlab-ci.yml 结构草图，我可以帮你具体优化。
+
