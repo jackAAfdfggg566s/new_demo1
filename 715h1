@@ -1,0 +1,113 @@
+非常棒的问题！
+
+你想的是：
+
+> ✅ 先写查询 Job（用户手动触发），然后它自动去运行依赖的 Job（获取 RDS endpoint）
+
+
+
+也就是说：你想让后面的 Job 手动触发，但依赖的 Job 自动执行。
+
+
+---
+
+🧠 默认行为说明（关键点）：
+
+GitLab 的 Job 执行顺序基于 stages 和依赖
+
+needs: 可以让一个 Job “需要”另一个 Job 的结果（比如 artifacts）
+
+但如果你只手动触发 后面的 Job，GitLab 会自动先跑被需要的 Job
+
+
+
+---
+
+✅ 结论：可以反过来！而且这是 GitLab 官方推荐做法之一
+
+你只需要把 查询 Job 标记为 when: manual，前面的 get-endpoint Job 会在你手动触发后被自动运行。
+
+
+---
+
+✅ 示例：查询 Job 是手动，前置自动执行
+
+stages:
+  - prepare
+  - query
+
+get-endpoint:
+  stage: prepare
+  image: amazon/aws-cli
+  script:
+    - reader_ep=$(aws rds describe-db-clusters \
+        --region ap-southeast-2 \
+        --query "DBClusters[?DBClusterIdentifier=='my-cluster'].ReaderEndpoint" \
+        --output text)
+    - echo "RDS_ENDPOINT=$reader_ep" >> env.txt
+  artifacts:
+    reports:
+      dotenv: env.txt
+
+query-db:
+  stage: query
+  image: postgres:15
+  script:
+    - echo "📥 使用 reader endpoint: $RDS_ENDPOINT"
+    - PGPASSWORD=$DB_PASS psql -h "$RDS_ENDPOINT" -U "$DB_USER" -d mydb -c "SELECT now();"
+  variables:
+    DB_USER: myuser
+    DB_PASS: mypass
+  needs: ["get-endpoint"]
+  when: manual
+
+
+---
+
+✅ 执行逻辑
+
+1. 你在 GitLab 手动点击 query-db Job（它是 manual）
+
+
+2. GitLab 发现 query-db 需要 get-endpoint 的输出
+
+
+3. GitLab 会先自动运行 get-endpoint
+
+
+4. 成功后，继续运行你点击的 query-db
+
+
+
+
+---
+
+✅ 测试建议：
+
+点“Run pipeline”后不要点“Play All”
+
+单独点击 query-db，观察是否自动先跑 get-endpoint
+
+
+
+---
+
+✅ Bonus：让 get-endpoint 隐藏/自动跑
+
+你可以让 get-endpoint 设置为 when: on_success（默认），或者用 rules: 隐藏它不被单独触发：
+
+rules:
+  - when: never
+
+
+---
+
+如你希望我生成一个完整 .gitlab-ci.yml 示例支持：
+
+自动获取 reader endpoint
+
+手动触发 SQL 查询
+
+
+我可以按你场景定制生成。是否需要？
+
