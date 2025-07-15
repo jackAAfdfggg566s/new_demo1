@@ -1,0 +1,79 @@
+要通过 AWS CLI 获取 RDS 只读实例（reader instance）的 endpoint，取决于你是：
+
+使用了 Amazon Aurora（即 Aurora Cluster）：它有 writer endpoint 和 reader endpoint
+
+还是单个 RDS 实例组成的只读副本（Read Replica）
+
+
+
+---
+
+✅ 情况一：Aurora 集群（推荐方式）
+
+Aurora 有专门的 reader endpoint，可以直接这样查：
+
+aws rds describe-db-clusters \
+  --query 'DBClusters[?DBClusterIdentifier==`<your-cluster-name>`].ReaderEndpoint' \
+  --output text
+
+例如：
+
+aws rds describe-db-clusters \
+  --query 'DBClusters[?DBClusterIdentifier==`mydb-cluster`].ReaderEndpoint' \
+  --output text
+
+> 🔁 ReaderEndpoint 是负载均衡的 read-only 入口。
+
+
+
+
+---
+
+✅ 情况二：普通 RDS 实例 + Read Replica
+
+你可以列出所有实例，并过滤出 Read Replica 类型的：
+
+aws rds describe-db-instances \
+  --query 'DBInstances[?ReadReplicaSourceDBInstanceIdentifier!=null].[DBInstanceIdentifier,Endpoint.Address]' \
+  --output table
+
+或获取某个实例的 endpoint：
+
+aws rds describe-db-instances \
+  --db-instance-identifier my-replica-instance-id \
+  --query 'DBInstances[0].Endpoint.Address' \
+  --output text
+
+
+---
+
+🔍 如何判断是 Aurora 还是普通 RDS？
+
+用这个命令查某个实例：
+
+aws rds describe-db-instances --db-instance-identifier your-instance-id \
+  --query 'DBInstances[0].Engine' --output text
+
+如果返回的是：
+
+aurora-mysql 或 aurora-postgresql → 就是 Aurora（用 describe-db-clusters）
+
+其他（如 mysql、postgres、oracle） → 普通 RDS（用 describe-db-instances）
+
+
+
+---
+
+🧪 快速脚本：获取 Aurora reader endpoint
+
+CLUSTER_NAME=mydb-cluster
+READER_EP=$(aws rds describe-db-clusters \
+  --query "DBClusters[?DBClusterIdentifier=='$CLUSTER_NAME'].ReaderEndpoint" \
+  --output text)
+echo "Aurora Reader Endpoint: $READER_EP"
+
+
+---
+
+如果你贴出你有的实例 ID 或架构（是 Aurora 还是普通 RDS + replica），我可以帮你写具体命令。是否要？
+
