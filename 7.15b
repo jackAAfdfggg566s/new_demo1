@@ -1,0 +1,78 @@
+很好！你这是针对 Amazon Aurora 集群中的实例，通过判断：
+
+"IsClusterWriter": false
+
+来获取 reader（非 writer）实例的 endpoint，这种方式适用于 Aurora。
+
+
+---
+
+✅ 场景说明（Aurora 专用）
+
+Aurora 集群中可以有多个实例：
+
+IsClusterWriter: true → 是主实例（Writer）
+
+IsClusterWriter: false → 是只读副本（Reader）
+
+
+你可以通过 describe-db-instances 来筛选出 reader 实例。
+
+
+---
+
+✅ 获取所有 Aurora reader 实例的 identifier 和 endpoint
+
+aws rds describe-db-instances \
+  --query "DBInstances[?IsClusterWriter==\`false\`].[DBInstanceIdentifier,Endpoint.Address]" \
+  --output table
+
+输出示例：
+
+----------------------------------------------
+|       DescribeDbInstances                  |
++-----------------------+--------------------+
+|  aurora-reader-1      | aurora-r1.xxxxxx.rds.amazonaws.com |
+|  aurora-reader-2      | aurora-r2.xxxxxx.rds.amazonaws.com |
++-----------------------+--------------------+
+
+
+---
+
+✅ 如果你只想获取某个 Cluster 的 reader 实例
+
+加上 DBClusterIdentifier 过滤，例如：
+
+aws rds describe-db-instances \
+  --query "DBInstances[?DBClusterIdentifier=='my-aurora-cluster' && IsClusterWriter==\`false\`].[DBInstanceIdentifier,Endpoint.Address]" \
+  --output text
+
+
+---
+
+✅ 获取第一个 Aurora reader 的 endpoint（适合脚本）
+
+aws rds describe-db-instances \
+  --query "DBInstances[?IsClusterWriter==\`false\`].[Endpoint.Address]" \
+  --output text | head -n1
+
+
+---
+
+✅ 脚本封装版本
+
+CLUSTER_NAME="my-aurora-cluster"
+
+readers=$(aws rds describe-db-instances \
+  --query "DBInstances[?DBClusterIdentifier=='$CLUSTER_NAME' && IsClusterWriter==\`false\`].[DBInstanceIdentifier,Endpoint.Address]" \
+  --output text)
+
+echo "$readers" | while read id ep; do
+  echo "Reader: $id  Endpoint: $ep"
+done
+
+
+---
+
+如果你想要获取所有的 Aurora 集群名，然后逐个找 reader 也可以，我也可以帮你写那个循环。是否继续？
+
