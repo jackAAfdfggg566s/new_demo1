@@ -1,0 +1,124 @@
+很好，这类场景在 GitLab CI 中非常常见：你希望在 同一个 Job 中使用两个不同工具的环境，比如：
+
+> 用 AWS CLI 获取 RDS Reader Endpoint（需要 awscli 镜像）
+
+然后用 psql/mysql 等客户端连接数据库查询（需要数据库客户端镜像）
+
+
+
+
+
+---
+
+✅ 方法一：使用 [services + image] 或 多阶段 Job
+
+如果你这两个工具不能都装进一个镜像里，就用 两阶段 Job 或 合并工具的自定义镜像。下面是详细方案。
+
+
+---
+
+✅ 方案 1：单 Job，组合工具（推荐）
+
+👉 方法 A：用 docker-in-docker 或组合安装工具
+
+基础镜像：amazon/aws-cli
+
+你在这个基础镜像中手动安装 psql（或 mysql 等客户端），即可完成两步操作。
+
+get-and-query:
+  image: amazon/aws-cli
+  stage: query
+  script:
+    - apk add --no-cache postgresql  # 或 mysql-client
+    - echo "🔍 获取 reader endpoint"
+    - reader_ep=$(aws rds describe-db-clusters \
+        --region ap-southeast-2 \
+        --query "DBClusters[?DBClusterIdentifier=='my-cluster'].ReaderEndpoint" \
+        --output text)
+    - echo "✅ endpoint: $reader_ep"
+
+    - echo "📥 执行 SQL 查询"
+    - PGPASSWORD=$DB_PASS psql -h "$reader_ep" -U "$DB_USER" -d mydb -c "SELECT now();"
+  variables:
+    AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+    DB_USER: myuser
+    DB_PASS: mypass
+
+> ✅ apk add postgresql 适用于 Alpine 系镜像（aws-cli 是 Alpine 版）
+
+
+
+
+---
+
+✅ 方案 2：分两个 Job，跨 Job 传值
+
+你也可以拆成两个 Job，用 artifacts 或 dotenv 文件传递 Endpoint。
+
+第一步：Job1 获取 endpoint，存入文件
+
+get-endpoint:
+  image: amazon/aws-cli
+  stage: prepare
+  script:
+    - reader_ep=$(aws rds describe-db-clusters \
+        --region ap-southeast-2 \
+        --query "DBClusters[?DBClusterIdentifier=='my-cluster'].ReaderEndpoint" \
+        --output text)
+    - echo "RDS_ENDPOINT=$reader_ep" >> env.txt
+  artifacts:
+    reports:
+      dotenv: env.txt
+
+第二步：Job2 自动加载 RDS_ENDPOINT 环境变量
+
+query-db:
+  image: postgres:15  # 或 mysql 镜像
+  stage: query
+  script:
+    - echo "📥 使用 endpoint: $RDS_ENDPOINT"
+    - PGPASSWORD=$DB_PASS psql -h "$RDS_ENDPOINT" -U "$DB_USER" -d mydb -c "SELECT now();"
+  variables:
+    DB_USER: myuser
+    DB_PASS: mypass
+  needs: ["get-endpoint"]
+
+> ✅ GitLab 会自动把 env.txt 中的变量注入下一 Job 的环境中。
+
+
+
+
+---
+
+✅ 方案 3（高级）：自定义镜像（Dockerfile）打包所有工具
+
+FROM amazon/aws-cli:2.15.0
+RUN apk add --no-cache postgresql
+
+推送到 GitLab 容器注册表，用作你 pipeline 的 image。
+
+
+---
+
+✅ 推荐总结
+
+方式	特点	推荐场景
+
+方案 1：单 Job 安装工具	简单直接	适用于 AWS CLI + psql
+方案 2：多 Job + artifacts	清晰解耦	两阶段操作、不同镜像
+方案 3：自定义镜像	依赖稳定、启动快	固定工具组合使用频繁
+
+
+
+---
+
+我可以帮你：
+
+构建一份完整的 .gitlab-ci.yml
+
+或打包你需要的镜像
+
+
+你用的是 psql 还是 mysql？要不要我帮你直接生成一份模板？
+
