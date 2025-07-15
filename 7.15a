@@ -1,0 +1,66 @@
+明白了，你的需求是：
+
+> 先查出所有 reader（只读副本）实例的 identifier，再查出它们对应的 endpoint 地址。
+
+
+
+适用于 非 Aurora（普通 RDS + Read Replica）场景。
+
+
+---
+
+✅ 一条命令搞定：列出所有只读副本及其 endpoint
+
+aws rds describe-db-instances \
+  --query 'DBInstances[?ReadReplicaSourceDBInstanceIdentifier!=null].[DBInstanceIdentifier,Endpoint.Address]' \
+  --output table
+
+输出示例：
+
+-------------------------------
+|  DescribeDbInstances       |
++-----------------+----------+
+|  mydb-read-1    | mydb-read-1.abc.rds.amazonaws.com |
+|  mydb-read-2    | mydb-read-2.def.rds.amazonaws.com |
++-----------------+----------+
+
+
+---
+
+✅ 如果你要脚本变量形式：
+
+aws rds describe-db-instances \
+  --query 'DBInstances[?ReadReplicaSourceDBInstanceIdentifier!=null].[DBInstanceIdentifier,Endpoint.Address]' \
+  --output text
+
+输出类似：
+
+mydb-read-1  mydb-read-1.abc.rds.amazonaws.com
+mydb-read-2  mydb-read-2.def.rds.amazonaws.com
+
+你可以循环处理：
+
+read_replicas=$(aws rds describe-db-instances \
+  --query 'DBInstances[?ReadReplicaSourceDBInstanceIdentifier!=null].[DBInstanceIdentifier,Endpoint.Address]' \
+  --output text)
+
+echo "$read_replicas" | while read identifier endpoint; do
+  echo "Replica: $identifier, Endpoint: $endpoint"
+done
+
+
+---
+
+🔍 如果你只想取其中一个，例如第一个 reader 的 endpoint：
+
+aws rds describe-db-instances \
+  --query 'DBInstances[?ReadReplicaSourceDBInstanceIdentifier!=null].[Endpoint.Address]' \
+  --output text | head -n1
+
+
+---
+
+如果你有更多需求，比如过滤某个主实例的副本，或只要某个 region，我也可以加上。
+
+要不要我帮你写个带 grep 或 jq 的复杂过滤？
+
