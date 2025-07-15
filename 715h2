@@ -1,0 +1,109 @@
+明白了！你现在的结构是：
+
+> 一个大 stage: query，里面有多个 query-xxx jobs，每个都想使用前一个 get-endpoint job 得到的 RDS_ENDPOINT。
+
+
+
+你担心的是：
+每个 query-xxx 都写 needs: ["get-endpoint"]，是否麻烦？是否会报错？怎么保证都能拿到那个 endpoint？
+
+
+---
+
+✅ 答案：完全可以这么做！
+
+每一个需要用到 RDS_ENDPOINT 的 job 都应该写：
+
+needs: ["get-endpoint"]
+
+这样 GitLab 才会：
+
+自动运行 get-endpoint（如果还没运行）
+
+自动下载它生成的 env.txt
+
+自动把 RDS_ENDPOINT 注入成环境变量
+
+
+
+---
+
+✅ 正确结构（多个查询 job 共用同一个获取 endpoint 的 job）
+
+stages:
+  - prepare
+  - query
+
+get-endpoint:
+  stage: prepare
+  image: amazon/aws-cli
+  script:
+    - reader_ep=$(aws rds describe-db-clusters \
+        --region ap-southeast-2 \
+        --query "DBClusters[?DBClusterIdentifier=='my-cluster'].ReaderEndpoint" \
+        --output text)
+    - echo "RDS_ENDPOINT=$reader_ep" > env.txt
+  artifacts:
+    reports:
+      dotenv: env.txt
+
+query-a:
+  stage: query
+  image: postgres:15
+  script:
+    - echo "Running Query A on $RDS_ENDPOINT"
+    - PGPASSWORD=$DB_PASS psql -h "$RDS_ENDPOINT" -U "$DB_USER" -d mydb -c "SELECT 1;"
+  needs: ["get-endpoint"]
+  when: manual
+
+query-b:
+  stage: query
+  image: postgres:15
+  script:
+    - echo "Running Query B on $RDS_ENDPOINT"
+    - PGPASSWORD=$DB_PASS psql -h "$RDS_ENDPOINT" -U "$DB_USER" -d mydb -c "SELECT 2;"
+  needs: ["get-endpoint"]
+  when: manual
+
+
+---
+
+✅ 效果说明
+
+你点击 query-a 或 query-b 任意一个
+
+GitLab 会自动先跑 get-endpoint
+
+然后把 RDS_ENDPOINT 注入后续 job 的环境中
+
+你可以多个 query job 共用一个 endpoint 获取 job，非常高效
+
+
+
+---
+
+✅ 扩展写法：多个查询 job 自动触发 + 统一控制
+
+你也可以用 rules: 控制谁能跑，或者把多个查询 job 放进 parallel: 并发执行。
+
+
+---
+
+✅ 总结建议：
+
+情况	做法
+
+多个 Job 用同一个变量	都 needs: ["get-endpoint"]
+Job 是 manual	when: manual，仍然支持 needs 自动触发
+避免重复执行 get	get-endpoint 跑一次就缓存 artifacts 给所有 needs
+
+
+
+---
+
+想要简化写法？
+
+如果你有几十个查询 job，我可以帮你用 YAML anchor 或模板 job 写法自动展开，或者用 matrix:（动态生成 job 名）自动生成。
+
+是否要我给出那种简洁结构？
+
