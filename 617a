@@ -1,0 +1,71 @@
+你可以通过 GitLab CI/CD 使用 sshpass 或 ssh 远程登录目标机器，然后 tail -F 或 tail -n 0 -F 某个日志文件，实时监控是否出现某个关键字，如果出现就退出并返回成功（exit 0）。以下是一个完整示例：
+
+
+---
+
+✅ 假设目标：
+
+远程主机：your.remote.host
+
+用户名：youruser
+
+日志文件：/path/to/your.log
+
+关键字："Finished successfully"
+
+
+
+---
+
+✅ GitLab .gitlab-ci.yml 示例 Job：
+
+tail-log-check:
+  script:
+    - |
+      sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$SSH_HOST << 'EOF'
+        timeout 300 bash -c '
+          tail -F /path/to/your.log | while read line; do
+            echo "$line" | grep "Finished successfully" && exit 0
+          done
+        '
+        RET=\$?
+        if [ \$RET -eq 0 ]; then
+          echo "Log matched. Success."
+          exit 0
+        else
+          echo "Timeout or no match."
+          exit 1
+        fi
+EOF
+
+
+---
+
+✅ 说明：
+
+tail -F: 实时监听日志追加内容；
+
+grep: 匹配目标字符串；
+
+一旦匹配成功，exit 0；
+
+timeout 300：最多等待 5 分钟，避免无止境 tail；
+
+$SSH_PASSWORD, $SSH_USER, $SSH_HOST 建议使用 GitLab CI 的 Secret 变量配置。
+
+
+
+---
+
+✅ 可选增强：
+
+如果日志文件是新生成的，可以先用 tail -n 0 -F，从空开始监听。
+
+如果需要查多个关键字，可以用 grep -E 'xxx|yyy'。
+
+
+
+---
+
+你如果还需要同时监听 Java 是否结束，也可以一起加上 Java 的 PID 检查逻辑。需要我加上这一部分吗？
+
