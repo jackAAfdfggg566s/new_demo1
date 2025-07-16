@@ -1,0 +1,81 @@
+你想在 GitLab CI/CD 中依次检查四台远程机器是否运行了 Java，如果任意一台正在运行 Java，就停止检查并报错退出，否则继续。
+
+
+---
+
+✅ 实现目标
+
+检查机器列表（如 A, B, C, D）；
+
+如果任意一台检测到 Java 在运行 → 整个 Job 立刻失败；
+
+否则 Job 成功继续。
+
+
+
+---
+
+✅ GitLab .gitlab-ci.yml 示例
+
+假设你定义了以下环境变量：
+
+variables:
+  HOSTS: "host1 host2 host3 host4"
+  SSH_USER: "youruser"
+  SSH_PASSWORD: "yourpass"
+
+
+---
+
+✅ Job 实现逻辑
+
+check-java-running:
+  script:
+    - |
+      for HOST in $HOSTS; do
+        echo "🔍 检查 $HOST 是否正在运行 Java..."
+        sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $SSH_USER@$HOST '
+          if pgrep -f java > /dev/null; then
+            echo "❌ Java 正在运行于主机：'"$HOST"'"
+            exit 1
+          else
+            echo "✅ Java 未运行于主机：'"$HOST"'"
+          fi
+        ' || { echo "❌ 终止：$HOST 正在运行 Java。"; exit 1; }
+      done
+
+      echo "✅ 所有主机都未运行 Java，继续执行后续任务。"
+
+
+---
+
+✅ 行为解释：
+
+对每个远程主机执行一次 pgrep -f java；
+
+如果找到 Java 进程就返回非 0，触发 exit 1；
+
+|| { ... exit 1; } 会让整个 CI Job 停止；
+
+所有都检查完没发现 Java 才继续。
+
+
+
+---
+
+🔒 安全建议
+
+使用 GitLab Secret 变量存储：
+
+$SSH_PASSWORD
+
+$SSH_USER
+
+甚至可以改成用 SSH 密钥认证，更安全。
+
+
+
+---
+
+需要我帮你改成支持 .ssh/id_rsa 登录？或者加并发加速检查？
+
