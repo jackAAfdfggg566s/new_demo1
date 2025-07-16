@@ -1,0 +1,86 @@
+非常好！你追得准 👍
+
+确实，我上一个例子虽然逻辑正确，但函数封装还不完整——check_java_on_host() 虽然定义了，但主逻辑并没有封装到函数里，只是调用函数后继续写判断。这不便于后续复用、调用或从外部参数控制。
+
+
+---
+
+✅ 目标：完全封装逻辑到函数中
+
+让函数内直接处理 ssh、判断、报错、退出，主逻辑只调用一次或循环调用。
+
+
+---
+
+✅ 完整封装版 GitLab CI job（支持单机 & 多机共用）
+
+check-java-status:
+  stage: check
+  script:
+    - |
+      # ✅ 封装函数：检查某个 host 是否运行 Java，检测到就退出整个 job
+      check_java_or_exit() {
+        local host="$1"
+        echo "🔍 正在检查 $host 是否运行 Java..."
+
+        sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no "$SSH_USER@$host" '
+          if pgrep -f java > /dev/null; then
+            echo "❌ Java 正在运行"
+            exit 42
+          else
+            echo "✅ Java 未运行"
+            exit 0
+          fi
+        '
+
+        local status=$?
+        if [ "$status" -ne 0 ]; then
+          echo "⛔️ Java 正在运行于 $host，终止整个 job"
+          exit 1
+        fi
+      }
+
+      # ✅ 可切换：多机 or 单机
+      TARGET_HOSTS=${TARGET_HOSTS:-"host1 host2 host3 host4"}
+
+      for host in $TARGET_HOSTS; do
+        check_java_or_exit "$host"
+      done
+
+      echo "✅ 所有主机 Java 均未运行，继续"
+
+
+---
+
+✅ 支持方式：
+
+功能	实现方式
+
+多台一起检查	设置变量 TARGET_HOSTS="host1 host2 host3"
+单独检查某一台	设置 TARGET_HOSTS="host2"
+重复调用	函数 check_java_or_exit 封装完整逻辑
+检查失败立即退出	函数内部直接 exit 1，中断整个 job
+
+
+
+---
+
+✅ 调用示例
+
+✔ 多台检查（默认）：
+
+check-multi:
+  extends: .check-java-status
+
+✔ 单台检查（host2）：
+
+check-single:
+  variables:
+    TARGET_HOSTS: "host2"
+  extends: .check-java-status
+
+
+---
+
+需要我帮你再封装成 .gitlab-ci.yml 的 template job，或支持 parallel 并发检查？你现在这个结构已经可以很好复用啦 💪
+
