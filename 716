@@ -1,0 +1,146 @@
+好的，你遇到的 GitLab 报错：
+
+> ❌ configuration is invalid
+
+
+
+说明你的 .gitlab-ci.yml 或 cycle.yaml 文件在结构上 不是合法的 GitLab CI 配置，而不仅仅是路径或变量问题。我们来一步步排查并解决。
+
+
+---
+
+✅ 最可能原因汇总（依次检查）
+
+
+---
+
+✅ 1. include: 用法不对（语法错误）
+
+✅ 正确写法 1（本地 include）：
+
+# .gitlab-ci.yml
+include:
+  - local: 'cycle.yaml'
+
+> ⛔ 错误写法（缩进或字段名错）：
+
+
+
+include:
+    local: 'cycle.yaml'  # ❌ 错，缺少 "-"，GitLab 期望列表
+
+
+---
+
+✅ 2. cycle.yaml 文件不是合法的 GitLab CI 配置（比如缺少 job 定义）
+
+GitLab 要求 .gitlab-ci.yml 和任何 include 文件必须是 完整的 GitLab CI 结构（job 名 + 配置）。
+
+⛔ 错误例子（只有 script，没有 job 名）：
+
+# cycle.yaml ❌ 错误
+script:
+  - echo "hello"
+
+✅ 正确例子（必须有 job 名）：
+
+# cycle.yaml ✅ 正确
+deploy_cycle:
+  stage: deploy
+  image: amazon/aws-cli
+  before_script:
+    - aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+  script:
+    - kubectl get pods
+
+
+---
+
+✅ 3. 缺少 stages:，导致 stage 不存在
+
+GitLab 要求所有 job 的 stage: 出现在 stages: 列表中。
+
+✅ 正确写法：
+
+# .gitlab-ci.yml
+stages:
+  - deploy
+
+include:
+  - local: 'cycle.yaml'
+
+⛔ 错误例子（没定义 stage）：
+
+# .gitlab-ci.yml
+include:
+  - local: 'cycle.yaml'
+# 没有 stages，cycle.yaml 中 job 的 stage 找不到
+
+
+---
+
+✅ 4. cycle.yaml 有 YAML 语法错误
+
+比如错用冒号、缩进错、用了 tab 等。
+
+✅ 检查方式：
+
+你可以本地运行：
+
+gitlab-ci-lint < .gitlab-ci.yml
+
+或者在 GitLab Web 界面打开项目：
+
+进入 CI/CD > Editor
+
+点击右上角 Validate 按钮，会指出哪一行语法错
+
+
+
+---
+
+✅ 最小可运行结构示例（你可以对照调试）
+
+主 .gitlab-ci.yml：
+
+include:
+  - local: 'cycle.yaml'
+
+stages:
+  - deploy
+
+variables:
+  AWS_REGION: ap-southeast-2
+  EKS_CLUSTER_NAME: my-cluster
+
+被引入的 cycle.yaml：
+
+deploy_cycle:
+  stage: deploy
+  image: amazon/aws-cli
+  before_script:
+    - aws eks update-kubeconfig --region $AWS_REGION --name $EKS_CLUSTER_NAME
+  script:
+    - echo "Deploying to EKS $EKS_CLUSTER_NAME"
+    - kubectl get pods
+
+
+---
+
+🧩 如果你贴出这几部分，我可以立即帮你修复：
+
+1. .gitlab-ci.yml 的前 15 行
+
+
+2. cycle.yaml 的全部内容（或出错 job 部分）
+
+
+3. 报错截图或文字（最好是 GitLab 校验器报出来哪行）
+
+
+
+
+---
+
+准备好我帮你逐行检查，只需要你贴一下 YAML 文件。或者，我可以给你一个干净可运行的模板，直接复制调试。你希望哪种？
+
