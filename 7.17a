@@ -1,0 +1,113 @@
+在 GitLab CI/CD 中，没有直接像编程语言那样定义“函数”，但你可以通过以下几种方式实现“公共函数”的效果，实现传入 IP 返回名称的功能：
+
+
+---
+
+✅ 方法 1：使用 script + source + 共享脚本文件
+
+假设你有一个公共 Shell 函数文件 functions.sh，内容如下：
+
+# functions.sh
+get_name_by_ip() {
+  local ip="$1"
+  case "$ip" in
+    192.168.1.1) echo "host-a" ;;
+    192.168.1.2) echo "host-b" ;;
+    192.168.1.3) echo "host-c" ;;
+    *) echo "unknown" ;;
+  esac
+}
+
+然后在 .gitlab-ci.yml 中调用这个函数：
+
+stages:
+  - test
+
+job1:
+  stage: test
+  script:
+    - source ./functions.sh
+    - name=$(get_name_by_ip 192.168.1.2)
+    - echo "名称是: $name"
+
+> ✅ functions.sh 可以放在项目根目录或某个子目录中，确保 .gitlab-ci.yml 能访问到它。
+
+
+
+
+---
+
+✅ 方法 2：使用 CI/CD include 引入共享 YML 模板（不适合复杂逻辑）
+
+如果你想把逻辑放在 YML 文件中（而不是 shell），可以使用 include 引用：
+
+例如创建一个 .gitlab/ip_to_name.yml：
+
+.get_name_template:
+  script:
+    - |
+      case "$IP" in
+        192.168.1.1) echo "host-a" ;;
+        192.168.1.2) echo "host-b" ;;
+        *) echo "unknown" ;;
+      esac
+
+然后在主 .gitlab-ci.yml 中使用：
+
+include:
+  - local: '.gitlab/ip_to_name.yml'
+
+job1:
+  variables:
+    IP: "192.168.1.2"
+  script:
+    - echo "IP: $IP"
+    - |
+      name=$(case "$IP" in
+        192.168.1.1) echo "host-a" ;;
+        192.168.1.2) echo "host-b" ;;
+        *) echo "unknown" ;;
+      esac)
+    - echo "名称是: $name"
+
+这种方式更适合结构化配置，不太适合复杂逻辑。
+
+
+---
+
+✅ 方法 3：直接在 YML 中用函数 + case
+
+如果不想外部引用，也可以直接写函数：
+
+job:
+  script:
+    - |
+      get_name_by_ip() {
+        case "$1" in
+          10.0.0.1) echo "server-a" ;;
+          10.0.0.2) echo "server-b" ;;
+          *) echo "unknown" ;;
+        esac
+      }
+
+      ip="10.0.0.2"
+      name=$(get_name_by_ip "$ip")
+      echo "对应名称是: $name"
+
+
+---
+
+小结
+
+方法	特点	适合场景
+
+source functions.sh	灵活，支持复杂逻辑	多个 Job 公用 Shell 函数
+include YML	更结构化	多项目复用简单逻辑
+直接写函数	快速原地实现	简单逻辑，仅一两个 Job 使用
+
+
+
+---
+
+你希望这个函数在哪些 job 或 pipeline 里复用？我可以帮你整理一个最合适的结构。
+
