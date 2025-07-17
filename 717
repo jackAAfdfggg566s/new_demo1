@@ -1,0 +1,72 @@
+你有四个 IP 和对应的文件名，现在想在 for 循环中，把 IP 和对应文件名一起传入一个函数，这个可以用 数组并行处理 来实现，以下是两种写法：
+
+
+---
+
+✅ 方法一：两个数组，按索引一一对应
+
+#!/bin/bash
+
+ips=("192.168.0.1" "192.168.0.2" "192.168.0.3" "192.168.0.4")
+files=("file1.log" "file2.log" "file3.log" "file4.log")
+
+check_host() {
+  local ip="$1"
+  local file="$2"
+  echo "Checking $ip with file $file"
+  # 你的逻辑，如：
+  # ssh $ip "some_command $file"
+}
+
+for i in "${!ips[@]}"; do
+  check_host "${ips[$i]}" "${files[$i]}"
+done
+
+
+---
+
+✅ 方法二：数组里是“ip|filename”组合，分割解析
+
+#!/bin/bash
+
+hosts=("192.168.0.1|file1.log" "192.168.0.2|file2.log" "192.168.0.3|file3.log" "192.168.0.4|file4.log")
+
+check_host() {
+  local ip="$1"
+  local file="$2"
+  echo "Checking $ip with file $file"
+}
+
+for item in "${hosts[@]}"; do
+  ip="${item%%|*}"
+  file="${item##*|}"
+  check_host "$ip" "$file"
+done
+
+
+---
+
+⛳ 你调用函数的方式可以是：
+
+check_host "$ip" "$file"
+
+也可以写成启动远程命令：
+
+sshpass -p "$PASS" ssh "$USER@$ip" "cat /path/to/$file"
+
+
+---
+
+✅ 适用场景说明
+
+方法	优点	使用建议
+
+方法一	易读、清晰，适合数据量小	推荐用于 CI 脚本、数组不太大时
+方法二	更灵活，数组更容易维护	当你配置数据来自 config 或外部文件
+
+
+
+---
+
+需要我帮你把这个整合进 GitLab CI/CD YAML 或你已有脚本里吗？只要贴出原始结构即可。
+
