@@ -1,0 +1,52 @@
+你可以使用 Python 的 .rfind() 方法，在 FIX 协议字符串中查找最后一个 "10=" 的位置（这是 Checksum 字段的标志），常用于定位 FIX 消息结尾。
+
+
+---
+
+✅ 示例代码：
+
+fix_message = "8=FIX.4.2|9=112|35=A|49=SENDER|56=TARGET|34=1|52=20250722-01:00:00.000|98=0|108=30|10=072|"
+
+# 替换分隔符，如果是 \x01，请用实际分隔符
+fix_message = fix_message.replace("|", "\x01")
+
+# 找最后一个10=
+pos = fix_message.rfind("10=")
+print("10= 的位置是：", pos)
+
+# 如果你想截取10=之后的内容
+if pos != -1:
+    checksum_field = fix_message[pos:]
+    print("Checksum 字段是：", checksum_field)
+
+
+---
+
+📝 补充说明：
+
+.rfind("10=") 会返回最后一个 "10=" 的起始位置，如果没找到返回 -1
+
+如果是多个 FIX 消息组成的大字符串，也可以用它来判断每条消息的结尾
+
+FIX 协议的字段通常用 ASCII SOH (\x01) 分隔，实际文件里可能看不到，记得替换好
+
+
+
+---
+
+🚨 注意：
+
+如果你是在处理文件：
+
+with open("fix_msg.txt", "r", encoding="utf-8") as f:
+    content = f.read()
+    # 如果是二进制形式或SOH是特殊字符，考虑用 "rb" 模式
+    content = content.replace("|", "\x01")  # 或用实际的分隔符
+    pos = content.rfind("10=")
+    print("10= 的位置是：", pos)
+
+
+---
+
+需要我帮你把完整的 FIX 字符串提取某字段，或者校验 checksum 吗？
+
