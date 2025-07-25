@@ -1,0 +1,65 @@
+明白了！你是想在所有 job 前面都先判断 rds_reader.txt 文件是否存在：
+
+✅ 存在 → 正常读取。
+
+❌ 不存在 → 给默认值，比如 "default-reader-endpoint"，然后继续跑脚本。
+
+
+
+---
+
+✅ 推荐做法（通用模板可复用）
+
+可以把这段判断封装成 GitLab CI 通用块，所有 job 共用。
+
+
+---
+
+✅ 示例 .gitlab-ci.yml 写法：
+
+.rds_file_check: &rds_check
+  before_script:
+    - |
+      if [ -f rds_reader.txt ]; then
+        RDS=$(cat rds_reader.txt)
+        echo "✅ 使用已有 rds_reader.txt: $RDS"
+      else
+        echo "⚠️ rds_reader.txt 不存在，使用默认值"
+        RDS="default-reader-endpoint"
+        echo "$RDS" > rds_reader.txt
+      fi
+
+job_using_rds:
+  stage: test
+  <<: *rds_check
+  script:
+    - echo "准备连接 RDS: $RDS"
+    - # 示例连接数据库操作
+    - psql -h "$RDS" -U user -d db -c "SELECT 1"
+
+
+---
+
+✅ 效果：
+
+✅ 如果 rds_reader.txt 文件存在：使用里面的 endpoint。
+
+❌ 如果文件不存在：写入默认 endpoint 到 rds_reader.txt，继续使用它。
+
+
+
+---
+
+🧠 可选优化：
+
+如果你希望只设置默认值但 不写入文件，只要去掉这一行：
+
+echo "$RDS" > rds_reader.txt
+
+改成只用变量传递。
+
+
+---
+
+需要我根据你当前实际的 job 帮你改写一段完整的吗？你可以发一下你的原始 job 结构。
+
