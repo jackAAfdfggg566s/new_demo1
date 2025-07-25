@@ -1,0 +1,99 @@
+你说得对：
+如果你用 <<EOF 方式分行写远程命令，GitLab CI 的变量（如 $FILE_NAME）默认在 GitLab Runner 本地展开，但如果没处理好，有时会传不进去或变成空。
+
+
+---
+
+✅ 问题本质：变量在哪“展开”？
+
+有两种情况：
+
+1. ✅ 变量在本地展开（正确方式）
+
+如果你像这样写：
+
+script:
+  - |
+    sshpass -p "$REMOTE_PASS" ssh $REMOTE_USER@$REMOTE_HOST <<EOF
+      cd /some/path
+      grep "ERROR" "$FILE_NAME"
+    EOF
+
+> $FILE_NAME 会在本地 GitLab Runner 被展开，只要你变量定义了，它就会展开成 some.log，然后作为字面值传给远程机器。✅ 这是你想要的。
+
+
+
+
+---
+
+2. ❌ 变量没展开、被当作字串传过去
+
+如果你误用了 单引号包围 heredoc 标记，比如这样：
+
+ssh <<'EOF'
+  echo $FILE_NAME
+EOF
+
+那么 $FILE_NAME 就不会被展开，它会原样传过去，远程看到的是 $FILE_NAME 字符串，而不是实际值。
+
+
+---
+
+✅ 正确示范：在 GitLab CI 中使用变量 + 多行命令
+
+variables:
+  FILE_NAME: "my.log"
+  REMOTE_USER: "ec2-user"
+  REMOTE_HOST: "192.168.1.100"
+  REMOTE_PASS: "123456"
+
+check_log:
+  script:
+    - |
+      echo "将要检查日志文件: $FILE_NAME"
+      sshpass -p "$REMOTE_PASS" ssh $REMOTE_USER@$REMOTE_HOST <<EOF
+        cd /var/log/myapp
+        echo "当前目录: \$(pwd)"
+        echo "文件名为: $FILE_NAME"
+        grep "ERROR" "$FILE_NAME"
+      EOF
+
+> ✅ 注意：没有用 'EOF'，变量就能正确在本地展开。
+
+
+
+
+---
+
+✅ 调试建议
+
+可以先 echo 你要执行的 ssh 命令：
+
+script:
+  - echo "将要执行的 SSH 命令如下："
+  - |
+    echo "ssh ... <<EOF"
+    echo "cd /path"
+    echo "grep \"ERROR\" $FILE_NAME"
+    echo "EOF"
+
+如果你看到 $FILE_NAME 是空，那就说明变量没有定义好，或是在执行前没有传入。
+
+
+---
+
+❗总结关键点
+
+问题	解决方式
+
+多行命令变量变空	不要用 'EOF'，用 EOF 让变量在本地展开
+想变量在远程展开	用 export FILE_NAME=xxx 传进去，或 ENV=val ssh ...
+拆分命令逻辑	完全支持：用 cd、grep、echo 分行写
+没看到变量值	在本地 echo $FILE_NAME 检查是否为空
+
+
+
+---
+
+如果你想贴出你当前 .gitlab-ci.yml 的写法，我可以帮你检查哪里变量丢失了。是否要我帮你重写你的一段实际代码？
+
