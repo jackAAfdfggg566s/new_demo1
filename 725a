@@ -1,0 +1,118 @@
+明白了，你的目标是：
+
+> 不要每次都获取 RDS reader 地址，只在需要时（比如手动或定时触发）才更新一次，否则大多数情况直接用之前保存好的值。
+
+
+
+
+---
+
+✅ 目标拆解：
+
+你需要实现两个 job：
+
+1. update_reader：偶尔运行，获取最新 RDS reader 地址，并保存；
+
+
+2. use_reader：大多数情况下直接读取上一次保存的地址运行查询。
+
+
+
+
+---
+
+✅ 推荐实现方式：用 GitLab artifact 或 cache
+
+我们选择将 reader 地址保存成文件 rds_reader.txt，存放在 artifacts，后续 job 直接读取。
+
+
+---
+
+✅ 实现方案：GitLab .gitlab-ci.yml 示例
+
+stages:
+  - update
+  - query
+
+# 手动触发，用于更新 RDS 地址
+update_reader:
+  stage: update
+  script:
+    - echo "Fetching RDS reader..."
+    - aws rds describe-db-clusters --query "DBClusters[0].ReaderEndpoint" --output text > rds_reader.txt
+  artifacts:
+    paths:
+      - rds_reader.txt
+    expire_in: 7 days   # 可根据需要设置有效期
+  when: manual
+
+# 日常查询，读取上次保存的地址
+query_rds:
+  stage: query
+  needs:
+    - job: update_reader
+      optional: true      # 不强制依赖手动 job 成功
+      artifacts: true
+  script:
+    - echo "Using cached RDS reader:"
+    - RDS=$(cat rds_reader.txt)
+    - echo "Reader is: $RDS"
+    - psql -h "$RDS" -U myuser -d mydb -c "SELECT 1"
+
+
+---
+
+✅ 工作原理：
+
+update_reader 是手动 job（你偶尔手动点击运行），它获取最新 reader 地址并保存成 rds_reader.txt；
+
+query_rds 是你日常自动或手动运行的 job，它：
+
+检查是否有 rds_reader.txt；
+
+有就用，没有也不会失败（thanks to optional: true）；
+
+你可以加逻辑判断：如果 rds_reader.txt 不存在就报错提醒更新。
+
+
+
+
+---
+
+✅ 如果要强一点控制（没有缓存就报错）：
+
+if [ ! -f rds_reader.txt ]; then
+  echo "❌ 没有 RDS reader 缓存文件，请先手动运行 update_reader job！"
+  exit 1
+fi
+
+
+---
+
+✅ 另一个选择：保存到 GitLab CI/CD 变量（用脚本更新）
+
+用 GitLab API 可以写脚本更新变量 RDS_READER_HOST，比如：
+
+curl --request PUT --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  --data "value=$NEW_ENDPOINT" \
+  "https://gitlab.com/api/v4/projects/PROJECT_ID/variables/RDS_READER_HOST"
+
+这个方法适合做 运维工具脚本，或定时自动更新。
+
+
+---
+
+✅ 小结
+
+场景	推荐方案
+
+偶尔更新 reader 地址	manual job + artifacts 缓存 ✅
+多 pipeline 共用一个值	用 GitLab Project Variable（可写脚本自动更新） ✅
+使用自托管 runner	本地 /tmp/rds_reader.cache 缓存也可 ✅
+
+
+
+---
+
+需要我帮你写一个用 GitLab Variable 自动更新的 curl 脚本？还是你就准备走 artifacts 缓存的方式？
+
