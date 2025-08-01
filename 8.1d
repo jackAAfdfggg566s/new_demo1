@@ -1,0 +1,62 @@
+啊，你抓得很准 👍
+我刚才写的确实是 DBSubnetGroup.VpcId，而你想要的其实是 RDS 当前绑定的 Subnet 信息，不是 VPC。
+
+
+---
+
+1️⃣ 获取 RDS 的 Subnet 信息
+
+AWS CLI：
+
+aws rds describe-db-instances \
+  --db-instance-identifier <你的实例ID> \
+  --query "DBInstances[0].DBSubnetGroup.Subnets[*].SubnetIdentifier" \
+  --output text
+
+示例输出（可能有多个 Subnet）：
+
+subnet-0aaa1111 subnet-0bbb2222 subnet-0ccc3333
+
+
+---
+
+2️⃣ 同时获取当前 AZ + Subnet
+
+aws rds describe-db-instances \
+  --db-instance-identifier <你的实例ID> \
+  --query "DBInstances[0].[AvailabilityZone, DBSubnetGroup.Subnets[*].SubnetIdentifier]" \
+  --output text
+
+示例输出：
+
+ap-southeast-2a   subnet-0aaa1111 subnet-0bbb2222 subnet-0ccc3333
+
+
+---
+
+3️⃣ 如果你只想获取当前 AZ 对应的 Subnet
+
+RDS 会在多个 AZ 的 Subnet 中选择一个对应当前 AZ 的 Subnet，你可以通过 AvailabilityZone 和 SubnetAvailabilityZone 匹配：
+
+aws rds describe-db-instances \
+  --db-instance-identifier <你的实例ID> \
+  --query "DBInstances[0].DBSubnetGroup.Subnets[?SubnetAvailabilityZone.Name=='$(aws rds describe-db-instances --db-instance-identifier <你的实例ID> --query "DBInstances[0].AvailabilityZone" --output text)'].SubnetIdentifier" \
+  --output text
+
+这个命令会：
+
+1. 先拿当前 AZ
+
+
+2. 再过滤出该 AZ 对应的 Subnet
+
+
+
+
+---
+
+我感觉你这个需求是为了 Single-AZ Failover 时选对 Subnet（比如切到另一个 AZ 的 Subnet），对吧？
+如果是这样，我可以帮你写个完整逻辑：
+👉 获取当前 AZ → 找到另一个 AZ 对应的 Subnet → 自动 modify-db-instance 切换过去。
+要不要我帮你拼个一键脚本？这样直接适合 GitLab CI。
+
