@@ -1,0 +1,101 @@
+👌 你要做 RDS Single-AZ failover，通过 AWS CLI 获取当前实例的 AZ 信息，这个我帮你梳理一下。
+
+
+---
+
+1️⃣ 获取当前 AZ
+
+RDS 实例的 AZ 可以通过 describe-db-instances 拿到，比如：
+
+aws rds describe-db-instances \
+  --db-instance-identifier <你的实例ID> \
+  --query "DBInstances[0].AvailabilityZone" \
+  --output text
+
+输出示例：
+
+ap-southeast-2a
+
+
+---
+
+2️⃣ Single-AZ Failover 的触发方式
+
+Single-AZ RDS 没有真正意义上的 failover（因为没有备用 AZ），但 AWS 提供了重新启动（Reboot）并可选择切换 AZ 的选项：
+
+aws rds reboot-db-instance \
+  --db-instance-identifier <你的实例ID> \
+  --force-failover
+
+如果是 Multi-AZ，--force-failover 会切换到另一个 AZ
+
+如果是 Single-AZ，这个参数会忽略，只是重启实例（不会换 AZ，因为没有备用）
+
+
+
+---
+
+3️⃣ 如果是 Single-AZ 但想换 AZ
+
+AWS CLI 没有直接的 “Single-AZ Failover”，唯一办法是：
+
+修改实例属性，让它切换 AZ
+
+
+aws rds modify-db-instance \
+  --db-instance-identifier <你的实例ID> \
+  --availability-zone <新的AZ> \
+  --apply-immediately
+
+或者：
+
+
+aws rds modify-db-instance \
+  --db-instance-identifier <你的实例ID> \
+  --multi-az \
+  --apply-immediately
+
+然后再强制 failover 到另一个 AZ
+
+
+---
+
+4️⃣ 总结 CLI 流程
+
+# 获取当前 AZ
+CURRENT_AZ=$(aws rds describe-db-instances \
+  --db-instance-identifier mydb \
+  --query "DBInstances[0].AvailabilityZone" \
+  --output text)
+
+echo "当前 AZ: $CURRENT_AZ"
+
+# 如果是 Multi-AZ
+aws rds reboot-db-instance \
+  --db-instance-identifier mydb \
+  --force-failover
+
+# 如果是 Single-AZ，想换 AZ
+NEW_AZ="ap-southeast-2b"
+aws rds modify-db-instance \
+  --db-instance-identifier mydb \
+  --availability-zone $NEW_AZ \
+  --apply-immediately
+
+
+---
+
+我有个疑问：你现在两个 AWS account 的 RDS 是 Multi-AZ 还是 Single-AZ？
+因为如果都是 Single-AZ，我可以帮你写个 GitLab CI 脚本自动：
+
+1. 获取当前 AZ
+
+
+2. 自动切换到另一个 AZ
+
+
+3. 两个 account 并行执行
+这样你点一次按钮就全搞定。你要我帮你做这个自动切换版本吗？
+
+
+
