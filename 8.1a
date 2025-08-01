@@ -1,0 +1,80 @@
+哈哈，这就对上了，你没看到 “Play all manual jobs” 按钮是正常的，因为这个按钮不是在所有地方都出现，得满足几个条件才会显示。
+
+我帮你梳理一下：
+
+
+---
+
+1️⃣ 什么时候会出现 “Play all manual jobs”
+
+条件：
+
+1. 这个 Stage 里有多个 when: manual 的 job。
+
+
+2. 这些 job 处于同一个 stage 并且都还没运行。
+
+
+
+位置：
+
+在 Pipeline 视图（CI/CD → Pipelines → 点击某个 Pipeline） 的 Stage 右上角，手动 job 的 stage 会有个按钮：
+
+可能写着 "Play all" 或 ▶ Run all manual jobs。
+
+
+在 Job 列表视图是看不到的，要进 Pipeline 详情页。
+
+
+
+
+---
+
+2️⃣ 如果不想找按钮
+
+你也可以用我刚才提的 一个触发器 job 启动多个 job 的方法：
+
+你只点击一个 job（trigger_failover_all），GitLab 会用 needs: 并行启动另外两个 failover job。
+
+这样比找按钮省心。
+
+
+
+---
+
+3️⃣ 建议你试一下最小化 demo
+
+stages:
+  - failover
+
+trigger_failover_all:
+  stage: failover
+  when: manual
+  script:
+    - echo "Trigger both accounts"
+
+failover_account_a:
+  stage: failover
+  needs: [trigger_failover_all]
+  script:
+    - echo "Failover AWS Account A"
+
+failover_account_b:
+  stage: failover
+  needs: [trigger_failover_all]
+  script:
+    - echo "Failover AWS Account B"
+
+执行效果：
+
+你只点击一次 trigger_failover_all（manual job）。
+
+GitLab 会并行启动 failover_account_a 和 failover_account_b。
+
+
+
+---
+
+我可以帮你改成 适配你两个 AWS account 的真实 AssumeRole + FIS 启动实验 的版本（点一次按钮，两个 account 并行 failover）。
+👉 要不要我帮你写一个直接可用的完整版（带 AWS CLI）？这样你测试时就不用改来改去了。
+
