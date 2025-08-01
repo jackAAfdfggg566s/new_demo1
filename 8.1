@@ -1,0 +1,151 @@
+你这个场景我理解为：一个 GitLab CI/CD pipeline，需要分别对两个 AWS Account 的某个资源做 AZ failover，并且是通过 AWS FIS（Fault Injection Simulator） 来触发的。
+
+我帮你梳理下关键点和实现思路：
+
+
+---
+
+1️⃣ 核心挑战
+
+1. 多 AWS Account 操作
+
+GitLab Runner 默认只有一个 AWS 凭据，需要配置多个 AWS Profile 或临时凭证（STS AssumeRole）。
+
+
+
+2. FIS 跨账号启动实验
+
+两个 AWS 账号的实验模板 ID 可能不同，需要分别启动。
+
+
+
+3. AZ Failover 的 FIS 实验
+
+要确保两个账户中都有对应的 FIS template，并且实验能被 IAM 允许。
+
+
+
+
+
+---
+
+2️⃣ 准备工作
+
+(a) IAM & 权限
+
+在每个 AWS Account 中：
+
+创建一个 IAM Role（例如 GitLabFISRole），允许执行：
+
+fis:StartExperiment
+
+访问目标资源（RDS、EC2、ELB 等）
+
+
+如果你想从 GitLab 一个主 Account 调用两个子 Account，需要配置 STS AssumeRole 权限。
+
+
+示例信任策略（被调用账户中）：
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::<GitLab主账号ID>:role/<GitLabRunnerRole>"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+
+
+---
+
+(b) GitLab CI 中 AWS 凭据
+
+在 GitLab CI/CD Variables 中存放：
+
+AWS_ACCESS_KEY_ID
+
+AWS_SECRET_ACCESS_KEY
+
+或者 AWS_ROLE_ARN_ACCOUNT1 / AWS_ROLE_ARN_ACCOUNT2（AssumeRole方式）
+
+
+
+---
+
+3️⃣ GitLab CI 流程示例
+
+假设你有两个 AWS Account，分别有不同的 FIS 模板 ID：
+
+Account A: fis-template-abc123
+
+Account B: fis-template-def456
+
+
+你可以在 Pipeline 中这样写：
+
+stages:
+  - failover
+
+variables:
+  AWS_REGION: ap-southeast-2
+
+failover_account_a:
+  stage: failover
+  image: amazon/aws-cli:2.15.10
+  script:
+    # 切换到Account A的Role
+    - >
+      CREDS_A=$(aws sts assume-role
+      --role-arn "$AWS_ROLE_ARN_ACCOUNT_A"
+      --role-session-name gitlab-fis-a)
+    - export AWS_ACCESS_KEY_ID=$(echo $CREDS_A | jq -r '.Credentials.AccessKeyId')
+    - export AWS_SECRET_ACCESS_KEY=$(echo $CREDS_A | jq -r '.Credentials.SecretAccessKey')
+    - export AWS_SESSION_TOKEN=$(echo $CREDS_A | jq -r '.Credentials.SessionToken')
+
+    # 启动FIS实验
+    - aws fis start-experiment --experiment-template-id fis-template-abc123
+
+failover_account_b:
+  stage: failover
+  image: amazon/aws-cli:2.15.10
+  script:
+    # 切换到Account B的Role
+    - >
+      CREDS_B=$(aws sts assume-role
+      --role-arn "$AWS_ROLE_ARN_ACCOUNT_B"
+      --role-session-name gitlab-fis-b)
+    - export AWS_ACCESS_KEY_ID=$(echo $CREDS_B | jq -r '.Credentials.AccessKeyId')
+    - export AWS_SECRET_ACCESS_KEY=$(echo $CREDS_B | jq -r '.Credentials.SecretAccessKey')
+    - export AWS_SESSION_TOKEN=$(echo $CREDS_B | jq -r '.Credentials.SessionToken')
+
+    # 启动FIS实验
+    - aws fis start-experiment --experiment-template-id fis-template-def456
+
+
+---
+
+4️⃣ 优化方式
+
+如果两个账号的 FIS 模板 ID 一致，可以用一个 Job + 循环处理：
+
+accounts:
+  - ACCOUNT_NAME: account_a
+    ROLE_ARN: $AWS_ROLE_ARN_ACCOUNT_A
+    TEMPLATE_ID: fis-template-xxx
+  - ACCOUNT_NAME: account_b
+    ROLE_ARN: $AWS_ROLE_ARN_ACCOUNT_B
+    TEMPLATE_ID: fis-template-xxx
+
+然后在 Job 中循环 AssumeRole + start-experiment。
+
+
+---
+
+👉 问你一下：
+你是希望 两个账号的 failover 并行触发（两个 job 同时跑），还是 顺序触发（一个成功再跑另一个）？我可以帮你分别写出对应的 pipeline。
+
