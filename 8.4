@@ -1,0 +1,101 @@
+好问题 👍，尤其是 RDS 通常应该跑在私有 Subnet里，所以通过 CLI 区分公有/私有非常重要。
+
+核心判断方法是：看 Subnet 所属的 Route Table 有没有指向 Internet Gateway (IGW)。
+
+
+---
+
+1️⃣ 找出 RDS Subnet IDs
+
+先拿到 RDS 的 Subnet IDs：
+
+aws rds describe-db-instances \
+    --db-instance-identifier <your-db-instance> \
+    --query "DBInstances[0].DBSubnetGroup.Subnets[].SubnetIdentifier" \
+    --output text
+
+
+---
+
+2️⃣ 查每个 Subnet 的 Route Table
+
+获取 Subnet 关联的 Route Table：
+
+aws ec2 describe-route-tables \
+    --filters "Name=association.subnet-id,Values=<subnet-id>"
+
+或者一行命令查多个：
+
+aws ec2 describe-route-tables \
+    --filters "Name=association.subnet-id,Values=<subnet-id-1>,<subnet-id-2>"
+
+
+---
+
+3️⃣ 判断公有 / 私有
+
+如果 Route Table 中有一条路由：
+
+DestinationCidrBlock: 0.0.0.0/0
+GatewayId: igw-xxxxxxx
+
+说明这是公有 Subnet（有 Internet Gateway 出口）
+
+如果默认路由指向 NAT Gateway 或没有 IGW：
+
+DestinationCidrBlock: 0.0.0.0/0
+NatGatewayId: nat-xxxxxxx
+
+或
+
+没有 0.0.0.0/0 指向 IGW
+
+说明是私有 Subnet
+
+
+
+---
+
+4️⃣ 一条命令直接标注公有/私有
+
+假设你有 Subnet IDs：
+
+for subnet in $(aws rds describe-db-instances \
+    --db-instance-identifier <your-db> \
+    --query "DBInstances[0].DBSubnetGroup.Subnets[].SubnetIdentifier" \
+    --output text); do
+    rt=$(aws ec2 describe-route-tables \
+        --filters "Name=association.subnet-id,Values=$subnet" \
+        --query "RouteTables[0].Routes[].GatewayId" \
+        --output text)
+    if echo $rt | grep -q igw-; then
+        echo "$subnet → Public"
+    else
+        echo "$subnet → Private"
+    fi
+done
+
+输出示例：
+
+subnet-aaaa1111 → Private
+subnet-bbbb2222 → Private
+
+（RDS 通常都是 Private）
+
+
+---
+
+👉 结论：
+
+RDS 默认建议放私有 Subnet（不能直连公网）
+
+公私子网主要通过 Route Table 是否有 IGW 来判断
+
+CLI 可以批量查出来
+
+
+
+---
+
+我顺便问下，你是不是想在 GitLab CI/CD 脚本里自动检测 RDS Subnet 是不是私有（避免误建在公有子网）？我可以帮你写一段 一条命令检测并报错的脚本，要不要我帮你做一个？
+
