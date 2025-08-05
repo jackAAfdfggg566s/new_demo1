@@ -1,0 +1,66 @@
+我明白你的意思了 👍
+你想要根据 Writer 实例名，然后查出它和 其他两个 Reader 实例的 AZ 分布。
+
+我帮你写两种方式：
+
+
+---
+
+1️⃣ 如果已经知道 3 个实例名（Writer + 2 Reader）
+
+直接用 describe-db-instances 查一遍：
+
+aws rds describe-db-instances \
+  --db-instance-identifier writer-instance-id \
+  --db-instance-identifier reader1-instance-id \
+  --db-instance-identifier reader2-instance-id \
+  --query "DBInstances[*].[DBInstanceIdentifier,DBInstanceStatus,AvailabilityZone]" \
+  --output table
+
+输出示例：
+
+----------------------------------------------
+|         DescribeDBInstances                |
++--------------------+-----------+-----------+
+| writer-instance-id | available | ap-southeast-2a |
+| reader1-instance-id| available | ap-southeast-2b |
+| reader2-instance-id| available | ap-southeast-2c |
+----------------------------------------------
+
+
+---
+
+2️⃣ 如果只知道 Writer 实例名，自动查出 Readers
+
+先通过 Writer 查出集群，然后把所有实例查出来：
+
+CLUSTER_ID=$(aws rds describe-db-instances \
+  --db-instance-identifier writer-instance-id \
+  --query "DBInstances[0].DBClusterIdentifier" \
+  --output text)
+
+aws rds describe-db-clusters \
+  --db-cluster-identifier $CLUSTER_ID \
+  --query "DBClusters[0].DBClusterMembers[*].DBInstanceIdentifier" \
+  --output text | \
+xargs -I {} aws rds describe-db-instances \
+  --db-instance-identifier {} \
+  --query "DBInstances[0].[DBInstanceIdentifier,DBInstanceStatus,AvailabilityZone]" \
+  --output table
+
+输出示例：
+
+----------------------------------------------
+|         DescribeDBInstances                |
++--------------------+-----------+-----------+
+| writer-instance-id | available | ap-southeast-2a |
+| reader1-instance-id| available | ap-southeast-2b |
+| reader2-instance-id| available | ap-southeast-2c |
+----------------------------------------------
+
+
+---
+
+我可以帮你优化成 一行命令（直接输入 Writer 实例名，自动输出所有实例的 AZ 分布），这样运维查 AZ 不用拆命令。
+要不要我帮你写个一行版？（粘贴就能用）
+
