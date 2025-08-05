@@ -1,0 +1,74 @@
+你问得很关键 👍
+要查 Aurora 集群 Writer instance 所在的 AZ，可以用 AWS CLI 很直接地获取。
+
+我给你几个常用方法：
+
+
+---
+
+1️⃣ 用 describe-db-instances 查询
+
+每个实例（Writer / Reader）都会显示它的 AZ。
+
+aws rds describe-db-instances \
+  --db-instance-identifier <writer_instance_id> \
+  --query "DBInstances[0].AvailabilityZone" \
+  --output text
+
+输出示例：
+
+ap-southeast-2a
+
+> 这个命令直接告诉你 Writer 实例在哪个 AZ。
+
+
+
+
+---
+
+2️⃣ 用 describe-db-clusters 找出 Writer，然后查它的 AZ
+
+如果你不知道 Writer 的实例 ID，可以先查集群：
+
+aws rds describe-db-clusters \
+  --db-cluster-identifier <cluster_id> \
+  --query "DBClusters[0].DBClusterMembers[?IsClusterWriter==`true`].DBInstanceIdentifier" \
+  --output text
+
+输出示例：
+
+my-writer-instance
+
+然后再查这个实例的 AZ：
+
+aws rds describe-db-instances \
+  --db-instance-identifier my-writer-instance \
+  --query "DBInstances[0].AvailabilityZone" \
+  --output text
+
+
+---
+
+3️⃣ 一行命令直接获取 Writer 的 AZ
+
+如果想一步到位：
+
+aws rds describe-db-clusters \
+  --db-cluster-identifier <cluster_id> \
+  --query "DBClusters[0].DBClusterMembers[?IsClusterWriter==\`true\`].DBInstanceIdentifier" \
+  --output text | xargs -I {} \
+aws rds describe-db-instances \
+  --db-instance-identifier {} \
+  --query "DBInstances[0].AvailabilityZone" \
+  --output text
+
+输出示例：
+
+ap-southeast-2a
+
+
+---
+
+我顺便问一下，你是想查 Writer AZ 是为了做故障转移测试，还是为了验证 为什么 CLI 显示了 3 个 AZ？
+我可以顺便帮你加上 同时输出 Reader 的 AZ 分布，方便你对比。
+
