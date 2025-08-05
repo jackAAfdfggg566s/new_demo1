@@ -1,0 +1,71 @@
+好问题 👍 你确认了 AZ 是对的，现在想查对应的 Subnet 信息，其实也能从 AWS CLI 很快查到。
+
+
+---
+
+1️⃣ 根据实例名查 Subnet（适合单实例查询）
+
+aws rds describe-db-instances \
+  --db-instance-identifier my-writer-instance \
+  --query "DBInstances[0].DBSubnetGroup.Subnets[*].[SubnetIdentifier,SubnetAvailabilityZone.Name]" \
+  --output table
+
+输出示例：
+
+----------------------------------------------
+|                DescribeDBInstances         |
++------------------------+-------------------+
+| subnet-aaaa1111        | ap-southeast-2a   |
+| subnet-bbbb2222        | ap-southeast-2b   |
+| subnet-cccc3333        | ap-southeast-2c   |
+----------------------------------------------
+
+> 这个会列出 Subnet ID + 所属 AZ，方便对应。
+
+
+
+
+---
+
+2️⃣ 如果是 Aurora 集群
+
+先查出集群里的实例：
+
+CLUSTER_ID=$(aws rds describe-db-instances \
+  --db-instance-identifier my-writer-instance \
+  --query "DBInstances[0].DBClusterIdentifier" \
+  --output text)
+
+然后查 Subnet：
+
+aws rds describe-db-clusters \
+  --db-cluster-identifier $CLUSTER_ID \
+  --query "DBClusters[0].DBSubnetGroup.Subnets[*].[SubnetIdentifier,SubnetAvailabilityZone.Name]" \
+  --output table
+
+
+---
+
+3️⃣ 如果想查 Subnet 的 CIDR / VPC
+
+拿到 Subnet ID 后，用 EC2 CLI 查询：
+
+aws ec2 describe-subnets \
+  --subnet-ids subnet-aaaa1111 subnet-bbbb2222 subnet-cccc3333 \
+  --query "Subnets[*].[SubnetId,CidrBlock,VpcId,AvailabilityZone]" \
+  --output table
+
+输出示例：
+
++------------------------+---------------+-------------------+-------------------+
+| subnet-aaaa1111        | 10.0.1.0/24  | vpc-xxxxxx        | ap-southeast-2a   |
+| subnet-bbbb2222        | 10.0.2.0/24  | vpc-xxxxxx        | ap-southeast-2b   |
+| subnet-cccc3333        | 10.0.3.0/24  | vpc-xxxxxx        | ap-southeast-2c   |
++------------------------+---------------+-------------------+-------------------+
+
+
+---
+
+我顺便问一下——你是想确认 Writer 和 Readers 对应的 Subnet，还是想看 Subnet group 里 3 个 AZ 的子网和实际分配情况？
+我可以帮你写个命令直接一次性把 实例名 → AZ → Subnet ID → CIDR 全查出来，表格形式，很适合汇报。要不要我顺便帮你弄个一行脚本？
+
