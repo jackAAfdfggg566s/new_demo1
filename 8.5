@@ -1,0 +1,85 @@
+你问得很精准 👍
+你用 AWS CLI 查询到 RDS 一个实例出现在 3 个 AZ，其实是因为 CLI 返回的是实例的 Subnet Group 信息或Aurora 集群副本信息，而不是它实际运行的 AZ。
+
+我帮你拆一下不同情况：
+
+
+---
+
+1️⃣ 如果是传统 RDS（MySQL / PostgreSQL / Oracle / SQL Server 非 Aurora）
+
+CLI 里常见字段：
+
+aws rds describe-db-instances --db-instance-identifier <instance>
+
+关键字段：
+
+AvailabilityZone：实例当前运行的 AZ（只有一个，比如 ap-southeast-2a）。
+
+DBSubnetGroup.Subnets：会列出多个 AZ，因为 subnet group 通常包含 2~3 个 AZ（供 Failover 用）。
+
+
+为什么 CLI 会显示多个 AZ：
+
+这是因为 subnet group 支持多 AZ 选项，并非实例真的在每个 AZ 跑。
+
+CLI 输出时会把 subnet group 中的所有子网（跨多个 AZ）都列出来，看起来像实例“在 3 个 AZ”。
+
+
+
+
+---
+
+2️⃣ 如果是 Aurora 集群
+
+CLI 命令：
+
+aws rds describe-db-clusters --db-cluster-identifier <cluster>
+
+AvailabilityZones：会显示 3 个 AZ（例如 ap-southeast-2a, ap-southeast-2b, ap-southeast-2c）。
+
+原因：Aurora 存储层天然跨 3 AZ，集群配置也会记录它能运行在哪些 AZ。
+
+集群实例列表 (DBClusterMembers) 会列出 Writer / Reader，可能分布在不同 AZ。
+
+
+
+
+---
+
+3️⃣ 你可能看到的 CLI 输出样例
+
+举个例子（Aurora 集群）：
+
+{
+    "DBCluster": {
+        "AvailabilityZones": [
+            "ap-southeast-2a",
+            "ap-southeast-2b",
+            "ap-southeast-2c"
+        ],
+        "DBClusterMembers": [
+            {
+                "DBInstanceIdentifier": "my-writer",
+                "IsClusterWriter": true,
+                "PromotionTier": 1
+            },
+            {
+                "DBInstanceIdentifier": "my-reader-1",
+                "IsClusterWriter": false,
+                "PromotionTier": 2
+            }
+        ]
+    }
+}
+
+👉 这里的 AvailabilityZones 只是表明集群能容错到这些 AZ，并不是每个实例都在所有 AZ 跑。
+
+
+---
+
+我猜你查询到的结果可能是 describe-db-instances 或 describe-db-clusters 返回了多个 AZ，导致你觉得“一个实例在 3 AZ”。
+
+如果你方便，我可以帮你分析一下你 AWS CLI 的具体返回字段，一眼告诉你这是因为 Subnet Group 配置还是 Aurora 集群多 AZ 存储。
+要不要你把 CLI 输出贴一段（可以隐藏实例名）我帮你判断？
+
