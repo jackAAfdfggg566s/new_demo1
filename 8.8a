@@ -1,0 +1,112 @@
+如果你的 RDS Subnet Group 里包含了 连接 Transit Gateway (TGW) 的子网，确实会有一些潜在的暴露风险，尤其是在网络规划不严谨的情况下。
+
+
+---
+
+1. 为什么 TGW 会带来暴露风险
+
+Transit Gateway 本质上是一个多 VPC / 多网络的路由枢纽，如果你把 RDS 放在和 TGW 直连的子网里，它就会受 TGW 路由策略的影响：
+
+跨环境暴露
+如果 TGW 连接了多个 VPC、VPN、Direct Connect，RDS 所在子网的路由表可能会把数据库流量导向外部环境（甚至是第三方网络）。
+
+合规风险
+一些合规要求数据库必须部署在隔离私网，不允许通过跨 VPC/VPN 路径暴露。TGW 直连子网很容易破坏这种隔离。
+
+横向攻击面扩大
+如果 TGW 对接的其他网络出现被入侵的情况，攻击者可能通过 TGW 路由直接扫描并攻击 RDS。
+
+
+
+---
+
+2. 什么情况下会“被暴露”
+
+RDS 在 TGW 子网中时，暴露风险主要取决于：
+
+1. 路由表
+
+子网关联的路由表是否有 0.0.0.0/0 或数据库目标段通过 TGW 转发到不受控网络。
+
+
+
+2. TGW 路由策略
+
+TGW 的 route table 是否把该子网所在 VPC 的网段对外广告给其他连接（VPN、DX、其他 VPC）。
+
+
+
+3. 安全组 / NACL
+
+安全组如果开放到对方网络网段，就等于允许 TGW 对端访问数据库。
+
+
+
+
+
+---
+
+3. 怎么检查
+
+(1) 查 RDS 子网关联的路由表
+
+aws ec2 describe-route-tables \
+  --filters "Name=association.subnet-id,Values=<subnet-id>" \
+  --query "RouteTables[*].Routes[*].[DestinationCidrBlock,GatewayId,TransitGatewayId]"
+
+如果 TransitGatewayId 有值，并且目标是大网段（如 0.0.0.0/0 或 /16），说明该子网通过 TGW 可达很多网络。
+
+
+
+---
+
+(2) 查 TGW 路由表传播情况
+
+aws ec2 search-transit-gateway-routes \
+  --transit-gateway-route-table-id <tgw-rtb-id> \
+  --filters Name=type,Values=propagated
+
+确认哪些网段会被传播到其他 TGW 连接。
+
+
+
+---
+
+(3) 查 TGW 对端连接
+
+aws ec2 describe-transit-gateway-attachments \
+  --filters Name=transit-gateway-id,Values=<tgw-id>
+
+看看 TGW 连接了哪些 VPC、VPN、Direct Connect，判断这些对端是否可信。
+
+
+
+---
+
+4. 最佳实践
+
+不要把 TGW 直连子网加入 RDS Subnet Group
+最好给 RDS 单独用私网子网，路由表只允许应用 VPC 访问。
+
+控制 TGW 路由表
+只让需要访问数据库的 VPC/VPN 有路由，其他对端拒绝传播数据库网段。
+
+安全组白名单化
+安全组入站只允许特定应用子网或 VPC 的 IP 段，避免 TGW 对端无差别访问。
+
+
+
+---
+
+如果你愿意，我可以帮你写一个 一键 TGW 暴露风险扫描脚本，输入 RDS ID 或 Subnet Group，就能直接告诉你：
+
+是否在 TGW 子网
+
+TGW 连接了哪些网络
+
+是否存在 0.0.0.0/0 或过宽路由
+这样就能秒判断是否有“跨环境暴露”问题。
+
+
+你是想让我直接帮你做这个检测脚本吗？这样排查会很快。
+
