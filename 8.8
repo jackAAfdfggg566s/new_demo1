@@ -1,0 +1,63 @@
+那就说明你现在用的 AWS FIS 动作并不是我前面说的 EC2 network-disruption（带 scope=outbound 的新版本），而是用到的那种网络隔离类的 FIS 动作，它的 scope 只支持：
+
+availability-zone（隔离整个 AZ）
+
+db（隔离某个 RDS/Aurora）
+
+prefix-list（阻断在 AWS 内的特定服务 CIDR）
+
+s3（阻断到 S3）
+
+vpc（隔离整个 VPC）
+
+
+也就是说，你现在这个 FIS 动作没法精确到 host:port 出站阻断，它更多是做大范围的网络中断。
+
+
+---
+
+你有几个选择
+
+1. 精确到 F5 IP:Port
+
+必须用 aws:ec2:network-disruption:disrupt-connectivity 这个新动作，前提是：
+
+EKS 节点是 EC2（非 Fargate）
+
+节点上有 SSM Agent 并且有 AmazonSSMManagedInstanceCore 权限
+
+FIS 实验角色有 ec2:SendCommand 权限
+
+
+这样才可以 scope=outbound，targetCidr=F5_IP/32，fromPort=9092。
+
+
+---
+
+2. 只能用你现在的 scope
+
+那就只能：
+
+如果选 prefix-list，需要把 F5 的 IP 段放进一个 AWS Prefix List，然后用 FIS 阻断它
+
+如果选 vpc，就会断整个 VPC 的通信（太粗粒度，可能影响别的业务）
+
+
+
+---
+
+3. 不走 FIS，直接安全组断开
+
+因为 FIS 这种 scope 太大，不如直接改：
+
+EKS 节点的 出站安全组，删掉到 F5:9092 的规则
+
+或 F5 侧的 入站安全组，阻断 EKS 节点 IP
+
+
+
+---
+
+我可以帮你确认一下，你的 EKS 节点是不是 Managed Node Group 还是 Fargate，这样我能判断你能不能用那个带 scope=outbound 的精细版 FIS。
+你要我帮你先判断一下吗？这样就知道走哪条路了。
+
