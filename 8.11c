@@ -1,0 +1,88 @@
+你说的第三点是我前面写的：
+
+> RDS VPC 的 TGW Subnet：只作为 TGW 的入口点，不放 RDS
+
+
+
+我帮你详细拆开理解，并教你怎么检查。
+
+
+---
+
+理解第三点
+
+在 AWS 里，一个 TGW Subnet 的作用是：
+
+给 Transit Gateway 在 VPC 里提供一个网络接口（ENI）
+
+这个 ENI 就是 TGW 在该 VPC 的“门口”
+
+流量从其他 VPC 来时，先到 TGW ENI → 再由路由表引导去目标子网（比如 Private App Subnet）
+
+
+> 如果你把 RDS 放在 TGW Subnet 里，就等于把数据库直接丢在“门口”上，不经过应用子网的隔离。
+
+
+
+所以第三点的意思是：
+
+TGW Subnet 里不应该有 RDS ENI
+
+RDS 应该只在专门的 Private Application Subnet 里
+
+
+
+---
+
+怎么检查（AWS CLI）
+
+1. 找出 TGW Subnet
+
+aws ec2 describe-route-tables \
+  --filters "Name=association.subnet-id,Values=subnet-xxxx subnet-yyyy" \
+  --query 'RouteTables[].{Subnet:Associations[0].SubnetId, Routes:Routes}'
+
+如果某个子网的路由表有：
+
+{
+  "TransitGatewayId": "tgw-xxxx"
+}
+
+那它就是 TGW Subnet。
+
+
+---
+
+2. 找出 RDS 的 ENI 在哪些子网
+
+aws rds describe-db-instances \
+  --db-instance-identifier your-rds-name \
+  --query 'DBInstances[].DBSubnetGroup.Subnets[].SubnetIdentifier'
+
+
+---
+
+3. 比对
+
+如果 RDS 的 Subnet ID 和 TGW Subnet ID 有交集 → RDS 落在了 TGW Subnet（不符合最佳实践）
+
+如果完全不重合 → 符合“第三点”的要求
+
+
+
+---
+
+总结成一句话检查法
+
+> “RDS 的 Subnet Group 子网列表” ∩ “带有 TGW 路由的子网” 应该是空集。
+
+
+
+
+---
+
+如果你愿意，我可以帮你写一个一条命令就检查出结果的脚本，直接告诉你“RDS 是否落在 TGW 子网里”。
+这样你以后排查就不用手动比对子网 ID 了。
+
+你要我帮你写这个脚本吗？这样直接运行就能知道结论。
+
