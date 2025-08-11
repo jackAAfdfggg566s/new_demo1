@@ -1,0 +1,72 @@
+你是想检查 RDS 的 Subnet Group 里有没有包含 Transit Gateway 的子网吧？
+可以从 AWS CLI 或 控制台 两种方式来确认。
+
+
+---
+
+方法 1：AWS CLI 检查
+
+1. 获取 RDS Subnet Group
+
+
+
+aws rds describe-db-subnet-groups \
+  --db-subnet-group-name your-subnet-group-name \
+  --query 'DBSubnetGroups[].Subnets[].SubnetIdentifier'
+
+这会列出所有子网 ID。
+
+2. 反查子网信息，确认是否是 TGW 子网
+
+
+
+aws ec2 describe-subnets \
+  --subnet-ids subnet-abc123 subnet-def456 \
+  --query 'Subnets[].{SubnetId:SubnetId, Tags:Tags, RouteTable:RouteTableId, Az:AvailabilityZone}'
+
+> 如果你在 Tags 中看到类似 Name=TransitGatewaySubnet 或路由表里有 TransitGatewayId，那就是 TGW 子网。
+
+
+
+3. 检查路由表是否指向 TGW
+
+
+
+aws ec2 describe-route-tables \
+  --filters "Name=association.subnet-id,Values=subnet-abc123" \
+  --query 'RouteTables[].Routes[].TransitGatewayId'
+
+如果输出里有 tgw-xxxx，就说明这个子网走的是 TGW。
+
+
+---
+
+方法 2：AWS 控制台
+
+打开 RDS → Subnet groups
+
+选中你的 Subnet Group → 查看子网列表（VPC、AZ、子网 ID）
+
+去 VPC → Subnets 找这些子网 → 查看 Route Table
+
+如果路由表里有一条指向 Transit Gateway，那就是 TGW 子网。
+
+
+
+---
+
+判断标准
+
+子网的路由表包含 Target = Transit Gateway
+
+或者子网 Tag 里明确写了 Transit / TGW 关键字
+
+
+
+---
+
+如果你要，我可以帮你写一个 一键检测脚本，直接输入 Subnet Group 名字就能告诉你哪些子网是 TGW 的。
+这样你以后排查会快很多。
+
+你是想让我帮你写这个检测脚本吗？这样就不用手动一步步查了。
+
