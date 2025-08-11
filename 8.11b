@@ -1,0 +1,79 @@
+如果 TGW 不放在 RDS 的 Subnet Group 里，应用依然可以访问，方法是走 TGW → 私有应用子网 → RDS，而不是直接让 RDS 落在 TGW 子网里。
+
+我帮你画个逻辑过程：
+
+
+---
+
+正确（推荐）路径
+
+EKS VPC (通过 TGW)  --->  TGW Subnet (Transit Gateway ENI)
+                          |
+                          v
+                   Private App Subnet (RDS ENI 在这里)
+                          |
+                          v
+                         RDS
+
+流程解释
+
+1. EKS VPC 的路由表：
+
+指向 TGW（目标是 RDS 所在 VPC 的 CIDR）
+
+
+
+2. TGW 路由表：
+
+将来自 EKS 的流量转发到 RDS VPC
+
+
+
+3. RDS VPC 的 TGW Subnet：
+
+只作为 TGW 的入口点，不放 RDS
+
+
+
+4. RDS VPC 的 Private App Subnet：
+
+是 RDS Subnet Group 的成员，RDS ENI 在这里
+
+
+
+5. 安全组 & NACL：
+
+只允许来自 EKS Pod/节点的 IP 段访问 RDS 端口
+
+
+
+
+
+---
+
+为什么这样也能访问
+
+TGW 只是个三层路由设备，负责把来自 EKS 的包送到目标 VPC 的正确子网。
+
+RDS ENI 在 Private App Subnet 里，但只要 TGW 的路由表和 VPC 路由表指向它，就能互通。
+
+这样 RDS 不会直接暴露在 TGW Subnet 这个“交通枢纽”里，安全性更高。
+
+
+
+---
+
+核心区别
+
+设计方式	访问可行性	安全性	最佳实践
+
+RDS 在 TGW Subnet	✅ 可行	❌ 风险大（暴露面大）	否
+RDS 在 Private Subnet	✅ 可行	✅ 安全	是
+
+
+
+---
+
+如果你愿意，我可以帮你画一个AWS 拓扑图，把这两种方案可视化对比，你在汇报或写文档时就能直观解释为什么 TGW 不应该直接放 RDS。
+你要我帮你画这个图吗？
+
