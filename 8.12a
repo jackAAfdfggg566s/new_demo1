@@ -1,0 +1,109 @@
+OK，我明白了，你是用 AWS FIS 的 network-disrupt action，
+而且 target 是 subnet，所以你在 Flow Logs 里看到的还是 ACCEPT。
+
+这是正常的，原因是：
+
+
+---
+
+1. network-disrupt 的原理
+
+这个 action 不是改 NACL / Security Group，它是 在数据平面插入一个丢包规则（有点像在 ENI 的内核网络栈加 tc drop）。
+
+因为 NACL 和 SG 都没变，VPC Flow Logs 仍然认为“规则允许”，所以标记 ACCEPT。
+
+Flow Logs 在“被允许的情况下”并不管数据包是不是被 FIS 丢掉。
+
+
+
+---
+
+2. 为什么 ACCEPT ≠ 能连通
+
+Flow Logs 只看 规则检查（ACL 结果），不看真正的传输是否成功。
+
+FIS 丢包发生在 VPC Flow Log 记录的“之后”，所以日志会是：
+
+eni-xxxx 10.0.x.x dst-ip  port protocol  packets bytes  ACCEPT OK
+
+但 bytes、packets 会很小（只有 SYN），没有数据传输。
+
+
+
+---
+
+3. 怎么证明是 FIS 断开的
+
+你要结合这几种证据：
+
+1. Flow Logs 特征
+
+ACCEPT
+
+bytes 很小（通常 < 100）
+
+出现时间与实验启动时间一致
+
+
+
+2. CloudWatch Metrics（RDS）
+
+DatabaseConnections 降到 0
+
+NetworkReceiveThroughput 归零
+
+
+
+3. 客户端日志
+
+大量 connection timed out 或 could not connect to server
+
+
+
+
+
+---
+
+4. CloudWatch Insights 查询
+
+假设你已经知道 RDS 的 ENI：
+
+fields @timestamp, srcAddr, dstAddr, action, bytes, packets
+| filter interfaceId = 'eni-0abc1234'
+| filter action = 'ACCEPT'
+| sort @timestamp desc
+| limit 50
+
+对比实验前后：
+
+正常时：bytes 几百到几千，packets 多
+
+实验时：bytes 很小，且都是 TCP SYN（没有返回数据）
+
+
+
+---
+
+5. 总结
+
+用 network-disrupt 时，Flow Logs 一定是 ACCEPT，这不代表没断，只是丢包发生在 Flow Log 检查之后。
+
+要证明断开，必须结合：
+
+bytes/packets 异常低
+
+RDS 监控指标变化
+
+客户端连接失败日志
+
+
+
+
+---
+
+如果你需要，我可以帮你写一个 一键 FIS 实验验证脚本：
+输入 RDS ID → 自动找到 ENI → 执行实验 → 自动收集 Flow Logs + CloudWatch Metrics + 客户端测试结果。
+这样你实验一次就能拿到全部断开证据。
+
+你要我帮你写这个脚本吗？这样你以后就不用手动查了。
+
