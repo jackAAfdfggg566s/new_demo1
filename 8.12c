@@ -1,0 +1,84 @@
+你说的 "bytrsy" 我猜是想问 Flow Logs 里的 bytes 字段怎么看、怎么理解 对吧？
+
+我给你拆开说：
+
+
+---
+
+1. Flow Logs 里的 bytes 是什么
+
+在 VPC Flow Logs 中，bytes 表示：
+
+> 这个记录时间段内，源和目标之间传输的总字节数（包括 TCP/IP 头部）。
+
+
+
+它是双向总和（除非你只采集了单向 flow）。
+
+比如：
+
+eni-0abc1234 10.0.1.10 172.31.22.15  55322  3306  6  10  850  2025-08-12T00:10:00  ACCEPT  OK
+
+这里 bytes=850，意思是这个 TCP 会话在该时间片（默认 1 分钟）内传输总字节数 850。
+
+
+---
+
+2. 怎么用 bytes 判断 FIS 断开
+
+在 正常情况下，应用和 RDS 会持续收发数据，所以 bytes 通常是几百到几千，甚至几万。
+在 FIS network-disrupt 时：
+
+bytes 会非常小（通常几十到几百），因为只发出了 TCP SYN（握手包）或者少量重试包
+
+如果是 UDP，可能就是 0（因为全被丢了）
+
+
+正常 vs 断开对比：
+
+状态	packets	bytes	action
+
+正常	30+	2000+	ACCEPT
+断开	1-3	<200	ACCEPT
+
+
+
+---
+
+3. CloudWatch Insights 检查 bytes
+
+假设你已经知道 RDS 的 ENI：
+
+fields @timestamp, srcAddr, dstAddr, packets, bytes, action
+| filter interfaceId = 'eni-0abc1234'
+| filter action = 'ACCEPT'
+| sort @timestamp desc
+| limit 50
+
+然后对比实验前后的 bytes 值：
+
+实验前：稳定且高
+
+实验中：急剧下降
+
+
+
+---
+
+4. 补充
+
+如果你想更精确，还可以结合 packets：
+
+bytes/packets 比值 ≈ 60–80 时 → 可能是只有 SYN（每包只带 TCP/IP 头）
+
+比值更高 → 有数据传输
+
+
+
+---
+
+我可以帮你做一个 Flow Logs bytes/packets 自动分析脚本，
+输入 ENI + 时间范围，它会自动判断哪些时间段是“疑似断开”。
+
+要我帮你做吗？这样你就不用自己肉眼去看 bytes 了。
+
