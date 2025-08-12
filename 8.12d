@@ -1,0 +1,97 @@
+不完全是，packets 和 bytes 很大确实通常意味着连接还在正常传输数据，但也有例外**（比如短暂断开后快速恢复、或者是并发连接重试产生流量）**。
+
+我帮你拆开逻辑，让你判断 package（packets）+ bytes 变化时，到底是不是断开。
+
+
+---
+
+1. 正常 vs 断开的流量特征
+
+假设 Flow Logs 粒度是 1 分钟：
+
+状态	packets	bytes	bytes/packet	特征说明
+
+正常	中高（几十~几百+）	高（几 KB~MB）	>100	有数据收发，连接正常
+断开（全丢包）	很低（1~3）	很低（几十~几百）	80	只有 TCP SYN 重试（包头大小）
+部分丢包/高重试	中等	低~中等	<80	有很多握手/重试包，业务卡顿
+断开但大量重连	高	高	~相似正常	可能是应用一直重试连接，每次新建连接传少量数据
+
+
+
+---
+
+2. 判断方法
+
+要确认“很大”是否等于没断开，可以这样对比：
+
+1. 和实验前的 baseline 比
+
+如果 bytes 和 packets 在实验期间和之前相差不大 → 很可能没断开
+
+如果 bytes/packets 降低很多（>50%） → 可能是断开
+
+
+
+2. 看 bytes/packet 比值
+
+正常业务：通常 >100（因为有数据载荷）
+
+纯握手重试：~60–80（只有包头）
+
+如果实验期间比值骤降，就算总数还大，也可能是断开 + 高重试
+
+
+
+3. 结合时间线
+
+如果实验是 5 分钟，且这 5 分钟中间出现一个或多个时间段 bytes 和 packets 掉到低值 → 断开
+
+如果全程高值 → 没有完全断开，可能只是延迟
+
+
+
+
+
+---
+
+3. CloudWatch Insights 对比查询
+
+你可以用这个查询直接算 bytes/packet：
+
+fields @timestamp, packets, bytes, bytes/packets as bytes_per_packet, action
+| filter interfaceId = 'eni-0abc1234'
+| sort @timestamp desc
+
+bytes_per_packet < 90 → 可能是断开（握手包）
+
+bytes_per_packet > 100 且持续稳定 → 基本是正常传输
+
+
+
+---
+
+4. 总结
+
+大流量（packets+bytes大） 一般代表没断开，但必须跟 baseline 对比
+
+如果只是重试导致流量大，也可能是断开，只是应用在疯狂重连
+
+最安全的判断方式：
+
+看 bytes/packet
+
+对比实验前流量
+
+结合客户端连接失败日志
+
+
+
+
+---
+
+我可以帮你做一个 Flow Logs 自动断开检测 SQL（CloudWatch Insights 版），
+它会自动计算 bytes/packet，并标记“疑似断开”的时间段，
+这样你不用肉眼盯着数字去猜。
+
+你要我帮你写这个吗？这样你实验结果就能自动判断了。
+
