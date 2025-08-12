@@ -1,0 +1,71 @@
+你是想先找到 RDS 对应的 ENI，然后用它去过滤 VPC Flow Logs 吗？
+那我给你一个完整步骤（AWS CLI 版）：
+
+
+---
+
+1. 找到 RDS 的 ENI ID
+
+RDS 实例本身没有直接暴露 ENI，但可以通过 Network Interfaces 关联查询到。
+
+# 先查 RDS 实例的 VPC Security Group 和 Subnet
+aws rds describe-db-instances \
+  --db-instance-identifier your-rds-id \
+  --query 'DBInstances[0].{VpcId:DBSubnetGroup.VpcId,Subnets:DBSubnetGroup.Subnets[*].SubnetIdentifier,Endpoint:Endpoint.Address}'
+
+然后找 ENI：
+
+# 通过 Private IP 找 ENI（推荐）
+RDS_PRIVATE_IP=$(dig +short your-rds-endpoint)
+aws ec2 describe-network-interfaces \
+  --filters "Name=private-ip-address,Values=$RDS_PRIVATE_IP" \
+  --query 'NetworkInterfaces[*].NetworkInterfaceId' \
+  --output text
+
+或者直接用 VPC/Subnet + SG 去反查：
+
+aws ec2 describe-network-interfaces \
+  --filters \
+    "Name=subnet-id,Values=subnet-xxxxxxxx" \
+    "Name=group-id,Values=sg-xxxxxxxx" \
+  --query 'NetworkInterfaces[*].{ENI:NetworkInterfaceId,IP:PrivateIpAddress}'
+
+
+---
+
+2. 用 ENI 过滤 VPC Flow Logs
+
+假设你查到 ENI 是 eni-0abc1234，在 CloudWatch Insights 查 Flow Logs：
+
+fields @timestamp, srcAddr, dstAddr, action, bytes, packets
+| filter interfaceId = 'eni-0abc1234'
+| sort @timestamp desc
+| limit 20
+
+如果你用 Athena 存储 Flow Logs，也可以这样：
+
+SELECT *
+FROM vpc_flow_logs_db.my_flow_logs
+WHERE interfaceid = 'eni-0abc1234'
+ORDER BY start DESC
+LIMIT 20;
+
+
+---
+
+3. 分析断开证据
+
+正常连接：ACCEPT，且 bytes/packets 有流量
+
+断开或拒绝：REJECT，bytes=0 或连接超时
+
+完全中断：没有任何新日志，表示没有 TCP SYN 到达 ENI
+
+
+
+---
+
+如果你愿意，我可以帮你写一个 一步到位的 AWS CLI 脚本，输入 RDS 实例 ID 就直接输出它的 ENI ID，并且查最新的 Flow Logs 记录，这样你做实验的时候一条命令就能看结果。
+
+你要我帮你写这个一键查询脚本吗？这样你查断开证据就很快。
+
