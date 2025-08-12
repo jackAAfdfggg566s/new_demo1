@@ -1,0 +1,112 @@
+如果你用 AWS FIS 的 network-disrupt（target 是 Subnet）实验，结果 RDS 没断开，那说明流量还是走通的，可能有以下原因：
+
+
+---
+
+1. Target 范围不对
+
+RDS 的 ENI 不在你选的 Subnet
+
+RDS 是多 AZ 部署，Primary 可能在另外一个 Subnet（甚至另一个 AZ）。
+
+你选的 Subnet 断网了，但它没在那里面，所以不受影响。
+
+
+你选的只是 一个 Subnet，但 RDS 有多个 ENI 分布在不同 Subnet，剩下的还能接收流量。
+
+
+怎么验证：
+
+aws rds describe-db-instances --db-instance-identifier your-rds-id \
+  --query 'DBInstances[0].DBSubnetGroup.Subnets[*].SubnetIdentifier'
+
+对比 FIS 实验的 target subnet id。
+
+
+---
+
+2. 实验影响方向不对
+
+FIS 的 network-disrupt 可以设置 inbound 或 outbound 方向。
+如果你只丢了 inbound，但客户端是 outbound 发请求，可能还通。
+
+你没丢掉 RDS 对外返回的方向，TCP 会部分工作（可能超时慢，但不完全断）。
+
+
+怎么验证：
+检查 FIS Action 的 permanentTrafficDropPercentage 和方向参数。
+
+
+---
+
+3. 流量没走断的那条路径
+
+如果 RDS 是多 AZ 或有 Read Replica，客户端可能自动切到另一个节点（所以看起来没断）。
+
+Transit Gateway / VPC Peering 场景下，你断的 Subnet 不是实际流量经过的。
+
+
+
+---
+
+4. 网络隔离没完全生效
+
+FIS network-disrupt 默认是通过 SSM agent 注入丢包规则，如果 target 资源没装 SSM agent 或没权限，规则不会生效。
+Subnet 级别的 disrupt 其实是对关联的 ENI 注入规则，如果查不到 ENI 或权限不足，就不执行。
+
+如果你的 Flow Logs 和 CloudWatch 没有丢包迹象，可能就是规则没下发。
+
+
+怎么验证：
+看 FIS 实验日志（CloudWatch Logs / FIS Console），确认每个 Target 的 Status 是否是 Completed 而不是 Failed。
+
+
+---
+
+5. 实验丢包比例设置太低
+
+network-disrupt 支持 0~100% 丢包，如果你设了 50%，TCP 有可能仍然能建立连接（只是变慢），业务看起来没完全断。
+
+只有接近 100% 时才能模拟“完全断开”。
+
+
+
+---
+
+6. 实验时间太短
+
+如果只跑了几秒，可能在连接复用或缓存的情况下，客户端没感知到断开。
+
+数据库连接池可能提前拿到的连接还没超时，就没报错。
+
+
+
+---
+
+✅ 排查顺序建议：
+
+1. 确认 FIS target subnet 覆盖了 RDS 所在所有 Subnet（包括 Multi-AZ）。
+
+
+2. 确认方向（inbound/outbound）和丢包比例（100%）。
+
+
+3. 看 FIS Action 的执行日志是否成功。
+
+
+4. 对比实验前后 Flow Logs 和 CloudWatch Metrics 是否有变化。
+
+
+5. 在客户端主动新建连接测试（绕过连接池）。
+
+
+
+
+---
+
+如果你愿意，我可以帮你画一张 “FIS 实验不生效排查流程图”，
+一步步判断是 target 错了、规则没下发、还是流量走别的路径。
+这样你下次实验就能直接对照排查。
+
+你要我画吗？这样更直观。
+
