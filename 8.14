@@ -1,0 +1,97 @@
+要让 RDS 真正 failover，必须让 当前主库所在的数据库子网 在 VPC 内部也不可达，而不只是断公网出口。
+
+
+---
+
+1️⃣ 先搞清楚 RDS 的子网结构
+
+RDS 有一个 DB Subnet Group，里面包含多个 数据库子网（database subnet），这些子网通常分布在不同的 AZ（Multi-AZ 部署）。
+
+主库和每个备库分别放在这个 subnet group 的某一个子网里。
+
+你看到的 “nat subnet” 和 “transit gateway subnet” 一般不会被 RDS 用作数据库子网。
+
+
+
+---
+
+2️⃣ 什么时候断会触发 failover
+
+要触发 failover，RDS 控制平面必须判断主库节点不可用，典型触发条件包括：
+
+✅ 网络层不可达（VPC 内也断）
+
+断掉主库所在的数据库子网的 VPC 内通信：
+
+方法：修改该子网的 NACL，拒绝所有入出站流量（包括 VPC local CIDR）。
+
+这样主库既无法与应用通信，也无法与控制面/备库通信，很快会被判定不健康。
+
+
+或者直接在 AWS FIS 里对 主库实例 ENI 注入网络黑洞（blackhole）。
+
+
+
+---
+
+✅ 节点故障 / 实例宕机
+
+手动在控制台执行：
+
+aws rds reboot-db-instance --db-instance-identifier <主库ID> --force-failover
+
+或者（Aurora 集群）：
+
+aws rds failover-db-cluster --db-cluster-identifier <集群ID>
+
+
+
+---
+
+✅ AZ 故障模拟
+
+如果主库所在 AZ 整个失联（包括子网），RDS 会自动切到其他 AZ 的备库。
+
+在 FIS 中可以选择 network disruption 目标为 AZ 级别资源。
+
+
+
+---
+
+3️⃣ 不会触发 failover 的情况（你的实验）
+
+断 NAT subnet → 只断公网出口，私网通信不受影响。
+
+断 Transit Gateway subnet → 只影响跨 VPC / 本地连接，VPC 内通信不受影响。
+
+改应用安全组只挡应用 → 主库对控制面健康，仍然是主节点。
+
+阻断公网 API → 不影响数据库节点间的私网心跳。
+
+
+
+---
+
+4️⃣ 推荐验证步骤
+
+1. 用 aws rds describe-db-instances 找出主库的 AvailabilityZone 和 子网 ID。
+
+
+2. 在 VPC 控制台找到这个子网，确认它是 DB Subnet Group 中的一个。
+
+
+3. 用 NACL 或 FIS 直接阻断该子网所有入出站流量。
+
+
+4. 在 CloudWatch RDS 事件里确认 failover 事件出现（几十秒内）。
+
+
+5. 再次 describe-db-instances，看主库 AZ 是否变了。
+
+
+
+
+---
+
+如果你愿意，我可以帮你画一个**“哪种 subnet 断了才 failover”**的示意图，把 NAT、TGW、数据库 subnet 画在一张图里，标出你现在断错的地方。这样以后做实验就一次就能成功。
+
