@@ -1,0 +1,102 @@
+要找到断开后一定能让 RDS failover 的子网，关键是先确认 当前主库实例到底在哪个 subnet，然后针对它下手。
+
+我给你分成三步说，避免你再断到 NAT / TGW 这种“对业务没影响”的子网。
+
+
+---
+
+① 找到主库实例
+
+先查你的 RDS 是 实例型（Multi-AZ） 还是 集群型（Aurora 或 Multi-AZ Cluster）：
+
+aws rds describe-db-instances --db-instance-identifier <你的RDS ID> --query "DBInstances[0].[MultiAZ,DBClusterIdentifier]"
+
+如果 MultiAZ=true 且 DBClusterIdentifier 是 null → 你是经典 Multi-AZ 实例型。
+
+如果有 DBClusterIdentifier → 你是集群型（Aurora 或 Multi-AZ Cluster）。
+
+
+
+---
+
+② 查主库所在 subnet
+
+实例型（Multi-AZ）
+
+aws rds describe-db-instances --db-instance-identifier <你的RDS ID> \
+  --query "DBInstances[0].[DBSubnetGroup.Subnets[].{SubnetID:SubnetIdentifier,AZ:SubnetAvailabilityZone.Name},AvailabilityZone]" --output table
+
+最后一个 AvailabilityZone 就是当前主库所在的 AZ。
+
+在上面列的 Subnet 里，找到 同 AZ 的那个，就是主库所在 subnet。
+
+
+
+---
+
+集群型（Aurora / Multi-AZ Cluster）
+
+# 找当前主库实例名
+aws rds describe-db-clusters --db-cluster-identifier <你的集群ID> \
+  --query "DBClusters[0].DBClusterMembers[?IsClusterWriter==\`true\`].DBInstanceIdentifier" --output text
+
+# 再查这个实例在哪个 subnet
+aws rds describe-db-instances --db-instance-identifier <上面查到的实例ID> \
+  --query "DBInstances[0].[DBSubnetGroup.Subnets[].{SubnetID:SubnetIdentifier,AZ:SubnetAvailabilityZone.Name},AvailabilityZone]" --output table
+
+同样方法：找 与主库 AZ 相同的 subnet。
+
+
+
+---
+
+③ 断这个 subnet 才会触发 failover
+
+找到主库 subnet 之后，有两种方法让它不可达：
+
+方法 A：改 NACL（硬切）
+
+1. 在 VPC 控制台找到该 subnet 对应的 NACL。
+
+
+2. 把 入站和出站规则都改成拒绝所有（DENY 0.0.0.0/0）。
+
+
+3. 等几十秒，RDS 检测不到主库，就会 failover 到其他 AZ。
+
+
+
+方法 B：FIS 实验注入黑洞
+
+aws fis start-experiment \
+  --experiment-template-id <你的FIS模板ID> \
+  --region <区域>
+
+目标选 ENI，用 aws ec2 describe-network-interfaces --filters Name=description,Values="RDSNetworkInterface*<实例ID>*" 找到主库的 ENI ID。
+
+直接对这个 ENI 注入网络丢包或完全中断。
+
+
+
+---
+
+④ 验证 failover
+
+用：
+
+
+aws rds describe-db-instances --db-instance-identifier <RDS ID> --query "DBInstances[0].AvailabilityZone"
+
+反复查看，看到 AZ 变化就是成功 failover。
+
+或者查事件：
+
+
+aws rds describe-events --source-identifier <RDS ID> --duration 60
+
+
+---
+
+我可以帮你画一个图，把 NAT / TGW / DB subnet 分开标，直接高亮“这个断了才会 failover”，这样你就能一眼找准目标。
+你要我画吗？这样以后就不会断错。
+
