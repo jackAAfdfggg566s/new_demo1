@@ -1,0 +1,59 @@
+你这个 row should have 2 elements 报错，应该是我刚才给你的 --query 里用了不太兼容的数组结构，aws cli 在解析的时候发现返回的行元素数量不一致就报错了。
+
+我帮你改成一次查两样的安全写法，不会出错，而且更清晰。
+
+
+---
+
+经典 Multi-AZ 实例型查法（不会再报错）
+
+aws rds describe-db-instances \
+  --db-instance-identifier <你的RDS ID> \
+  --query "DBInstances[0].{AZ:AvailabilityZone,Subnets:DBSubnetGroup.Subnets[].{SubnetID:SubnetIdentifier,SubnetAZ:SubnetAvailabilityZone.Name}}" \
+  --output json
+
+AZ → 当前主库所在的 AZ
+
+Subnets → DB Subnet Group 里所有子网及其 AZ
+
+
+找出和主库 AZ 相同的那个 subnet，就是你要断的子网。
+
+
+---
+
+Aurora / Multi-AZ Cluster 查法
+
+# 1. 查当前主库实例名
+aws rds describe-db-clusters \
+  --db-cluster-identifier <你的集群ID> \
+  --query "DBClusters[0].DBClusterMembers[?IsClusterWriter==\`true\`].DBInstanceIdentifier" \
+  --output text
+
+# 2. 查主库在哪个 subnet
+aws rds describe-db-instances \
+  --db-instance-identifier <上面查到的主库实例ID> \
+  --query "DBInstances[0].{AZ:AvailabilityZone,Subnets:DBSubnetGroup.Subnets[].{SubnetID:SubnetIdentifier,SubnetAZ:SubnetAvailabilityZone.Name}}" \
+  --output json
+
+
+---
+
+常见坑
+
+1. --output table 要求每行列数一致，如果你直接输出数组嵌套数组，会出现 “row should have 2 elements” 报错。
+
+
+2. 如果只想要可视化对比 AZ → Subnet，建议 --output json 或 --output text 再手动对照。
+
+
+3. Aurora 集群和经典 Multi-AZ 实例型结构不一样，查法要分开。
+
+
+
+
+---
+
+我可以帮你直接写一个 一键脚本，自动识别是 Aurora 还是 Multi-AZ 实例，直接输出主库所在 subnet ID，这样你直接拿去断就行，连查都不用分两步。
+你要我帮你做这个脚本吗？这样以后 failover 实验就一条命令搞定。
+
