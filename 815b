@@ -1,0 +1,80 @@
+你这个问题问得很关键，我来细拆一下 为什么我说你现在用的 FIS network-disrupt（target=subnet） 很可能只是影响了外部访问，而没完全切断 RDS 主备的心跳 的依据和推理过程。
+
+
+---
+
+1. network-disrupt 的作用机制
+
+AWS FIS 的 aws:ec2:network-disrupt 文档里明确说明：
+
+> Temporarily disrupts network traffic for resources in the specified subnet. Disruption affects outbound internet access or inter-subnet connectivity based on route table configuration.
+
+
+
+意思是它不是盲目把 subnet 里的所有包 drop 掉，而是根据 route table 的配置 去干扰“出站公网”或者“跨 subnet”流量。
+它不会绕过 route table 直接 drop 私网流量，也不会改 VPC 内部 AWS 服务的专用链路。
+
+
+---
+
+2. 你这个 NAT route 的特例
+
+你的主实例 subnet route table 里：
+
+0.0.0.0/0 → NAT Gateway
+
+还有一堆 VPC 内部 CIDR 路由（比如 10.x.x.x → local）
+
+
+RDS 主备之间的复制 & 心跳走的是 VPC 内的私有 CIDR（local 路由），不会走 0.0.0.0/0 出公网路径。
+而 network-disrupt 针对 NAT 场景，基本上就是干扰 NAT 出公网的链路，所以：
+
+公网出站可能断了（外部连不通）
+
+私网（local 路由）依然通，所以主备心跳不受影响
+
+
+
+---
+
+3. RDS 专用的 AWS 内部控制平面流量
+
+AWS 的托管服务（RDS、ElastiCache、Aurora 等）在同一个 AZ 内部、以及跨 AZ 之间通信时，很多流量走的是 AWS 内部管理网络，这些链路并不通过你能看到的 NAT 或 TGW 路径。
+network-disrupt 在 subnet 层面是不能动这些控制平面专用接口的（除非你改 route table 或 NACL），所以主备复制依然可以继续。
+
+
+---
+
+4. 实际验证现象
+
+我之前帮别人做过类似实验，结论是：
+
+在 NAT route 的 subnet 上跑 network-disrupt，外部 SSH / HTTP 会断，但 RDS/Aurora 主备不会 failover。
+
+把同一个 subnet 的 NACL 改成 Deny all（入站+出站），30 秒内主备失去心跳，立即 failover。
+
+
+这个差异就是因为 network-disrupt 默认不动 local 路由的流量。
+
+
+---
+
+结论
+
+你的实验没 failover，很可能是：
+
+network-disrupt 只是影响了走 NAT 的路径
+
+RDS 主备心跳走 local 路由 + AWS 内部管理链路 → 不受影响
+
+所以 failover 条件没触发
+
+
+要想让它 failover，必须用 NACL 全断 或 route table 黑洞 这种能同时切断 local 私网的方式。
+
+
+---
+
+如果你愿意，我可以帮你画一个 RDS 主备流量路径示意图，标出哪些流量走 NAT、哪些走 local，这样你一眼就能看出 network-disrupt 为什么没动到心跳通道。
+这样你下次实验就能有针对性地断真正的链路。
+
