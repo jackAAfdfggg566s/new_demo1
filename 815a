@@ -1,0 +1,35 @@
+对，你说的没错，aws:ec2:network-blackhole 这个 action 只能用在 有 SSM Agent 且受 Systems Manager 管理的实例（EKS 节点、ECS EC2 模式、普通 EC2），而 RDS 实例是托管服务，不会装 SSM Agent，所以没法直接对 RDS 的 ENI 用 blackhole。
+
+这就是你实验不触发 failover 的根本原因之一：
+
+FIS 在 RDS 上能操作的范围非常有限，它不能直接“拔掉”RDS 的网络接口，只能通过影响承载它的 subnet 来间接测试。
+
+但是如果 subnet 的 route table 是 NAT 出口型，你断它其实没切断 RDS 主备内部心跳链路（因为那走的是 AWS 内部私有通道，不依赖 NAT）。
+
+
+
+---
+
+✅ 可行的 failover 模拟方法（不依赖 SSM）：
+
+1. 改 route table
+临时把主实例所在 subnet 的 route table 改成“黑洞”，即所有目标都指向一个不存在的 target（或者直接删除到 VPC 内段的路由），这样 RDS 主备的私网心跳也会断掉。
+
+
+2. 改 NACL（网络 ACL）
+对主实例 subnet 的 NACL 同时加上 inbound / outbound DENY all（优先规则 1），这会直接阻断所有流量。几秒内 RDS 就会失去心跳并 failover。
+
+
+3. AZ 层故障模拟（比较极端）
+如果你有多 AZ 部署，可以在 FIS 里对一个 AZ 做更大范围的网络中断（例如断掉所有该 AZ 的 private subnet 流量），这样一定触发 failover。
+
+
+
+
+---
+
+如果你愿意，我可以帮你画一张 “RDS 无 SSM 条件下 failover 测试流程”图，把上面三种方法的执行顺序和 CLI 命令都放进去，你就可以直接按步骤跑。
+这样以后不会出现断了 NAT 子网还不 failover 的情况。
+
+你要我帮你画这个流程图吗？这样你一次就能测成功。
+
