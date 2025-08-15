@@ -1,0 +1,60 @@
+这个现象很好解释，其实就是 “心跳通道依赖的网络路径不同” 导致的结果。
+
+
+---
+
+1. EKS 那个“主备切换”的本质
+
+你说的 EKS 主备切换，不是 AWS RDS 这种由 AWS 管控的数据库自动 failover，而是 你们应用自己定义的主备切换逻辑，依赖的是：
+
+应用的心跳信号（通过 Kafka 或其他 TCP/HTTP 链路）
+
+这条心跳链路走的就是 VPC 普通网络路径（可能跨 subnet、跨 AZ）
+
+一旦这条路径被 network-disrupt 阻断，应用感知不到对方 → 判定为失败 → 切主
+
+
+这里的心跳完全依赖你的 VPC 数据平面，而 network-disrupt 正好能影响这个平面，所以切换就触发了。
+
+
+---
+
+2. RDS 的心跳机制不一样
+
+RDS（尤其是 Multi-AZ）主备心跳和复制用的是 AWS 内部管理网络（control plane + storage replication network），这套网络：
+
+不依赖 NAT，也不一定走 VPC 普通的 data plane 路由
+
+在物理和逻辑上和你能改的 route table / SG / NACL 有隔离
+
+所以 network-disrupt 就算影响了你对外的公网/跨 subnet 流量，也碰不到这个心跳链路
+
+
+换句话说，你断的只是“应用看得见的路”，AWS 自己的“后门管理通道”还在，所以它没 failover。
+
+
+---
+
+3. 对比总结
+
+特性	你们 EKS 主备	RDS 主备
+
+心跳依赖	Kafka / TCP / 应用层	AWS 内部控制平面
+路由路径	VPC 普通 data plane	AWS 私有 control plane
+network-disrupt 影响	会直接断	基本无影响
+failover 控制权	你们的代码	AWS RDS 服务本身
+
+
+
+---
+
+✅ 所以同样的 network-disrupt，在 EKS 能切主，在 RDS 不行，是因为 RDS 的主备链路走了你碰不到的管理通道。
+
+
+---
+
+如果你想，我可以帮你画一个 “EKS vs RDS 主备心跳链路对比图”，标出 network-disrupt 能影响的路径和影响不到的路径，这样你就能非常直观地看到差别。
+这样以后你就知道什么时候可以用 FIS，什么时候必须改 NACL / route table 才能触发切换。
+
+你要我画这个图吗？
+
