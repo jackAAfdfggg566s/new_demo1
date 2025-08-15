@@ -1,0 +1,60 @@
+那就很清楚了——你虽然是对主实例所在的 subnet做了 network-disrupt，但它的 route table 指向 NAT，实际上并没有切断 RDS 主备之间的心跳通道，所以不会触发 failover。
+
+原因是：
+
+1. RDS 主备复制和健康检查
+
+主备之间的心跳流量走的是 VPC 内部私有网段，并不是你 NAT route 里的 0.0.0.0/0 出公网路径。
+
+即使你断 NAT 的那条出口路由，RDS 在私网里还是能直接和备实例通信。
+
+
+
+2. FIS network-disrupt 的作用范围
+
+如果 target 的 subnet ENI 只是断了外部方向，而 AWS 内部的控制平面和私网链路没被阻断，failover 条件不成立。
+
+AWS 内部路由并不是完全通过你的 VPC route table 实现的，有些流量走的是 AWS 管理平面专用通道。
+
+
+
+3. 结果就是
+
+你的断网操作只影响了“出公网访问”路径，没影响“主备复制心跳”，所以 failover 没触发。
+
+
+
+
+
+---
+
+要在实验里真触发 failover，有两个可行方法：
+
+方法 1（推荐）
+直接针对 主实例的 ENI（Elastic Network Interface）做 network-blackhole，这样会切断它在该 AZ 的所有入出流量，包括到备实例的心跳。
+
+aws fis create-experiment-template \
+  --targets '{"eniTarget":{"resourceType":"aws:ec2:network-interface","resourceArns":["arn:aws:ec2:...eni-id..."]}}' \
+  --actions '{"blackhole":{"actionId":"aws:ec2:network-blackhole","parameters":{"duration":"PT5M"},"targets":{"NetworkInterfaces":"eniTarget"}}}'
+
+方法 2
+在主实例所在的 subnet 的 NACL 上添加规则，直接 Deny 所有 0.0.0.0/0（入站+出站），并立即应用，这会切断一切通信。
+
+
+---
+
+如果你要的话，我可以帮你写一个 CLI 查询链：
+
+1. 查 RDS 当前主实例 ID
+
+
+2. 找到它的 ENI ID
+
+
+3. 把这个 ENI 直接作为 FIS 实验的 target
+这样就不会出现“断了 NAT 但主备心跳还活着”的情况。
+
+
+
+你要我帮你写这个查询链吗？这样你下一次实验就一定会触发 failover。
+
