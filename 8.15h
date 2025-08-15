@@ -1,0 +1,80 @@
+如果你 subnet 就 6 个，而且确认断的是主实例所在的那个 Subnet，
+但是客户端还是能连、还能写，那基本只剩下一个解释：
+
+> 你所谓的“断”是 外部视角断了，但 AWS 内部的 VPC 内网流量路径 没有被切掉，所以 RDS 主实例跟客户端依然能通信。
+
+
+
+
+---
+
+为什么外部断了还连得上
+
+在 AWS VPC 里，RDS 的网络是走 内部私有路由 的，不会经过 NAT、Internet Gateway 这些“外部”设备。
+即使你：
+
+删了 NAT Gateway
+
+改了 Internet-facing 路径
+
+阻断了公网方向的路由
+
+
+RDS 和你的 EC2（或 VPN/Direct Connect 客户端）之间的 私网路径 仍然可以直接打通，因为：
+
+RDS 的 ENI 直接挂在那个 Subnet 的 私有 IP 段 上
+
+你没改动 VPC 路由表里那条 10.x.x.x/16 local 的内部路由
+
+AWS 内部数据平面依旧能转发包
+
+
+
+---
+
+这就是为什么 FIS 断网实验常“看起来”没生效
+
+FIS 的 network-disrupt action 有多种模式，有的只影响到 Internet 方向 的流量（blackhole to internet），并不会影响 VPC 内部 peer-to-peer 的流量
+
+如果你的客户端和 RDS 都在同一个 VPC（或者 VPC peering / TGW 内部互通），这些包根本不会走被“断掉”的路径
+
+
+
+---
+
+真正让它“连不上”的方法
+
+如果你想让它真的不可写，必须：
+
+1. 找到 主实例当前 Writer 的 ENI Subnet
+
+aws ec2 describe-network-interfaces \
+  --filters "Name=description,Values=*<db-instance-identifier>*" \
+  --query "NetworkInterfaces[*].{Subnet:SubnetId,IP:PrivateIpAddress}"
+
+
+2. 在 NACL 里直接拒绝所有 入站和出站（0.0.0.0/0，TCP 3306/5432 端口）
+
+
+3. 或者用 FIS aws:ec2:network-blackhole，target 选 那个 ENI 的 ID（而不是整个 Subnet）
+
+
+4. 客户端用 固定 IP 直连测试（绕开 DNS failover）
+
+
+
+
+---
+
+💡 重点是：断 Subnet ≠ 断 RDS 数据流，尤其是 AWS 内部私网流量不走你以为的“外部”路径。
+所以要精确到 ENI 级别，才能确保真的把 Writer 卡死。
+
+
+---
+
+如果你愿意，我可以帮你画一个
+“RDS 主实例 → 客户端流量路径示意图”
+把 AWS 内网路径、ENI 位置、Subnet 路径标出来，这样你就知道为什么外部断了也还能通。
+
+要帮你画吗？这样一眼就能看出来。
+
