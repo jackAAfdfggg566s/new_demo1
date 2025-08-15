@@ -1,0 +1,58 @@
+你说的 注册 在 Ansible 里就是用 register: 关键字，
+用它可以把某个任务的输出保存到变量里，后续步骤直接用这个变量。
+
+
+---
+
+最简单的 register 例子
+
+- hosts: all
+  gather_facts: no
+  tasks:
+    - name: 生成时间戳
+      command: date +%Y%m%d_%H%M
+      register: ts_output
+
+    - name: 打印时间戳
+      debug:
+        msg: "时间戳是 {{ ts_output.stdout }}"
+
+    - name: 压缩文件
+      command: "7z a /tmp/backup_{{ ts_output.stdout }}.7z /path/to/files"
+
+    - name: 拷贝压缩包到本地
+      fetch:
+        src: "/tmp/backup_{{ ts_output.stdout }}.7z"
+        dest: "./"
+        flat: yes
+
+
+---
+
+关键点
+
+1. register: ts_output
+
+把 date 命令的执行结果保存到变量 ts_output 中。
+
+
+
+2. 取值要用 {{ ts_output.stdout }}
+
+stdout 是命令标准输出的内容。
+
+
+
+3. 后面的任务就能用这个变量拼接文件名，压缩和拷贝保持一致。
+
+
+
+
+---
+
+如果你 Playbook 分成两步运行（压缩一步，拷贝一步），
+那这个 register 在第二步就没法直接用了，需要写到一个文件里再读取。
+我可以帮你写一个 跨 Playbook 共享变量的例子，这样就能真正做到分开运行还共享文件名。
+
+你是想要这种跨 Playbook 共享的版本吗？这样就不用担心第二步找不到变量了。
+
