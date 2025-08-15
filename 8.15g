@@ -1,0 +1,98 @@
+如果 没看到主备切换（No Failover），但你断了主实例的 subnet 仍然能写数据库，那就几乎可以确定问题在 网络并没有真正阻断 RDS 主实例的写路径，而不是因为切换到备机。
+
+我帮你拆开逻辑解释一下：
+
+
+---
+
+1. RDS 并不是直接挂在你断掉的 Subnet 上
+
+RDS 实例底层是多个 ENI（弹性网卡），并且这些 ENI 不一定都在你看到的“主实例 Subnet”里。
+
+有的 ENI 是 数据流量用（Client 连接），有的可能是 管理/备份 用。
+
+你可能断的是一个非主要数据流量的 Subnet。
+
+AWS 控制台里显示的 “主实例 AZ” 只是计算节点所在的 AZ，不代表它唯一的网络路径。
+
+
+
+---
+
+2. FIS 或 NACL 的阻断方式不彻底
+
+如果你用 FIS network disruption 或修改 NACL/Security Group：
+
+可能只阻断了对外流量（NAT/Internet），而 VPC 内部 10.x/172.x 流量依然通。
+
+RDS 到客户端一般走 VPC 内部路由，这条路径可能完全没被影响。
+
+
+你在 VPC Flow Logs 里还能看到 ACCEPT OK，就是证据 → 说明 TCP 连接依然健康。
+
+
+
+---
+
+3. RDS 存储与计算分离，部分情况下能短暂容忍网络问题
+
+在你“断开”的过程中，如果只是某个辅助路径被切掉，而计算节点到存储节点的内部 AWS 网络没受影响，那实例会继续正常工作。
+
+Aurora 尤其明显：存储是独立的，计算节点只要还能访问存储集群，就能写。
+
+
+
+---
+
+4. 没有 Failover 说明 Writer 实例一直活着
+
+如果你真的断了它的唯一可用网络路径，RDS 会在 30 秒~2 分钟 内触发故障转移（Failover），你一定会在 CloudWatch 里看到：
+
+RDS-EVENT-0045 (DB instance restarted)
+
+RDS-EVENT-0071 (Failover started)
+
+
+既然没看到这些事件，就代表 主实例健康检查没失败，AWS 觉得它还在线。
+
+
+
+---
+
+实际原因最可能是：
+
+> 你断开的那个 Subnet 并不是主实例客户端连接实际使用的 Subnet，或者阻断范围没覆盖到 RDS 主 ENI 的入站流量。
+
+
+
+
+---
+
+验证方法（精准切断写路径）
+
+1. 查出当前 Writer 的 ENI：
+
+aws rds describe-db-instances --db-instance-identifier <your-db-id> \
+  --query "DBInstances[0].DBSubnetGroup.Subnets[*].[SubnetIdentifier,SubnetAvailabilityZone.Name]"
+
+aws ec2 describe-network-interfaces \
+  --filters "Name=description,Values=*<your-db-id>*"
+
+看 SubnetId，确定是哪个。
+
+
+2. 在 NACL 或 FIS 里直接 block 这个 Subnet 对客户端 IP 的全部入站。
+
+
+3. 客户端直连 IP 测试（不要用 DNS endpoint，避免 AWS 自动切到其他 ENI）。
+
+
+
+
+---
+
+如果你愿意，我可以帮你画一张 RDS 主实例 ENI / Subnet / 路径结构图，这样你就能一步锁定该断哪条线才会真的停写。
+这样会比你现在“瞎断”更精准。
+
+你要我画吗？这样你就能马上实验成功。
+
