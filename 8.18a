@@ -1,0 +1,65 @@
+哦，明白了 👍
+你现在在 AWS FIS Console 里建实验，Target 里只看到 Subnet 能选，没法直接点 RDS 的 ENI 对吧？
+
+这是因为 FIS 内置的 network disrupt action 有两类目标：
+
+1. aws:ec2:network-interface → 断某个具体 ENI（适合 RDS 这种场景，但需要你手动指定 ENI ARN）。
+
+
+2. aws:ec2:subnet → 断整个子网的流量（会影响该子网里所有 ENI，包括 RDS、EC2 等）。
+
+
+
+
+---
+
+🔑 差别在这：
+
+Console 里默认只给你 Subnet 这种资源类型的选择器（比较粗粒度，影响大）。
+
+如果你要精确到 RDS 的 ENI，需要用 JSON 模板 或 CLI 来定义 Target，自己填 aws:ec2:network-interface，Console UI 里不会列出来。
+
+
+
+---
+
+✅ 解决方案
+
+如果你只能选 Subnet：
+
+那就只能断掉整个 RDS 当前 Primary 所在的子网。
+
+一旦断了，RDS Primary 和外界完全失联，它会触发 failover 到另一个 AZ 的 Subnet。
+
+
+如果你想精确到某个 RDS：
+
+在 FIS Experiment template → JSON view 里手动写 Target：
+
+"targets": {
+  "rds-eni": {
+    "resourceType": "aws:ec2:network-interface",
+    "resourceArns": [
+      "arn:aws:ec2:ap-southeast-2:123456789012:network-interface/eni-0abcd1234ef567890"
+    ]
+  }
+}
+
+然后把 action 的 target 改成 rds-eni。
+
+
+
+---
+
+⚠️ 注意
+
+如果你用 Subnet 作为 Target，实验一旦启动，这个 Subnet 上的 所有 ENI 都会被断（可能会影响别的服务，不只是 RDS）。
+
+想要最小化影响，最好还是用 ENI 级别的 target，只是 Console UI 不支持，要走 JSON/CLI。
+
+
+
+---
+
+要不要我帮你写一个 基于 Subnet 的 FIS 实验模板，直接断掉某个 RDS Primary 所在 Subnet，保证能触发 failover？
+
