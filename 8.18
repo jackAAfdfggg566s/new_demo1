@@ -1,0 +1,78 @@
+好的 👍 我给你写一个完整的 FIS 实验模板 JSON，Target 用 Subnet（因为你说 Console 里只看到 Subnet 可以选）。这样实验一跑，就会把这个 Subnet 上的所有 ENI（包括 RDS Primary 的）断掉，从而触发 failover。
+
+假设参数：
+
+区域：ap-southeast-2
+
+账户 ID：123456789012
+
+要断的 Subnet：subnet-0abc123def456ghij
+
+持续时间：5 分钟
+
+
+
+---
+
+实验模板 JSON
+
+{
+  "description": "RDS failover test by disconnecting subnet",
+  "targets": {
+    "rds-subnet": {
+      "resourceType": "aws:ec2:subnet",
+      "resourceArns": [
+        "arn:aws:ec2:ap-southeast-2:123456789012:subnet/subnet-0abc123def456ghij"
+      ]
+    }
+  },
+  "actions": {
+    "network-disrupt": {
+      "actionId": "aws:ec2:network-disrupt-connectivity",
+      "parameters": {
+        "scope": "ALL",
+        "duration": "PT5M"
+      },
+      "targets": {
+        "Subnets": "rds-subnet"
+      }
+    }
+  },
+  "stopConditions": [],
+  "roleArn": "arn:aws:iam::123456789012:role/FIS-Experiment-Role",
+  "tags": {
+    "Name": "rds-failover-test"
+  }
+}
+
+
+---
+
+字段解释
+
+targets.rds-subnet.resourceType=aws:ec2:subnet → 目标是整个子网。
+
+actionId=aws:ec2:network-disrupt-connectivity → 网络中断。
+
+scope=ALL → 入站和出站全断。
+
+duration=PT5M → 故障持续 5 分钟（ISO8601 格式）。
+
+roleArn → 要有 FIS 的执行权限（至少 fis:StartExperiment、ec2:CreateNetworkInsightsPath、ec2:ModifyNetworkInterfaceAttribute 等）。
+
+
+
+---
+
+⚠️ 提醒：
+
+一旦运行，这个 Subnet 上所有实例都会断网，不光是 RDS。
+
+想最小化影响，建议还是用 ENI 级别 target（只能走 JSON/CLI，不在 Console 下拉框里）。
+
+
+
+---
+
+要不要我帮你写一个 ENI 精确 targeting 版本的 JSON（只断 RDS Primary 的 ENI，不影响别的 EC2/服务）？
+
