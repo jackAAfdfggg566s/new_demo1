@@ -1,0 +1,89 @@
+👌 要判断一个 Subnet 里放了哪些服务，可以从 子网下的 ENI (network interface) 入手，因为所有挂在这个子网里的资源（EC2、RDS、EKS Pod、NLB、Lambda ENI 等）都会创建 ENI。
+
+
+---
+
+🔍 方法一：查 ENI 看关联资源
+
+SUBNET_ID=subnet-0abc123def456ghij
+
+aws ec2 describe-network-interfaces \
+  --filters "Name=subnet-id,Values=$SUBNET_ID" \
+  --query "NetworkInterfaces[].{ID:NetworkInterfaceId,Type:InterfaceType,Description:Description,Attachment:Attachment.InstanceId}" \
+  --output table
+
+输出里会看到：
+
+Attachment.InstanceId → 如果是 EC2 实例
+
+Description → 可能显示：
+
+RDSNetworkInterface for DB mydb (Managed by RDS) → RDS
+
+ELB app/my-alb/... → Load Balancer
+
+ECS Task ... → ECS/Fargate
+
+amazon-eks-pod-eni → EKS Pod
+
+AWS Lambda VPC ENI → Lambda
+
+Primary network interface → 普通 EC2
+
+
+
+
+---
+
+🔍 方法二：按服务单独查
+
+1. EC2 实例
+
+aws ec2 describe-instances --filters "Name=subnet-id,Values=$SUBNET_ID" \
+  --query "Reservations[].Instances[].{ID:InstanceId,Name:Tags[?Key=='Name'].Value|[0]}"
+
+2. RDS 数据库
+
+aws rds describe-db-instances \
+  --query "DBInstances[?DBSubnetGroup.Subnets[?SubnetIdentifier=='$SUBNET_ID']].DBInstanceIdentifier"
+
+3. ELB / ALB / NLB
+
+aws elbv2 describe-load-balancers \
+  --query "LoadBalancers[?AvailabilityZones[?SubnetId=='$SUBNET_ID']].LoadBalancerName"
+
+4. EKS Pod (带 VPC CNI 的 ENI)
+
+ENI 描述里会有 amazon-eks-pod-eni，可以直接从方法一输出里判断。
+
+5. Lambda (VPC ENI)
+
+ENI 描述里一般是 AWS Lambda VPC ENI。
+
+
+---
+
+🔍 方法三：Console 可视化
+
+VPC → Subnets → 选中某个 Subnet → “Network interfaces”
+
+里面直接列出所有 ENI，点进去就能看出是什么服务挂上来的。
+
+
+
+---
+
+✅ 总结：
+
+最快的方法：直接查 Subnet 下的 ENI 描述 (describe-network-interfaces)
+
+更精细：按 EC2 / RDS / ELB / Lambda / EKS 各自的 API 过滤
+
+如果这个 Subnet 里不止 RDS，FIS 实验断掉会影响所有这些服务
+
+
+
+---
+
+要不要我帮你写一个 一键脚本（输入 Subnet ID，自动列出所有 EC2、RDS、ELB、EKS、Lambda 资源），这样你就能直接看到副作用清单？
+
