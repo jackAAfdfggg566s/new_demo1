@@ -1,0 +1,70 @@
+你这个实验没触发 RDS failover 的原因，和 RDS 的网络设计有关系。把几个关键点拆开解释：
+
+
+---
+
+1. ENI 和 Subnet 的关系
+
+每个 RDS 实例（不管是 writer 还是 reader）都有至少一个 primary ENI（数据库访问的入口）。
+
+这个 ENI 会挂在 RDS Subnet Group 里的一个 subnet 上。
+
+但是 RDS 的控制平面（failover 逻辑）和 数据平面 ENI（你应用连接的 IP）是分开的。你在 FIS 实验里断开 subnet 流量，只是断了 ENI 的路，不等于“实例故障”。
+
+
+
+---
+
+2. 为什么还能写
+
+RDS 有几个机制导致你看到还能写：
+
+RDS Endpoint 是虚拟的：
+你的应用连的其实是 RDS 的 endpoint DNS，AWS 会在后台解析到对应实例的 ENI。
+如果你只是黑洞一个 subnet 的流量，可能你阻断的只是部分路径，但应用所在的 subnet → RDS subnet 的路由还存在，所以仍能写。
+
+RDS 是 Multi-AZ 的话：
+Primary 在一个 AZ，Standby 在另一个 AZ。Failover 的触发条件不是“一个 subnet 流量被阻断”，而是“RDS 主实例健康检查失败”。
+你用 FIS 只是阻断了 VPC 路由里的某个点，但 RDS 实例本身还活着，所以没有触发 failover。
+
+
+
+---
+
+3. FIS 的 Network Disrupt Action 对 RDS 的局限
+
+aws:ec2:network-disrupt-connectivity 这种 action 是针对 EC2/ENI 的。
+
+对 RDS 来说，你没法直接让控制面的健康检查失败（AWS 内部监控的通道不一定走你断掉的 subnet）。
+
+所以 RDS 还会认为主库是健康的，不会切换。
+
+
+
+---
+
+4. 正确的触发方式
+
+如果你要实验 RDS 的 failover，不建议靠断网（因为 AWS 内部健康检查绕过你的黑洞）。常见的做法是：
+
+使用 FIS 提供的 RDS 专用 action：
+aws:rds:failover-db-cluster（Aurora）
+或 aws:rds:reboot-db-instance 并指定 --force-failover（适用于 Multi-AZ RDS）。
+
+人为 Reboot 并 Force Failover：
+
+aws rds reboot-db-instance \
+  --db-instance-identifier mydbinstance \
+  --force-failover
+
+
+这样才会让 RDS 真正切换到 standby。
+
+
+---
+
+✅ 总结：
+你断 subnet 没有引起 failover，是因为 RDS 的健康检查和 failover 控制面不依赖你断掉的流量。如果要验证 failover，应该用 RDS 专用的 FIS action 或强制 failover API，而不是靠 subnet 黑洞。
+
+要不要我帮你写一个 FIS 实验模板，用官方支持的 reboot-db-instance --force-failover 来可靠地触发 RDS failover？
+
