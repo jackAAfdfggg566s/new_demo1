@@ -1,0 +1,102 @@
+👌 如果你不想用 Lambda，还有几种常见方式可以把 Top SQL 的指标写到 CloudWatch Custom Metrics，我按常见方案帮你列出来：
+
+
+---
+
+🔹 方案 1: 直接用 AWS CLI + CloudWatch put-metric-data
+
+你可以写一个 shell 脚本 + cronjob 跑在一台 EC2 或本地服务器上：
+
+#!/bin/bash
+DB_ID="your-db-identifier"
+END=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+START=$(date -u -d "-5 minutes" +"%Y-%m-%dT%H:%M:%SZ")
+
+# Step1: 拉Top SQL
+RESULT=$(aws rds describe-dimension-keys \
+  --service-type RDS \
+  --identifier $DB_ID \
+  --start-time $START \
+  --end-time $END \
+  --metric DBLoad \
+  --group-by Dimension=sql \
+  --max-results 5)
+
+# Step2: 解析并写入CloudWatch
+echo $RESULT | jq -c '.Keys[]' | while read row; do
+    SQLHASH=$(echo $row | jq -r '.Dimensions.sql')
+    VALUE=$(echo $row | jq -r '.Total')
+
+    aws cloudwatch put-metric-data \
+      --namespace "Custom/TopSQL" \
+      --metric-name "DBLoad" \
+      --dimensions DBIdentifier=$DB_ID,SQLHash=$SQLHASH \
+      --timestamp $END \
+      --value $VALUE \
+      --unit Count
+done
+
+👉 放到 cron 里，每 5 分钟跑一次，就能持续把指标写到 CloudWatch。
+
+
+---
+
+🔹 方案 2: CloudWatch Agent + StatsD
+
+如果你有自己的 中间层应用（EC2、ECS、EKS），可以：
+
+1. 在应用里调用 RDS Performance Insights API 拿到指标。
+
+
+2. 通过 StatsD/collectd 把这些指标写到本地 CloudWatch Agent。
+
+
+3. CloudWatch Agent 会自动推送到 CloudWatch Custom Metrics。
+
+
+
+适合已有 metrics pipeline 的团队。
+
+
+---
+
+🔹 方案 3: AWS Glue / Step Functions + CloudWatch
+
+用 Glue（定时 ETL Job）或者 Step Functions 调度：
+
+Step1: 调 RDS PI API 拉指标。
+
+Step2: 写到 CloudWatch Metrics（或 S3 → Athena → QuickSight）。
+
+
+好处：无 serverless 代码，走数据管道。
+
+缺点：成本比 cronjob/Lambda 高。
+
+
+
+---
+
+🔹 方案 4: 第三方监控系统（Grafana/Prometheus Exporter）
+
+你可以用 Grafana CloudWatch plugin，直接画 RDS Performance Insights Metrics（不过只有限定维度）。
+
+如果想展示 Top SQL：
+
+自己写一个 Prometheus exporter（拉 PI API → expose /metrics）。
+
+Prometheus + Grafana 就能显示 SQL 级别的监控了。
+
+
+
+
+---
+
+✅ 如果只是想要 CloudWatch Dashboard 里看 Top SQL：最简单的是 方案 1（CLI+cronjob）。
+✅ 如果团队有监控系统（Grafana/Prometheus），推荐 方案 4。
+
+
+---
+
+要不要我帮你写一个 完整 cronjob + jq 脚本版本（带 SQLHash→SQLText 映射），这样你能直接在 CloudWatch 大盘里显示 SQL 语句而不是 hash？
+
