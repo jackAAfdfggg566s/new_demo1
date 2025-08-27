@@ -1,0 +1,80 @@
+很好的问题 👍。你想把 Database Insights（其实底层是 DevOps Guru for RDS 聚合 Performance Insights 的 SQL Metrics）的数据放到你自己的大盘里（比如 CloudWatch Dashboard、Grafana、QuickSight），思路大概有三条：
+
+
+---
+
+1. 用 CloudWatch Embedded Metrics
+
+Database Insights 的 Top SQL Metrics 底层还是来自 Performance Insights API。
+
+你可以通过 rds:DescribeDimensionKeys 和 rds:GetResourceMetrics API 拉取到 Top SQL。
+
+例如：
+
+aws rds describe-dimension-keys \
+  --service-type RDS \
+  --identifier db-XYZ \
+  --start-time 2025-08-27T00:00:00Z \
+  --end-time 2025-08-27T01:00:00Z \
+  --metric DBLoad \
+  --group-by Dimension=sql
+
+这会返回某时间段的 Top SQL（按 AAS 排序）。
+
+
+把这些指标写入 CloudWatch Custom Metrics（比如命名空间：Custom/DatabaseSQL），就能在 CloudWatch Dashboard 或 Grafana 里展示。
+
+
+
+---
+
+2. 直接用 Performance Insights API
+
+GetResourceMetrics API 可以拉取你想要的 SQL 级别指标（CPU time, AAS, executions）。
+
+DescribeDimensionKeys 可以获取 Top SQL ID（sql hash）。
+
+然后再配合 GetDimensionKeyDetails 获取 SQL 文本。
+
+你可以用 Lambda 定时任务（每 1 分钟/5 分钟）拉这些数据，存到：
+
+CloudWatch metrics（实时监控）
+
+Prometheus / Grafana（通过 exporter）
+
+S3 + Athena/QuickSight（做历史分析报表）
+
+
+
+
+---
+
+3. 通过 DevOps Guru for RDS Insights Events
+
+如果你想直接用 Database Insights 的结果（而不是自己重算 Top SQL）：
+
+DevOps Guru 会把异常检测和 Top SQL 报告作为 Insight Event 发到 EventBridge。
+
+你可以订阅 EventBridge，把事件内容（包含 top sql 信息）转发到 CloudWatch Logs、S3、或自建大盘。
+
+不过这种方式更多是 告警和摘要，粒度不如直接拉 Performance Insights API。
+
+
+
+
+---
+
+推荐方案
+
+如果你要做 实时大盘（Grafana/CloudWatch）：走 Performance Insights API + CloudWatch Custom Metrics。
+
+如果你要做 历史报表（QuickSight/BI）：走 API → S3 → Athena/QuickSight。
+
+如果你只要 异常事件：走 DevOps Guru + EventBridge。
+
+
+
+---
+
+要不要我帮你写一个 Lambda 示例代码（Python），定时拉取 Top SQL（AAS 排序）并推送到 CloudWatch Metrics，这样你就能直接在自己的大盘里画出来？
+
