@@ -1,0 +1,63 @@
+在 AWS CLI 里，EC2 的 健康检查 (Health Check) 有两种常见情况：
+
+1. 实例状态检查（Instance Status Checks）
+这是 EC2 自带的 系统检查 和 实例检查。
+命令：
+
+aws ec2 describe-instance-status \
+  --instance-ids i-xxxxxxxxxxxxxxxxx \
+  --query 'InstanceStatuses[*].{Instance:InstanceId, SystemStatus:SystemStatus.Status, InstanceStatus:InstanceStatus.Status}' \
+  --output table
+
+输出示例：
+
+-----------------------------------------------
+|              DescribeInstanceStatus         |
++-----------------+-------------+-------------+
+|  Instance       |  InstanceStatus | SystemStatus |
++-----------------+-------------+-------------+
+|  i-0abcd1234efgh5678 |  ok           |  ok           |
++-----------------+-------------+-------------+
+
+SystemStatus = 系统级别检查（底层硬件/网络）
+
+InstanceStatus = 实例级别检查（操作系统层）
+
+
+
+2. ELB / Target Group 健康检查（如果挂在 ALB/NLB/CLB 下）
+如果你关心的是 Load Balancer 健康检查，需要看 target group 或 classic ELB 的状态。
+
+ALB / NLB Target Group：
+
+aws elbv2 describe-target-health \
+  --target-group-arn arn:aws:elasticloadbalancing:region:account-id:targetgroup/my-targets/1234567890abcdef
+
+输出里会包含：
+
+{
+    "TargetHealthDescriptions": [
+        {
+            "Target": {
+                "Id": "i-0abcd1234efgh5678",
+                "Port": 80
+            },
+            "TargetHealth": {
+                "State": "healthy"
+            }
+        }
+    ]
+}
+
+Classic ELB：
+
+aws elb describe-instance-health \
+  --load-balancer-name my-classic-elb
+
+
+
+
+---
+
+要确认一下，你需要的是 EC2 本身的 instance status check，还是 挂在负载均衡器下的健康检查状态？
+
