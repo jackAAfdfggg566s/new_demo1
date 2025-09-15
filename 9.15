@@ -1,0 +1,97 @@
+你这个问题其实分两部分：怎么把 AWS RDS Database Insights 的指标展示到自己大盘，以及 需要哪些 IAM 权限。我帮你梳理一下：
+
+
+---
+
+🔹 1. Database Insights 数据来源
+
+RDS Database Insights（Performance Insights / DB Insights）本质上是通过 CloudWatch Metrics + Enhanced Monitoring + Performance Insights API 提供的。
+要在自己的 dashboard 展示，有几种方式：
+
+CloudWatch Dashboard
+直接在 CloudWatch 里建 dashboard，选择 RDS 指标（CPU、内存、IO、Active sessions 等）。
+
+自定义大盘（Grafana, Prometheus, Datadog 等）
+通过 AWS APIs 拉取数据：
+
+cloudwatch:GetMetricData
+
+pi:GetResourceMetrics（Performance Insights 专用）
+
+
+
+
+---
+
+🔹 2. 需要的权限
+
+如果是只看普通指标（CloudWatch + Enhanced Monitoring）：
+
+{
+  "Effect": "Allow",
+  "Action": [
+    "cloudwatch:GetMetricData",
+    "cloudwatch:GetMetricStatistics",
+    "cloudwatch:ListMetrics",
+    "logs:DescribeLogStreams",
+    "logs:GetLogEvents"
+  ],
+  "Resource": "*"
+}
+
+如果要访问 Performance Insights (Database Insights)，需要：
+
+{
+  "Effect": "Allow",
+  "Action": [
+    "pi:DescribeDimensionKeys",
+    "pi:GetDimensionKeyDetails",
+    "pi:GetResourceMetrics"
+  ],
+  "Resource": "*"
+}
+
+同时，还需要对 RDS 实例本身的只读权限：
+
+{
+  "Effect": "Allow",
+  "Action": [
+    "rds:DescribeDBInstances",
+    "rds:ListTagsForResource"
+  ],
+  "Resource": "*"
+}
+
+
+---
+
+🔹 3. 常见展示方式
+
+CloudWatch Dashboard（AWS 自带大盘，最省事）
+
+Amazon Managed Grafana（官方托管 Grafana，可以直接选 CloudWatch、RDS PI 数据源）
+
+自建 Grafana（用 cloudwatch 插件或者 AWS PI 插件）
+
+
+
+---
+
+⚡总结：
+你要在自己大盘展示 RDS Database Insights 数据，必须至少有 CloudWatch + Performance Insights API 的读权限。
+最小权限组合是：
+
+cloudwatch:Get*
+
+pi:Get*
+
+pi:Describe*
+
+rds:Describe*
+
+
+
+---
+
+要不要我给你写一个 完整的 IAM policy JSON，直接能绑定给 Grafana 或 CI/CD 角色来拉数据？
+
