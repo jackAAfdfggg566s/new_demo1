@@ -1,0 +1,144 @@
+好 👍 我详细帮你拆解一下 方法 2（Lambda + PI API + 自定义 CloudWatch Metrics），这样你就能把 RDS Database Insights（Performance Insights, PI）的数据展示在 CloudWatch 大盘里。
+
+
+---
+
+🛠 方法 2：Lambda 定时任务
+
+核心思路：
+
+1. Lambda 定时运行（用 CloudWatch Event Rule，每 5 分钟执行一次）。
+
+
+2. 调用 Performance Insights API（pi.getResourceMetrics）。
+
+
+3. 取出负载数据（例如 db.load.avg 或 SQL 等级负载）。
+
+
+4. 写入 CloudWatch 自定义指标（cloudwatch.putMetricData，命名空间 Custom/RDSPI）。
+
+
+5. 在 CloudWatch Dashboard 选择 Custom/RDSPI → 加图表。
+
+
+
+
+---
+
+1️⃣ 权限准备
+
+Lambda 执行角色需要有：
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "pi:GetResourceMetrics",
+        "cloudwatch:PutMetricData"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+
+---
+
+2️⃣ Python Lambda 示例代码
+
+import boto3
+import datetime
+
+# 创建客户端
+pi = boto3.client('pi')
+cw = boto3.client('cloudwatch')
+
+# RDS 配置
+DB_ARN = "arn:aws:rds:ap-southeast-2:123456789012:db:mydb"  # 替换你的 RDS ARN
+DB_IDENTIFIER = "mydb"  # 数据库名字
+REGION = "ap-southeast-2"
+
+def lambda_handler(event, context):
+    # 获取当前时间 -5 分钟到现在
+    end_time = datetime.datetime.utcnow()
+    start_time = end_time - datetime.timedelta(minutes=5)
+
+    # 调用 Performance Insights API
+    response = pi.get_resource_metrics(
+        ServiceType='RDS',
+        Identifier=DB_ARN,
+        MetricQueries=[{'Metric': 'db.load.avg'}],
+        StartTime=start_time,
+        EndTime=end_time,
+        PeriodInSeconds=60
+    )
+
+    # 提取数据点
+    for metric in response['MetricList']:
+        for point in metric['DataPoints']:
+            timestamp = point['Timestamp']
+            value = point['Value']
+
+            # 写入 CloudWatch 自定义指标
+            cw.put_metric_data(
+                Namespace='Custom/RDSPI',
+                MetricData=[
+                    {
+                        'MetricName': 'DBLoadAvg',
+                        'Dimensions': [
+                            {'Name': 'DBInstanceIdentifier', 'Value': DB_IDENTIFIER}
+                        ],
+                        'Timestamp': timestamp,
+                        'Value': value,
+                        'Unit': 'Count'
+                    }
+                ]
+            )
+
+    return {"status": "success"}
+
+
+---
+
+3️⃣ CloudWatch Dashboard 展示
+
+1. 打开 CloudWatch → Dashboards → Create dashboard。
+
+
+2. Add widget → 选择 Metrics。
+
+
+3. 命名空间选择：Custom/RDSPI。
+
+
+4. 添加 DBLoadAvg → 即可在大盘上看到 RDS Database Insights 的负载曲线。
+
+
+
+
+---
+
+4️⃣ 可扩展点
+
+你可以把 db.load.avg 换成其他 Performance Insights 指标：
+
+db.load.avg → 总负载
+
+db.load.avg + Dimension (例如 db.sql.id) → Top SQL 级别的负载
+
+
+也可以按 不同 SQL 或用户 打标签，写入 CloudWatch 维度。
+
+最终，你的大盘可以做到类似 RDS Insights 的 Top SQL / Load Trend。
+
+
+
+---
+
+⚡ 这样你就能把 RDS Insights 的核心数据放到 CloudWatch Dashboard，统一和其他 AWS 监控一起展示了。
+
+要不要我帮你扩展一下，把 Top N SQL 查询负载（比如前 5 个 SQL）也推到 CloudWatch，方便你在大盘看到哪条 SQL 占用资源最多？
+
