@@ -1,0 +1,126 @@
+明白了 👍。你要的不是 CloudWatch CPU/内存 这种常规指标，而是 RDS Database Insights (Performance Insights) 的 Top SQL、等待事件 (wait events)、数据库负载 这类 细粒度 SQL 层面的指标，并且要在 AWS Console 的 CloudWatch Dashboard（或自定义大盘）里展示。
+
+
+---
+
+🔹 1. 数据来源
+
+Top SQL / Wait Events / Active Sessions 这些数据并 不在 CloudWatch 普通指标里，它们来自 Performance Insights (PI) API。
+
+CloudWatch Dashboard 只能原生展示 CloudWatch Metrics，所以要在大盘看到 Top SQL，你必须：
+
+1. 调用 pi:GetResourceMetrics 获取 RDS PI 的指标
+
+
+2. （可选）调用 pi:DescribeDimensionKeys 获取 SQL、用户、等待事件的维度信息
+
+
+3. 用 CloudWatch Custom Metrics 或 CloudWatch Dashboard 的 PI widget 来展示
+
+
+
+
+AWS 从 2023 年起支持在 CloudWatch Dashboard 中直接加 Performance Insights Widget，所以可以不必再额外推送指标。
+
+
+---
+
+🔹 2. 需要的权限
+
+最小权限（IAM Policy）大概如下：
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "pi:GetResourceMetrics",
+        "pi:DescribeDimensionKeys",
+        "pi:GetDimensionKeyDetails",
+        "rds:DescribeDBInstances"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+👉 其中：
+
+pi:GetResourceMetrics —— 获取数据库负载时间序列
+
+pi:DescribeDimensionKeys —— 获取 top SQL、top wait events、top users 等
+
+pi:GetDimensionKeyDetails —— 获取 SQL 的具体文本（可选）
+
+rds:DescribeDBInstances —— 列出数据库实例
+
+
+
+---
+
+🔹 3. 操作步骤
+
+方法一：CloudWatch Dashboard 加 PI Widget（官方推荐）
+
+1. 打开 CloudWatch → Dashboards → Create Dashboard
+
+
+2. 选择 Add widget → Performance Insights
+
+
+3. 选择 RDS 实例
+
+
+4. 选择要展示的内容：
+
+Database load
+
+Top SQL
+
+Top waits
+
+Top users
+
+
+
+
+这样 CloudWatch Dashboard 就能直接显示 RDS Insights 的 Top SQL 等图表，权限需要的是上面那几个 pi:* 动作。
+
+方法二：自定义大盘（高级）
+
+如果你要把 Top SQL 数据取出来自定义处理，步骤是：
+
+1. 用脚本（AWS CLI / Lambda / SDK）调用：
+
+aws pi get-resource-metrics \
+  --service-type RDS \
+  --identifier db-xxxxxxxxxxxx \
+  --metric SQL \
+  --start-time 2025-09-15T00:00:00Z \
+  --end-time 2025-09-15T01:00:00Z \
+  --period-in-seconds 60 \
+  --region ap-southeast-2
+
+
+2. 把结果（JSON）写入 CloudWatch Custom Metrics 或存到 S3/Elasticsearch 等大盘系统（Grafana / Kibana）。
+
+
+
+
+---
+
+✅ 总结：
+
+如果只想在 **AWS 大盘（CloudWatch Dashboard）**里看 Top SQL，直接加 Performance Insights Widget 就行。
+
+需要的权限是：pi:GetResourceMetrics、pi:DescribeDimensionKeys、pi:GetDimensionKeyDetails、rds:DescribeDBInstances。
+
+如果要进一步 自定义分析 / 外部大盘，就要用 AWS CLI / SDK 拉取数据，再推送到你的大盘。
+
+
+
+---
+
+要不要我帮你写一个 CloudWatch Dashboard JSON 模板，直接放进去就能显示某个 RDS 实例的 Top SQL 图表？
+
