@@ -1,0 +1,151 @@
+👌 想要在 自己 AWS 账号里动手试 Database Insights（Top SQL 等），又想保持 最低费用，可以按这个思路来操作：
+
+
+---
+
+🔹 1. 准备最小成本的 RDS 实例
+
+1. Region：选择支持 Database Insights 的 Region（常见的 ap-southeast-2、us-east-1 都有）。
+
+
+2. DB 引擎：PostgreSQL 或 MySQL（Aurora 也可以）。
+
+
+3. 实例规格：选 db.t3.micro（支持 Free tier 的话更省）。
+
+如果你账号还在 Free Tier（12 个月），RDS t3.micro 每月 750 小时是免费的。
+
+即使过了 Free Tier，t3.micro 在 Sydney 区也就 ~$15/月，测试跑几天只要几块钱。
+
+
+
+4. 存储：最小 20GB gp3，几毛钱一天。
+
+
+
+> ⚠️ 注意：Database Insights 是 免费开启的（基础 7 天历史），只有 **Extended retention（长期历史存储）**才收费，所以测试完全不花额外的钱。
+
+
+
+
+---
+
+🔹 2. 启用 Database Insights
+
+在创建 RDS 实例时：
+
+启用 Performance Insights / Database Insights，保留 7 天（免费）。
+
+如果忘了勾，可以在实例 Modify → Monitoring → Enable Performance Insights。
+
+
+
+---
+
+🔹 3. 生成点 SQL 负载（要有 Top SQL 才能看）
+
+默认新库没啥 SQL 语句，所以你要造点查询：
+
+比如用 psql 连进去，执行一些语句：
+
+CREATE TABLE t(id serial primary key, data text);
+INSERT INTO t(data) SELECT md5(random()::text) FROM generate_series(1,100000);
+
+-- 模拟慢查询
+SELECT count(*) FROM t, generate_series(1,1000);
+
+这样 Database Insights 就能捕捉到 SQL 和负载。
+
+
+---
+
+🔹 4. 在控制台查看 Database Insights
+
+1. 打开 RDS → Database Insights → [选择实例]
+
+
+2. 默认会看到 Database load 图
+
+
+3. 点击 Top SQL、Top waits 就能看到细分指标
+
+
+
+
+---
+
+🔹 5. 导出到 CloudWatch Dashboard
+
+1. 在 Database Insights 页面 → Metrics 区域
+
+
+2. 找到 Export to CloudWatch Dashboard / Add to dashboard
+
+
+3. 选 新建一个 dashboard
+
+
+4. 导出后，去 CloudWatch → Dashboards 就能看到 widget
+
+
+
+
+---
+
+🔹 6. IAM 权限（最小化）
+
+如果你是 root 账号直接试，不用管。
+如果是 IAM user/role，需要加：
+
+{
+  "Effect": "Allow",
+  "Action": [
+    "pi:GetResourceMetrics",
+    "pi:DescribeDimensionKeys",
+    "pi:GetDimensionKeyDetails",
+    "rds:DescribeDBInstances",
+    "cloudwatch:PutDashboard",
+    "cloudwatch:GetDashboard",
+    "cloudwatch:ListDashboards"
+  ],
+  "Resource": "*"
+}
+
+
+---
+
+🔹 7. 成本控制
+
+RDS t3.micro：按小时计费，开一两天不会超过 $1。
+
+Database Insights：基础功能（7 天保留）免费。
+
+CloudWatch Dashboard：前 3 个 dashboard 免费；超过按 $3/月计费。
+
+
+👉 所以完全可以用 t3.micro + 7 天 Database Insights + 免费 CloudWatch dashboard，跑两天基本花不到 $1。
+
+
+---
+
+⚡总结：
+最低费用实验步骤：
+
+1. 建一个 db.t3.micro（Postgres/MySQL），启用 Database Insights（7 天免费）。
+
+
+2. 插入测试数据，跑点 SQL。
+
+
+3. 打开 Database Insights → 导出到 CloudWatch Dashboard。
+
+
+4. 查看大盘里的 Top SQL / Top waits widget。
+
+
+
+
+---
+
+要不要我帮你写一个 一键 CloudFormation 模板，直接部署一个 t3.micro + Database Insights 开启的测试数据库（几分钟就能跑起来）？
+
