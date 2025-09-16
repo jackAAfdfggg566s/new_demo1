@@ -1,0 +1,54 @@
+我查了一下，AWS 的官方文档里有些部分确实说明了 CloudWatch Database Insights 和 Performance Insights 之间的关系、以及要启用哪些功能才能看到 “Top SQL” 等进阶指标。下面是几个关键链接 + 重点段落，帮你确认结论的依据。
+
+
+---
+
+🔗 官方文档链接
+
+1. CloudWatch Database Insights
+文档里有说明 Database Insights 是怎么和 Performance Insights 集成的，以及标准模式 vs 高级模式功能差别。 
+
+
+2. Performance Insights API（AWS RDS）
+说明要使用 GetResourceMetrics 等 API，以及这些 API 只有在 Performance Insights 启用之后才能调用。 
+
+
+3. 分析带 Top SQL 的指标 (“Top SQL” 选项卡) 在 Performance Insights 控制台中的说明。 
+
+
+4. AWS Blog: 从 Performance Insights 迁移到 CloudWatch Database Insights
+提到了 2025 年 11 月 30 日以后，Performance Insights 仪表板体验将停止支持，鼓励用户切换到 Database Insights 的高级模式。文中也有提到很多功能（比如慢查询、执行计划等）在标准模式下可能无法用。 
+
+
+
+
+---
+
+⚙️ 文档里重点说明（支持你的结论的部分）
+
+以下是我从官方文档截取的几个关键说明，支持“不开 Performance Insights 就无法获取 Top SQL 等高级指标”这一判断：
+
+“To enable the Advanced mode of Database Insights, you must enable Performance Insights.” —— 在 Database Insights 的文档里写明，高级模式必须启用 Performance Insights。 
+
+“Database Insights imports Performance Insights counter metrics into CloudWatch automatically.” —— 表示某些 Performance Insights 的“计数器指标”才能被导入。没有启用 Performance Insights，这些指标不会被收集或导出。 
+
+“Performance Insights API … you must enable Performance Insights” —— 提到在使用 GetResourceMetrics、DescribeDimensionKeys 等 PI API 前要启用 PI。 
+
+
+
+---
+
+✅ 结论（基于这些文档）
+
+综上：
+
+如果你 不开启 Performance Insights，那么你只能拿到 Database Insights 的标准/基础指标（连接数、CPU、IOPS、某些延迟等 CloudWatch 原始指标）。
+
+Top SQL、SQL 执行计划、慢查询、 按 SQL 语句分维度的统计 这些，是 只在 Performance Insights 启用后 或在 Database Insights 的“高级模式 + 已集成 PI”的环境中能看到／调用的。
+
+
+
+---
+
+如果你要，我可以帮你找 AWS 文档里标准模式 vs 高级模式的功能对比表格截图／链接，你可以直接看清哪些功能只有高级模式／Performance Insights 才有。你要吗？
+
