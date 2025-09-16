@@ -1,0 +1,133 @@
+明白了，你问的是 Lambda 执行角色的 Trust Policy，也就是 允许谁来假设这个角色。
+
+对于 Lambda，Trust Policy 一般是 Lambda 服务本身可以假设这个角色。
+
+
+---
+
+Lambda 执行角色 Trust Policy 示例
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+
+说明：
+
+"Service": "lambda.amazonaws.com" → 允许 Lambda 执行使用这个角色。
+
+Action: "sts:AssumeRole" → 授权 Lambda 假设此角色。
+
+这个角色配合之前我发给你的 Permissions JSON 就可以直接访问 RDS Database Insights API，并写 CloudWatch 自定义指标。
+
+
+
+---
+
+如果你想，我可以帮你整理成 完整 Lambda IAM Role JSON（包含 Trust Policy + Permissions Policy），直接在 AWS IAM 控制台创建即可。
+
+你希望我整理吗？
+
+
+
+明白 ✅。如果你要用 Lambda 把 Database Insights 的 Top SQL 指标推送到 CloudWatch 自定义大盘，需要两个角色：
+
+
+---
+
+1. 给 Lambda 的执行角色 (Execution Role)
+
+Lambda 需要 访问 RDS Insights API + 写 CloudWatch 自定义指标。
+
+IAM Role JSON (Lambda 执行角色)
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBLogFiles",
+        "rds:DownloadDBLogFilePortion",
+        "rds:DescribeDBInsights",
+        "rds:DescribeDBInsightTopSql"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricData"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+👉 说明：
+
+rds:DescribeDBInsightTopSql 是获取 Top SQL 的关键 API。
+
+cloudwatch:PutMetricData 用于把结果写到自定义指标。
+
+logs:* 用于 Lambda 自己写日志，方便调试。
+
+
+
+---
+
+2. CloudWatch Dashboard 权限 (给运维用户 / Role)
+
+如果你要让用户能在 CloudWatch 大盘里看到这个指标，还需要：
+
+IAM Policy JSON (CloudWatch Dashboard Viewer)
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetDashboard",
+        "cloudwatch:ListDashboards",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+
+---
+
+3. 使用场景
+
+Lambda Role：拉取 Database Insights → 把 Top SQL 的 Calls、Latency 等指标写到 CustomNamespace/TopSQL。
+
+CloudWatch Dashboard Role：用户只需要能读 Dashboard + 读指标。
+
+
+
+---
+
+要不要我直接帮你写一个 Lambda 示例 (Python boto3)，把 Top SQL 的 总延迟 (Total Latency) 和 执行次数 (Calls) 写进 CloudWatch？
+
