@@ -1,0 +1,77 @@
+👌 收到，你这个报错：
+
+when calling GetResourceMetrics operation: AccessDeniedException
+
+说明 Lambda 在调用 RDS Database Insights / Performance Insights API 的时候，IAM 权限不够。
+
+
+---
+
+📌 核心点
+
+GetResourceMetrics 是 Performance Insights (PI) 的 API，而不是 Database Insights 的普通 CloudWatch 指标。
+
+这个 API 权限在 AmazonRDSPerformanceInsightsFullAccess 里面。
+
+
+
+---
+
+✅ 解决方法
+
+你需要在 Lambda 执行角色里加上如下权限：
+
+{
+  "Effect": "Allow",
+  "Action": [
+    "pi:GetResourceMetrics",
+    "pi:DescribeDimensionKeys",
+    "pi:GetDimensionKeyDetails"
+  ],
+  "Resource": "*"
+}
+
+
+---
+
+🔑 权限组合建议
+
+Lambda 执行角色的 完整权限策略 至少要包含：
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "pi:GetResourceMetrics",
+        "pi:DescribeDimensionKeys",
+        "pi:GetDimensionKeyDetails",
+        "rds:DescribeDBInstances",
+        "cloudwatch:PutMetricData",
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+
+---
+
+⚠️ 重要提醒
+
+Database Insights 控制台看到的 Top SQL，其实底层就是用的 Performance Insights API (pi:GetResourceMetrics)。
+
+所以如果你要让 Lambda 取 Top SQL 数据，必须开 Performance Insights 权限（即使控制台叫 Database Insights）。
+
+如果你的 RDS 没启用 Performance Insights，调用 GetResourceMetrics 也会报错。
+
+
+
+---
+
+要不要我给你写一个 Lambda 样例代码 (Python boto3)，直接调用 pi:GetResourceMetrics 拉取某个 DB 实例的 Top SQL latency，然后写到 CloudWatch 自定义指标？这样你能对照 IAM 权限一起测试。
+
