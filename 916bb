@@ -1,0 +1,70 @@
+哦，我明白你说的了。之前我回答“不能直接在 CloudWatch Dashboard 显示 Top SQL，如果不开 Performance Insights”，其实有点不准确。原因是我当时默认了 Top SQL Metrics 是 Performance Insights 的功能，其实 Database Insights 本身也能看到 Top SQL，但是它不会自动成为 CloudWatch Metrics。所以不能直接在 Dashboard 引用，需要额外的步骤：Lambda 或者 Contributor Insights，把数据写入自定义 Metrics。
+
+所以纠正一下：
+
+情况	能否直接在 CloudWatch Dashboard 显示
+
+Performance Insights 开启	可以直接用 Metrics
+Performance Insights 未开启，但 Database Insights 开启	不能直接用 Metrics，需要 Lambda 或 Contributor Insights 转换
+
+
+
+---
+
+Lambda + 权限 JSON
+
+1️⃣ Lambda 执行 Role Trust Policy
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+
+2️⃣ Lambda 权限 Policy
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricData",
+        "rds:DescribeDBInstances",
+        "pi:GetResourceMetrics"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+pi:GetResourceMetrics 是调用 Database Insights API 的权限。
+
+cloudwatch:PutMetricData 是写自定义 Metrics。
+
+logs:* 是 Lambda 自身日志权限。
+
+
+
+---
+
+如果你愿意，我可以直接帮你写一个 完整 Python Lambda 示例，定时抓 Top SQL，然后写到 CloudWatch Dashboard。这样你自己部署就能直接在 Dashboard 上看到 Top SQL 指标。
+
+你希望我写吗？
+
