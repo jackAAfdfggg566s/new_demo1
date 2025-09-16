@@ -1,0 +1,22 @@
+下面是 AWS 官方文档里关于 CloudWatch Database Insights / Performance Insights / Top SQL 的直接网址，和这些功能什么时候必须启用 PI 的说明：
+
+
+---
+
+🔗 官方文档链接
+
+CloudWatch Database Insights（标准 vs 高级模式，以及需要启用 Performance Insights 的部分）
+https://docs.aws.amazon.com/zh_cn/AmazonCloudWatch/latest/monitoring/Database-Insights.html 
+
+Performance Insights 中 Top SQL 的说明 (‘Top SQL’ 选项卡)
+https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PerfInsights.UsingDashboard.AnalyzeDBLoad.AdditionalMetrics.AnalyzingSQLLevel.html 
+
+关于启用 Database Insights 高级模式 + 性能详情 (Performance Insights) 的说明
+https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_PerfInsights.Enabling.html 
+
+
+
+---
+
+如果你需要，我可以发英文版和中文版的对比段落截图／片段给你，方便你看清那些功能在标准模式下有没有。
+
