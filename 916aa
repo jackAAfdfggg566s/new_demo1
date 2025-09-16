@@ -1,0 +1,131 @@
+好的，我帮你写一个 完整 Python Lambda 示例，实现的功能是：
+
+1. 定时获取 RDS Database Insights Top SQL 数据（CPU 或其他指标）。
+
+
+2. 写入 CloudWatch 自定义 Metrics，可以在 Dashboard 直接显示。
+
+
+
+下面是示例代码（Python 3.9+，运行在 Lambda 中）：
+
+
+---
+
+import boto3
+import os
+from datetime import datetime, timedelta
+
+# Lambda 环境变量
+DB_INSTANCE_IDENTIFIER = os.environ.get("DB_INSTANCE_IDENTIFIER", "your-db-identifier")
+CW_NAMESPACE = os.environ.get("CW_NAMESPACE", "Custom/TopSQL")
+METRIC_NAME = os.environ.get("METRIC_NAME", "TopSQLCPU")  # 自定义指标名
+
+# 创建 AWS 客户端
+pi_client = boto3.client("pi")  # Performance Insights / Database Insights API
+cw_client = boto3.client("cloudwatch")
+
+def lambda_handler(event, context):
+    # 时间范围：过去 5 分钟
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(minutes=5)
+
+    try:
+        response = pi_client.get_resource_metrics(
+            ServiceType='RDS',
+            Identifier=DB_INSTANCE_IDENTIFIER,
+            MetricQueries=[
+                {
+                    'Metric': 'db.load.avg',  # Database Insights Top SQL 指标
+                    'GroupBy': {
+                        'Group': 'SQL'
+                    },
+                    'Limit': 5  # 获取 Top 5 SQL
+                }
+            ],
+            StartTime=start_time,
+            EndTime=end_time
+        )
+
+        metrics_data = []
+
+        # 解析 Top SQL 数据
+        for metric in response.get("MetricList", []):
+            sql_text = metric.get("Dimensions", {}).get("sql", "unknown_sql")
+            for point in metric.get("DataPoints", []):
+                metrics_data.append({
+                    'MetricName': METRIC_NAME,
+                    'Dimensions': [
+                        {'Name': 'SQLText', 'Value': sql_text},
+                        {'Name': 'DBInstance', 'Value': DB_INSTANCE_IDENTIFIER}
+                    ],
+                    'Timestamp': point['Timestamp'],
+                    'Value': point['Value'],
+                    'Unit': 'Count'
+                })
+
+        # 写入 CloudWatch
+        if metrics_data:
+            cw_client.put_metric_data(
+                Namespace=CW_NAMESPACE,
+                MetricData=metrics_data
+            )
+
+        return {"status": "success", "data_points": len(metrics_data)}
+
+    except Exception as e:
+        print(f"Error: {e}")
+        raise
+
+
+---
+
+部署步骤
+
+1. 创建 Lambda，Python 3.9+。
+
+
+2. 配置 环境变量：
+
+DB_INSTANCE_IDENTIFIER：你的 RDS Database Identifier
+
+CW_NAMESPACE：CloudWatch Dashboard 自定义 namespace
+
+METRIC_NAME：自定义指标名，例如 TopSQLCPU
+
+
+
+3. Lambda 角色：使用之前给你的 Trust Policy + 权限 Policy。
+
+
+4. 配置 定时触发（CloudWatch Event / EventBridge），例如每 5 分钟调用一次。
+
+
+5. 在 CloudWatch Dashboard 中：
+
+选择你的自定义 namespace
+
+选择指标 TopSQLCPU，按 SQLText 或 DBInstance 维度显示
+
+
+
+
+
+---
+
+💡 小提示：
+
+Limit 可以调整获取 Top 5、Top 10 SQL。
+
+db.load.avg 只是示例，如果你想要 CPU、IO、Latency 等指标，可以改 MetricQueries 中的 Metric。
+
+如果 Top SQL 内容太长，可以用 SQL Hash 或自己截断写入 Dimension，避免 CloudWatch Key 超长报错。
+
+
+
+---
+
+我可以帮你写一个 改进版，自动取 Top SQL 的 CPU% 并且按 SQL hash 存入 CloudWatch，更安全，避免 SQL 太长 Dimension 报错。
+
+你希望我直接写吗？
+
