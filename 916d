@@ -1,0 +1,83 @@
+好的 👍 我帮你整理一个完整的 Lambda 执行角色 (IAM Role) 配置，包含 Trust Policy 和 Permissions Policy，你直接在 IAM 里新建角色就能用。
+
+
+---
+
+1. Trust Policy (角色信任策略)
+
+Lambda 需要能够 AssumeRole，所以要信任 lambda.amazonaws.com：
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+
+
+---
+
+2. Permissions Policy (角色权限策略)
+
+让 Lambda 能：
+
+调用 Performance Insights API（Database Insights 底层依赖这个 API）
+
+获取 DB 实例信息
+
+写自定义指标到 CloudWatch
+
+把日志写到 CloudWatch Logs
+
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "pi:GetResourceMetrics",
+        "pi:DescribeDimensionKeys",
+        "pi:GetDimensionKeyDetails",
+        "rds:DescribeDBInstances",
+        "cloudwatch:PutMetricData",
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+
+---
+
+✅ 用法：
+
+1. 在 IAM → Roles → Create role 里：
+
+选择 Trusted entity = Lambda
+
+粘贴上面的 Trust Policy
+
+
+
+2. 给这个角色附加一个自定义 Policy（用上面 Permissions Policy）。
+
+
+3. 把这个 Role 绑定到你的 Lambda。
+
+
+
+
+---
+
+要不要我再帮你写一个 最小可运行 Lambda (Python boto3)，直接用 pi:GetResourceMetrics 拉取指标（比如 SQL 延迟），然后写到 CloudWatch → Metrics → RDS/TopSQL？这样你能马上验证角色是否配置正确。
+
