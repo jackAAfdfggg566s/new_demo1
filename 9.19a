@@ -1,0 +1,80 @@
+明白 👍。你是想拿 Pod 被 kill/delete 的精确时间点，然后跟恢复时间做对比，算 RTO。
+问题是：kubectl describe pod 里的 Events 部分只显示相对时间（比如 1m ago），不够精确。
+
+这里有几种更可靠的取法：
+
+
+---
+
+1. kubectl get events -o wide
+
+kubectl get events -n <namespace> --sort-by=.lastTimestamp -o wide
+
+这个会输出事件的 绝对时间戳 (LAST SEEN)，比如：
+
+LAST SEEN   TYPE    REASON    OBJECT           MESSAGE
+2025-09-19T08:32:41Z  Normal  Killing   pod/myapp-xyz  Stopping container myapp
+2025-09-19T08:32:41Z  Normal  Deleted   pod/myapp-xyz  Deleted pod: myapp-xyz
+
+这个时间就是你要的 “Pod 被 kill/delete” 的真实时间。
+
+
+
+---
+
+2. 获取 deletionTimestamp
+
+如果 Pod 还没完全清理掉：
+
+kubectl get pod <pod> -n <ns> -o jsonpath='{.metadata.deletionTimestamp}'
+
+结果是 ISO8601 格式的 UTC 时间，比如：
+
+2025-09-19T08:32:41Z
+
+
+---
+
+3. 结合 kubectl get events + jq
+
+你可以直接筛出 Pod 删除相关的事件：
+
+kubectl get events -n <namespace> -o json \
+  | jq -r '.items[] | select(.reason=="Killing" or .reason=="Deleted") 
+  | [.lastTimestamp, .involvedObject.name, .reason, .message] | @tsv'
+
+输出：
+
+2025-09-19T08:32:41Z   myapp-xyz   Killing   Stopping container myapp
+2025-09-19T08:32:41Z   myapp-xyz   Deleted   Deleted pod: myapp-xyz
+
+
+---
+
+4. 已经过 retention（事件被清理）
+
+如果集群事件保留期太短（默认 1 小时到 24 小时），Pod 删除历史就查不到了。
+这种情况建议：
+
+打开 Audit Log（K8s API server 日志）
+
+或者用 Prometheus/ELK 采集 kube-event，持久保存
+
+
+
+---
+
+⚡ 总结：
+
+最直接：kubectl get events -o wide → 有完整时间戳
+
+Pod 仍存在：查 metadata.deletionTimestamp
+
+历史数据：需要依赖日志或监控
+
+
+
+---
+
+要不要我帮你写一个 shell 脚本，输入 Pod 名字，就直接打印出 创建时间 + 删除时间，方便你算 RTO？
+
