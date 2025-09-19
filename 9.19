@@ -1,0 +1,70 @@
+在 Kubernetes 里，kubectl 默认不会直接显示 Pod 被 kill/delete 的时间点，但你可以通过 事件 (events) 和 pod 状态信息 来推断。常见方法有几种：
+
+
+---
+
+1. 查看 Pod 的事件
+
+kubectl get events --sort-by=.lastTimestamp -n <namespace>
+
+会显示 Pod 被删除（Killing 或 Deleted pod）的时间点。
+
+示例：
+
+Normal  Killing    30s   kubelet  Stopping container xyz
+Normal  Deleted    30s   kubelet  Deleted pod: mypod-123
+
+
+
+---
+
+2. 查看 Pod 的 deletionTimestamp
+
+如果 Pod 还没完全清理掉，可以在 metadata.deletionTimestamp 里看到 被删除的时间：
+
+kubectl get pod <pod-name> -n <namespace> -o jsonpath='{.metadata.deletionTimestamp}'
+
+
+---
+
+3. 使用 kubectl describe pod
+
+kubectl describe pod <pod-name> -n <namespace>
+
+在 Events: 部分会有类似：
+
+Normal  Killing  1m   kubelet  Stopping container my-app
+
+
+
+---
+
+4. 历史审计（如果 Pod 已经被清理）
+
+Pod 已被删除 → kubectl 就查不到了。
+
+需要依赖：
+
+kubectl get events（有限保留时间）
+
+日志 / 审计日志（如果集群开启了 audit log 或监控系统，比如 EFK/Prometheus）
+
+Cloud Provider 日志（EKS/AKS/GKE 会在控制面日志里有删除事件）
+
+
+
+
+---
+
+✅ 总结：
+
+Pod 仍存在 → 看 deletionTimestamp 或 describe pod 事件。
+
+Pod 已清理 → 只能查 kubectl get events 或外部日志/监控。
+
+
+
+---
+
+要不要我帮你写一个 一键命令，直接列出某个 namespace 下所有 Pod 的 创建时间 & 删除时间 (如果有)？
+
