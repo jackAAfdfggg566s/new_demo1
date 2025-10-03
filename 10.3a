@@ -1,0 +1,113 @@
+👌懂了，你的配置文件里并不是写 dloadtime=xxx 这种键，而是想要直接在配置文件里写一组参数，然后 Python 只需要拼成 -Dxxx=yyy 就行，不用去循环 key.startswith("d")。
+
+那我们可以这样设计：
+
+
+---
+
+示例 config.ini
+
+[java]
+java_home = /usr/bin/java
+jar_file = /path/to/myapp.jar
+args = --spring.profiles.active=prod
+
+# 自定义 D 参数，直接写成 key=value，用逗号分隔
+dparams = loadtime=30, peak=100, mode=fast
+
+[log]
+log_file = /path/to/myapp.log
+check_field = "Started Application"
+backup_dir = /backup/logs
+pid_log = /var/run/myapp.pid
+
+
+---
+
+Python 脚本 run_java.py
+
+import os
+import subprocess
+import configparser
+import shutil
+import time
+import sys
+
+# 1. 读取配置文件
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+java_home = config['java']['java_home']
+jar_file = config['java']['jar_file']
+args = config['java'].get('args', '')
+
+log_file = config['log']['log_file']
+check_field = config['log']['check_field']
+backup_dir = config['log']['backup_dir']
+pid_log = config['log']['pid_log']
+
+# 2. 读取自定义 D 参数（用逗号分隔）
+dparams_raw = config['java'].get('dparams', '')
+java_opts = []
+if dparams_raw:
+    for pair in dparams_raw.split(","):
+        pair = pair.strip()
+        if "=" in pair:
+            key, value = pair.split("=", 1)
+            java_opts.append(f"-D{key.strip()}={value.strip()}")
+
+# 3. 拼接命令
+java_opts_str = " ".join(java_opts)
+cmd = f"{java_home} {java_opts_str} -jar {jar_file} {args}"
+print(f"启动命令: {cmd}")
+
+# 4. 启动 Java 程序
+proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+pid = proc.pid
+print(f"Java 程序已启动, PID={pid}")
+
+# 5. 保存 PID
+with open(pid_log, "w") as f:
+    f.write(str(pid))
+
+# 6. 等待日志并检查字段
+field_exists = False
+for _ in range(30):  # 最多检查 30 次（约 30 秒）
+    time.sleep(1)
+    if os.path.exists(log_file):
+        with open(log_file, "r") as f:
+            for line in f:
+                if check_field in line:
+                    field_exists = True
+                    break
+    if field_exists:
+        break
+
+print(f"字段检查结果: {field_exists}")
+
+# 7. 拷贝日志文件
+if os.path.exists(log_file):
+    os.makedirs(backup_dir, exist_ok=True)
+    shutil.copy(log_file, backup_dir)
+    print(f"日志已拷贝到 {backup_dir}")
+else:
+    print("日志文件不存在，无法拷贝。")
+
+
+---
+
+🚀 使用效果
+
+配置文件里：
+
+dparams = loadtime=30, peak=100, mode=fast
+
+启动命令会自动变成：
+
+/usr/bin/java -Dloadtime=30 -Dpeak=100 -Dmode=fast -jar /path/to/myapp.jar --spring.profiles.active=prod
+
+
+---
+
+要不要我帮你加个功能：如果 dparams 里写了必需的参数缺失（比如必须有 loadtime 和 peak），脚本自动检查并报错？
+
