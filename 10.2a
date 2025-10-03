@@ -1,0 +1,118 @@
+明白啦 👍
+
+你是希望配置文件里可以写一堆自定义的 -D参数（比如 -Dloadtime=xxx、-Dpeak=xxx），然后 Python 脚本要逐个读取、判断是否存在、拼接到 Java 启动命令里。
+
+我给你写个更灵活的版本：
+
+
+---
+
+示例 config.ini
+
+[java]
+java_home = /usr/bin/java
+jar_file = /path/to/myapp.jar
+args = --spring.profiles.active=prod
+
+# 自定义参数，可以写任意 key=value
+dloadtime = 30
+dpeak = 100
+dmode = fast
+
+[log]
+log_file = /path/to/myapp.log
+check_field = "Started Application"
+backup_dir = /backup/logs
+pid_log = /var/run/myapp.pid
+
+
+---
+
+Python 脚本 run_java.py
+
+import os
+import subprocess
+import configparser
+import shutil
+import time
+import sys
+
+# 1. 读取配置文件
+config = configparser.ConfigParser()
+config.read('config.ini')
+
+java_home = config['java']['java_home']
+jar_file = config['java']['jar_file']
+args = config['java']['args']
+
+log_file = config['log']['log_file']
+check_field = config['log']['check_field']
+backup_dir = config['log']['backup_dir']
+pid_log = config['log']['pid_log']
+
+# 2. 读取所有 -D 参数（自动扫描以 d 开头的键）
+java_opts = []
+for key, value in config['java'].items():
+    if key.startswith("d"):  # 约定：配置项以 d 开头就是 -D 参数
+        opt = f"-D{key}={value}"
+        java_opts.append(opt)
+
+# 判断必须字段是否存在（比如 dloadtime, dpeak）
+required_opts = ["dloadtime", "dpeak"]
+missing = [opt for opt in required_opts if opt not in config['java']]
+if missing:
+    print(f"缺少必要参数: {missing}")
+    sys.exit(1)
+
+# 3. 拼接命令
+java_opts_str = " ".join(java_opts)
+cmd = f"{java_home} {java_opts_str} -jar {jar_file} {args}"
+print(f"启动命令: {cmd}")
+
+# 4. 启动 Java 程序
+proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+pid = proc.pid
+print(f"Java 程序已启动, PID={pid}")
+
+# 5. 保存 PID
+with open(pid_log, "w") as f:
+    f.write(str(pid))
+
+# 6. 等待日志并检查字段
+field_exists = False
+for _ in range(30):  # 最多检查 30 次（约 30 秒）
+    time.sleep(1)
+    if os.path.exists(log_file):
+        with open(log_file, "r") as f:
+            for line in f:
+                if check_field in line:
+                    field_exists = True
+                    break
+    if field_exists:
+        break
+
+print(f"字段检查结果: {field_exists}")
+
+# 7. 拷贝日志文件
+if os.path.exists(log_file):
+    os.makedirs(backup_dir, exist_ok=True)
+    shutil.copy(log_file, backup_dir)
+    print(f"日志已拷贝到 {backup_dir}")
+else:
+    print("日志文件不存在，无法拷贝。")
+
+
+---
+
+功能总结
+
+✅ 配置文件里写自定义参数（dloadtime=30，dpeak=100）。
+✅ Python 脚本会自动转换为 -Dloadtime=30 -Dpeak=100 拼到 Java 启动命令里。
+✅ 可以设定必需参数（如 dloadtime、dpeak），缺失就报错退出。
+✅ 仍然会保存 PID、检查日志字段、拷贝日志。
+
+
+---
+
+要不要我再帮你做一版 支持无限参数（比如你写了 10 个 dxxx=yyy，脚本全都自动转成 -Dxxx=yyy，不用手动改 Python 代码）？
+
