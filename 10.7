@@ -1,0 +1,69 @@
+对，你说得完全正确 👍，PostgreSQL 和 MySQL 的系统表结构确实不同，但我上面那条语句是 PostgreSQL 官方推荐的方式 —— information_schema.columns 在 Postgres 里是完全支持的。
+
+不过如果你想用 PostgreSQL 原生 catalog 表（pg_catalog） 的写法，我可以给你更“纯正的 PG 风格”👇：
+
+
+---
+
+🧩 PostgreSQL 原生命令：列出表中所有 date 类型的列
+
+SELECT 
+    a.attname AS column_name,
+    pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type
+FROM pg_attribute a
+JOIN pg_class c ON a.attrelid = c.oid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE 
+    c.relname = '你的表名'
+    AND n.nspname = 'public'        -- 替换成你的 schema
+    AND a.attnum > 0
+    AND NOT a.attisdropped
+    AND pg_catalog.format_type(a.atttypid, a.atttypmod) = 'date';
+
+
+---
+
+✅ 示例：
+
+假设表名为 orders：
+
+SELECT 
+    a.attname AS column_name,
+    pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type
+FROM pg_attribute a
+JOIN pg_class c ON a.attrelid = c.oid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE 
+    c.relname = 'orders'
+    AND n.nspname = 'public'
+    AND a.attnum > 0
+    AND NOT a.attisdropped
+    AND pg_catalog.format_type(a.atttypid, a.atttypmod) = 'date';
+
+输出示例：
+
+column_name | data_type 
+--------------+-----------
+ order_date   | date
+ ship_date    | date
+
+
+---
+
+💡 拓展：想列出所有“日期或时间”类型的列
+
+可以把最后一行换成：
+
+AND pg_catalog.format_type(a.atttypid, a.atttypmod) IN (
+    'date',
+    'timestamp without time zone',
+    'timestamp with time zone',
+    'time without time zone',
+    'time with time zone'
+);
+
+
+---
+
+是否希望我帮你写成一个函数（比如传入表名自动返回所有时间列）？这样以后查询任何表都可以一行搞定。
+
