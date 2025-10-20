@@ -1,0 +1,81 @@
+可以的，我给你一个 最标准、最常用 的“PG 查询 → 保存变量”范例，你可以直接放到脚本里用。
+
+
+---
+
+✅ Bash 脚本查询 Postgres 并保存到变量
+
+run_date=$(psql \
+  -h <DB_HOST> \
+  -p <DB_PORT> \
+  -U <DB_USER> \
+  -d <DB_NAME> \
+  -t -A \
+  -c "select max(batch_date) from job_run;")
+
+解释：
+
+参数	作用
+
+-t	去掉结果前后多余格式（例如 (1 row)）
+-A	去掉对齐（避免空格）
+-c	执行 SQL
+结果直接赋值给 run_date 变量	
+
+
+拿到之后你可以 echo 看一下：
+
+echo "run_date = $run_date"
+
+
+---
+
+✅ 更完整一点 (包含密码)
+
+export PGPASSWORD="<你的密码>"
+
+run_date=$(psql \
+  -h <DB_HOST> \
+  -p <DB_PORT> \
+  -U <DB_USER> \
+  -d <DB_NAME> \
+  -t -A \
+  -c "select max(batch_date) from job_run;")
+
+
+---
+
+✅ 和 pod 命令串联（完整 pipeline）
+
+export PGPASSWORD="<你的密码>"
+run_date=$(psql -h <DB_HOST> -p <DB_PORT> -U <DB_USER> -d <DB_NAME> -t -A -c "select max(batch_date) from job_run;")
+
+kubectl exec -i <POD_NAME> -- sh -c "echo run -d $run_date | java -jar /app/cli.jar"
+
+
+---
+
+下一步
+
+我帮你把 <DB_HOST> <DB_USER> <POD_NAME> SQL 都替换成实际值
+你就能拿到一条 直接可运行 的命令。
+
+只需要把这四个信息发给我：
+
+DB_HOST:
+DB_NAME:
+DB_USER:
+SQL:
+POD_NAME:
+
+回复示例：
+
+DB_HOST: mydb-postgres
+DB_NAME: myapp
+DB_USER: appuser
+SQL: select max(batch_date) from job_run;
+POD_NAME: app-job-cli-0
+
+我就给你最终脚本 ✅
+你直接 copy 就能用。需要的话回我上面 5 个参数即可。
+
