@@ -1,0 +1,84 @@
+可以的 ✅
+只要你现在是：先执行一个 java 命令 -> 进入它的交互式 CLI -> 再输入命令，
+这个流程几乎都可以“非交互化”来做成 pipeline / 脚本自动执行。
+
+关键是：
+
+> 能不能把“第二步 CLI 里的命令” 作为参数/配置提前传给 Java 程序
+而不是等进 CLI 再敲。
+
+
+
+
+---
+
+常见三种解决方式
+
+方式	说明	适合场景
+
+1. 带入 stdin（输入重定向）	echo "cmd1; cmd2" | java -jar xxx.jar	程序支持从标准输入读取命令
+2. 命令行参数	java -jar xxx.jar --run cmd1 --run cmd2	CLI 实际只是参数壳子
+3. 自动化 shell/pipeline	写入 .sh / pipeline stage，直接执行	CI/CD or k8s Job
+
+
+
+---
+
+示例
+
+✅ 示例1：stdin 重定向
+
+echo -e "show status\nexit" | java -jar tool.jar
+
+✅ 示例2：Pipeline 里执行
+
+stage('Run CLI Commands') {
+    sh """
+        echo -e "cmd1\ncmd2\nexit" | java -jar /app/tool.jar
+    """
+}
+
+✅ 示例3：在 Pod 内一次性跑
+
+kubectl exec -it mypod -- sh -c 'echo -e "cmd1\ncmd2" | java -jar /app/tool.jar'
+
+
+---
+
+如果你的 CLI 需要交互确认（y/n）
+
+也可以用 yes：
+
+yes | java -jar tool.jar
+
+或者具体命令：
+
+echo "y" | java -jar tool.jar do-something
+
+
+---
+
+我需要确认几个点，我就能给你出完整 pipeline 脚本
+
+1. 你是运行：
+java -jar xxx.jar 还是 java <MainClass>？
+
+
+2. CLI 里的命令格式是怎样的（举两个你平时敲的命令例子）？
+
+
+3. 运行环境是 Jenkins、GitLab CI、GitHub Actions 还是 Argo / Tekton？
+
+
+
+> 确认这些后，我就可以给你一套完整的可复制黏贴的 pipeline stage，
+无需手动交互。
+
+
+
+
+---
+
+只要你回复这三个问题，我们下一条我就给你直接 pipeline 成品脚本（shell + yaml 都行）。
+继续吗？
+
