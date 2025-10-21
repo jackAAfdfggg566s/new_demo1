@@ -1,0 +1,58 @@
+如果你现在是这样拿值的：
+
+VALUE=$(sshpass -p xxxx ssh user@host 'sh /path/xxx.sh')
+
+一样可以写入 dotenv 文件传给下一个 job。
+
+完整示例：
+
+query_remote:
+  stage: prepare
+  script:
+    - VALUE=$(sshpass -p "$REMOTE_PASS" ssh user@host 'sh /path/xxx.sh')
+    - echo "REMOTE_VALUE=$VALUE" >> remote.env
+  artifacts:
+    reports:
+      dotenv: remote.env
+
+然后下个 job 直接用：
+
+use_remote_value:
+  stage: deploy
+  needs: ["query_remote"]
+  script:
+    - echo "Received: $REMOTE_VALUE"
+    - ./run_something.sh "$REMOTE_VALUE"
+
+
+---
+
+🔑 关键点
+
+目的	做法
+
+从远程机器 ssh 获取值	VALUE=$(sshpass ...)
+让后续 job 获取到这个值	echo "REMOTE_VALUE=$VALUE" >> remote.env
+让 GitLab 传变量	artifacts: reports: dotenv:
+
+
+完全不需要把变量写到 GitLab Agent 里，
+也不需要 export 环境变量，
+只要写到 dotenv 类型的 artifact 就能自动传过去。
+
+
+---
+
+如果你想，我可以把你的实际 pipeline 帮你拼完整。
+
+只需要发我下面两段内容，我就能帮你改成生产可用：
+
+1. 你当前 ssh 获取值那段 yaml
+
+
+2. 下一个 job 用这个变量的那段 yaml
+
+
+
+发出来我帮你整理成一份可复制可运行的版本。要继续吗？
+
