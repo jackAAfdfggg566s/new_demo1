@@ -1,0 +1,116 @@
+一般 不可以直接用 FIS 模拟 IAM 故障，因为：
+
+原因	说明
+
+FIS 的职责	注入基础设施层面的故障（EC2 / EKS / RDS / 网络 / asg），即“资源层”
+IAM 的职责	是 控制面权限，不属于资源可注入的运行时故障
+AWS 官方支持范围	没有提供“让 IAM 拒绝/失效/变更策略”这类 injection
+
+
+因此 AWS FIS 本身 无法：
+
+模拟 AWS STS token 失效
+
+模拟 IAM policy deny
+
+模拟 assume-role 失败
+
+模拟 access key 被 revoke
+
+模拟 sudden permission drop
+
+
+
+---
+
+那 IAM 故障一般用什么方式模拟？
+
+虽然 FIS 不支持，但有几种替代方式：
+
+方法	说明	适用度
+
+临时改 policy Deny	手动或脚本加一条 Explicit Deny	✅ 可行
+临时移除权限	把 role 里的某项 action 移开	✅ 可行
+临时禁用 access key	iam update-access-key	✅ 可行
+使用 SCP 阻断	组织级别禁止某些操作	✅ 强制性强
+STS session 过期模拟	手动减少 MaxSessionDuration	✅ 部分模拟
+FIS	❌ 不能做 IAM 故障	
+
+
+
+---
+
+可行替代：结合 FIS + 脚本（间接模拟）
+
+虽然 FIS 不能对 IAM 动手
+但可以：
+
+> 在 FIS action 前后，通过 Lambda 或 cli 修改 IAM policy
+
+
+
+来实现“像是 IAM 故障导致的系统异常”。
+
+示例流程：
+
+1. FIS 触发 experiment
+
+
+2. 调用 Lambda 注入 explicit deny 到某个 role / user
+
+
+3. 系统请求失败（达到 simulate 目的）
+
+
+4. 实验结束时自动 rollback
+
+
+5. Lambda 恢复原 policy
+
+
+
+这就是 “FIS orchestrates, but IAM break is via Lambda” 的常用做法。
+
+
+---
+
+所以你的问题答案
+
+结论	说明
+
+❌ 不能直接	FIS 本身不会触发 IAM policy 变化
+✅ 能间接	用 FIS 触发 Lambda 修改 IAM/STS 即可
+
+
+
+---
+
+如果你愿意，我可以给你一份 完整可运行的 AWS FIS + Lambda IAM 故障模拟模板，包含：
+
+FIS experiment template
+
+Lambda 代码（注入 deny 与恢复）
+
+IAM policy 最小权限
+
+Terraform / CloudFormation 样例
+
+
+只要你告诉我： 你要模拟哪一种 IAM 故障？
+
+1. AssumeRole 失败
+
+
+2. 某个 AWS API 被 deny
+
+
+3. AccessKey 被禁用
+
+
+4. STS token 提前失效
+
+
+
+回复我一个数字，我就给你完整代码。
+只要说：“我要 2” 或其他编号。
+
