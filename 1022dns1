@@ -1,0 +1,249 @@
+好——下面给你一套可直接用的权重（weighted）修改脚本 + 回滚脚本，并附上最小 IAM 权限示例与使用说明。脚本用 aws cli（v2）和 jq，在 SSM / Lambda / CI / 本地都能跑（根据环境调整）。我把关键点都写清楚，复制粘贴即可用。
+
+
+---
+
+文件 1 — 修改权重脚本 change_weight.sh
+
+作用：读取指定 hosted zone 与 record（Name + Type），把该记录的 weight 修改为目标值；在本地保存当前记录到 ${BACKUP_FILE}（可选上 S3），以便回滚。
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 必填参数
+HOSTED_ZONE_ID="${HOSTED_ZONE_ID:-Z123EXAMPLE}"   # 替换为你的 Hosted Zone ID
+RECORD_NAME="${RECORD_NAME:-api.example.com.}"    # 注意带末尾点
+RECORD_TYPE="${RECORD_TYPE:-A}"                   # A/CNAME 等
+TARGET_WEIGHT="${TARGET_WEIGHT:-0}"               # 目标权重（整数）
+TTL="${TTL:-30}"                                  # 可选：修改 TTL（若不想改，保留原值）
+BACKUP_FILE="${BACKUP_FILE:-/tmp/route53_backup.json}"
+# 可选：如果想把 backup 上传到 S3，配置下面两个变量
+USE_S3_BACKUP="${USE_S3_BACKUP:-false}"
+S3_BUCKET="${S3_BUCKET:-}"                        # e.g. my-backup-bucket
+S3_KEY="${S3_KEY:-route53-backup/backup.json}"
+
+# req: aws cli, jq
+command -v aws >/dev/null 2>&1 || { echo "aws cli required"; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "jq required"; exit 2; }
+
+echo "Finding existing record sets for ${RECORD_NAME} ${RECORD_TYPE} in ${HOSTED_ZONE_ID}..."
+# Get the specific RRSet
+RRSET_JSON=$(aws route53 list-resource-record-sets \
+  --hosted-zone-id "${HOSTED_ZONE_ID}" \
+  --query "ResourceRecordSets[?Name==\`${RECORD_NAME}\` && Type==\`${RECORD_TYPE}\`]" \
+  --output json)
+
+if [ "$(echo "${RRSET_JSON}" | jq 'length')" = "0" ]; then
+  echo "ERROR: No matching record set found."
+  echo "${RRSET_JSON}"
+  exit 3
+fi
+
+# for weighted, there may be multiple records with same Name/Type but different SetIdentifier
+# We'll modify all weighted RRSets (that have Weight & SetIdentifier)
+WEIGHTED_RRSETS=$(echo "${RRSET_JSON}" | jq '[.[] | select(.Weight != null)]')
+
+if [ "$(echo "${WEIGHTED_RRSETS}" | jq 'length')" = "0" ]; then
+  echo "ERROR: No weighted record sets found for ${RECORD_NAME} ${RECORD_TYPE}."
+  exit 4
+fi
+
+# backup
+echo "${WEIGHTED_RRSETS}" | jq '.' > "${BACKUP_FILE}"
+echo "Backup saved to ${BACKUP_FILE}"
+
+if [ "${USE_S3_BACKUP}" = "true" ]; then
+  if [ -z "${S3_BUCKET}" ]; then echo "S3_BUCKET not set"; exit 5; fi
+  aws s3 cp "${BACKUP_FILE}" "s3://${S3_BUCKET}/${S3_KEY}"
+  echo "Backup uploaded to s3://${S3_BUCKET}/${S3_KEY}"
+fi
+
+# Build change batch: for each weighted RRSet, UPSERT with new Weight (keep other fields)
+CHANGES=$(echo "${WEIGHTED_RRSETS}" | jq --argjson w "${TARGET_WEIGHT}" 'map(
+  {
+    "Action": "UPSERT",
+    "ResourceRecordSet": (
+      . 
+      | del(.Weight)         # remove old Weight if present
+      | . + { "Weight": $w } # set new Weight
+    )
+  }
+)')
+
+CHANGE_BATCH=$(jq -n --argjson changes "${CHANGES}" '{ "Changes": $changes }')
+
+echo "Submitting change batch:"
+echo "${CHANGE_BATCH}" | jq '.'
+
+aws route53 change-resource-record-sets \
+  --hosted-zone-id "${HOSTED_ZONE_ID}" \
+  --change-batch "${CHANGE_BATCH}"
+
+echo "Submitted change to set weight -> ${TARGET_WEIGHT} for ${RECORD_NAME} ${RECORD_TYPE}."
+
+
+---
+
+文件 2 — 回滚脚本 restore_weight.sh
+
+作用：从备份文件（本地或 S3）读取原始 weighted RRSet 并恢复（UPSERT 回原样）。
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+HOSTED_ZONE_ID="${HOSTED_ZONE_ID:-Z123EXAMPLE}"
+BACKUP_FILE="${BACKUP_FILE:-/tmp/route53_backup.json}"
+USE_S3_BACKUP="${USE_S3_BACKUP:-false}"
+S3_BUCKET="${S3_BUCKET:-}"
+S3_KEY="${S3_KEY:-route53-backup/backup.json}"
+
+command -v aws >/dev/null 2>&1 || { echo "aws cli required"; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "jq required"; exit 2; }
+
+if [ "${USE_S3_BACKUP}" = "true" ]; then
+  if [ -z "${S3_BUCKET}" ]; then echo "S3_BUCKET not set"; exit 3; fi
+  aws s3 cp "s3://${S3_BUCKET}/${S3_KEY}" "${BACKUP_FILE}"
+  echo "Downloaded backup from s3://${S3_BUCKET}/${S3_KEY} -> ${BACKUP_FILE}"
+fi
+
+if [ ! -f "${BACKUP_FILE}" ]; then
+  echo "ERROR: backup file not found: ${BACKUP_FILE}"
+  exit 4
+fi
+
+ORIG_RRSETS=$(cat "${BACKUP_FILE}")
+
+# Build UPSERT changes to restore original RRsets
+CHANGES=$(echo "${ORIG_RRSETS}" | jq 'map({ "Action": "UPSERT", "ResourceRecordSet": . })')
+CHANGE_BATCH=$(jq -n --argjson changes "${CHANGES}" '{ "Changes": $changes }')
+
+echo "Restoring original RRsets:"
+echo "${CHANGE_BATCH}" | jq '.'
+
+aws route53 change-resource-record-sets \
+  --hosted-zone-id "${HOSTED_ZONE_ID}" \
+  --change-batch "${CHANGE_BATCH}"
+
+echo "Restore submitted."
+
+
+---
+
+运行示例
+
+先把脚本放到目标机器并加可执行权限：
+
+chmod +x change_weight.sh restore_weight.sh
+
+执行把权重改为 0（例如把流量移走）：
+
+HOSTED_ZONE_ID=Z123EXAMPLE \
+RECORD_NAME=api.example.com. \
+RECORD_TYPE=A \
+TARGET_WEIGHT=0 \
+./change_weight.sh
+
+恢复（默认从 /tmp/route53_backup.json 读）：
+
+HOSTED_ZONE_ID=Z123EXAMPLE ./restore_weight.sh
+
+如果希望备份上传到 S3（在无持久本地盘或想集中保存）：
+
+USE_S3_BACKUP=true S3_BUCKET=my-bucket S3_KEY=backups/r53.json ./change_weight.sh
+# 恢复时同样设置 USE_S3_BACKUP=true 和 S3_BUCKET/S3_KEY
+
+
+---
+
+最小 IAM 权限（建议绑定到 FIS role / SSM role /执行脚本的角色）
+
+下面是一个尽量限制到特定 Hosted Zone 的 policy 示例（JSON）。把 RESOURCE_HOSTED_ZONE_ID 替换成你的 Hosted Zone ID。
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "Route53ChangeAndList",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": [
+        "arn:aws:route53:::hostedzone/RESOURCE_HOSTED_ZONE_ID"
+      ]
+    },
+    {
+      "Sid": "GetChangeOptional",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetChange"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3BackupOptional",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+      ]
+    }
+  ]
+}
+
+说明：
+
+ChangeResourceRecordSets：必需，用来 UPSERT record。
+
+ListResourceRecordSets：用于读取并备份当前记录（脚本里使用）。
+
+GetChange：可选，用来查询 change 状态（如果你想等 change 完成）。
+
+S3 相关权限：仅当你启用 S3 备份时需要。
+
+Route53 的资源限制只能到 hostedzone 级别（无法精细到单个 record）。
+
+
+
+---
+
+注意事项 & 最佳实践
+
+1. 测试环境先跑：权重或记录变更可能导致大量流量切换或健康检查触发，务必在非生产或流量能承受的窗口测试。
+
+
+2. TTL 与缓存：即刻生效性受客户端/解析器缓存影响。使用较小 TTL（例如 30）可以加快切换响应，但不会立刻清空各地缓存。
+
+
+3. 备份一定要有：脚本默认会把被修改的 RRSet 保存到备份文件，务必保留并验证备份。
+
+
+4. 记录有 SetIdentifier：weighted record 通常伴随 SetIdentifier 字段，脚本会原样保留 SetIdentifier 并只改 Weight。
+
+
+5. 权限最小化：把 policy 限制到指定 hosted zone、S3 bucket。不要给 route53:*。
+
+
+6. 自动 rollback：可把 restore_weight.sh 注册为 FIS 的恢复 action 或在 automation 中在失败时自动调用。
+
+
+7. 并发/多条 weighted record：脚本会修改该 Name/Type 下所有带 Weight 字段的 RRSet（通常为多后端的情形）。如果你只想改某个 SetIdentifier，我可以把脚本修改成按 SetIdentifier 匹配。
+
+
+
+
+---
+
+如果你想，我可以立刻为你定制两件事中的任意一项（我会直接给出文件）：
+
+A）把脚本改成只修改指定 SetIdentifier（更精细）
+
+B）把脚本改成在修改后等待 change 完成（轮询 GetChange），并在失败时自动 rollback
+
+
+回复 “A” 或 “B”（或都要）我就给你对应版本。
+
