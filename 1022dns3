@@ -1,0 +1,266 @@
+好 — 我理解你想要的是「带**延时（delay）**功能的脚本」，用于在注入（change）或恢复（restore）前后加入等待，或者在提交 change 后等待 Route53 变更 INSYNC（带超时和轮询间隔）。我把之前的简化脚本合并成一个单脚本 r53_weight_ctl.sh，并增加了这些延时相关功能：
+
+--delay-before：在执行 change/restore 之前等待 N 秒（可用于等系统稳定/观察 baseline）。
+
+--delay-after：在执行 change/restore 之后等待 N 秒（比如观察故障影响再继续下一步）。
+
+--wait：提交 change 后轮询 GetChange 直到 INSYNC（可配 --wait-timeout 和 --wait-interval）。
+
+--backup：指定备份文件路径（默认 /tmp/route53_backup.json）。
+
+支持 --set-id 精确匹配某个 weighted RRSet。
+
+
+把脚本贴出，直接可用（需要 aws 与 jq）：
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+# r53_weight_ctl.sh
+# Usage examples:
+#  Change weight with delay before 10s and wait for INSYNC:
+#    ./r53_weight_ctl.sh change --hosted-zone Z123 --name api.example.com. --type A --weight 0 --delay-before 10 --wait --wait-timeout 120
+#  Restore from backup with 5s delay after:
+#    ./r53_weight_ctl.sh restore --hosted-zone Z123 --backup /tmp/route53_backup.json --delay-after 5
+
+usage() {
+  cat <<EOF
+Usage: $0 <change|restore> [options]
+
+Actions:
+  change    Modify weighted RRSet weight
+  restore   Restore from backup
+
+Common options:
+  --hosted-zone ZONE     Hosted Zone ID (required)
+  --name NAME            Record name (required for change)
+  --type TYPE            Record type e.g. A (required for change)
+  --weight W             Target weight (required for change)
+  --set-id ID            Optional SetIdentifier to target a specific weighted RRSet
+  --backup FILE          Backup file path (default /tmp/route53_backup.json)
+  --delay-before N       Delay N seconds before performing action
+  --delay-after N        Delay N seconds after performing action
+  --wait                 For change: wait until route53 change becomes INSYNC
+  --wait-timeout N       Wait timeout seconds (default 300)
+  --wait-interval N      Poll interval seconds when waiting (default 5)
+  -h, --help             Show this help
+EOF
+  exit 1
+}
+
+ACTION=""
+HOSTED_ZONE=""
+NAME=""
+TYPE=""
+WEIGHT=""
+SET_ID=""
+BACKUP_FILE="/tmp/route53_backup.json"
+DELAY_BEFORE=0
+DELAY_AFTER=0
+WAIT="false"
+WAIT_TIMEOUT=300
+WAIT_INTERVAL=5
+
+if [ $# -lt 1 ]; then usage; fi
+ACTION="$1"; shift
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --hosted-zone) HOSTED_ZONE="$2"; shift 2;;
+    --name) NAME="$2"; shift 2;;
+    --type) TYPE="$2"; shift 2;;
+    --weight) WEIGHT="$2"; shift 2;;
+    --set-id) SET_ID="$2"; shift 2;;
+    --backup) BACKUP_FILE="$2"; shift 2;;
+    --delay-before) DELAY_BEFORE="$2"; shift 2;;
+    --delay-after) DELAY_AFTER="$2"; shift 2;;
+    --wait) WAIT="true"; shift;;
+    --wait-timeout) WAIT_TIMEOUT="$2"; shift 2;;
+    --wait-interval) WAIT_INTERVAL="$2"; shift 2;;
+    -h|--help) usage;;
+    *) echo "Unknown arg: $1"; usage;;
+  esac
+done
+
+command -v aws >/dev/null 2>&1 || { echo "aws cli required"; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "jq required"; exit 2; }
+
+if [ -z "$HOSTED_ZONE" ]; then echo "hosted-zone required"; exit 1; fi
+
+sleep_if() {
+  local sec="$1"
+  if [ "${sec}" -gt 0 ]; then
+    echo "Sleeping ${sec}s..."
+    sleep "${sec}"
+  fi
+}
+
+wait_for_change() {
+  local change_id="$1"
+  local timeout="$2"
+  local interval="$3"
+  local start=$(date +%s)
+  echo "Waiting for change ${change_id} to become INSYNC (timeout ${timeout}s)..."
+  while true; do
+    local status
+    status=$(aws route53 get-change --id "${change_id}" --output json | jq -r '.ChangeInfo.Status' || echo "ERROR")
+    echo "Status: ${status}"
+    if [ "${status}" = "INSYNC" ]; then
+      echo "Change is INSYNC."
+      return 0
+    fi
+    if [ "${status}" = "ERROR" ]; then
+      echo "Failed to get change status."
+      return 2
+    fi
+    now=$(date +%s)
+    if [ $((now - start)) -ge "${timeout}" ]; then
+      echo "Timeout waiting for INSYNC."
+      return 3
+    fi
+    sleep "${interval}"
+  done
+}
+
+if [ "${ACTION}" = "change" ]; then
+  if [ -z "${NAME}" ] || [ -z "${TYPE}" ] || [ -z "${WEIGHT}" ]; then
+    echo "change requires --name --type --weight"; exit 1
+  fi
+
+  sleep_if "${DELAY_BEFORE}"
+
+  echo "Listing RRSets for ${NAME} ${TYPE} in ${HOSTED_ZONE}..."
+  RRSETS_JSON=$(aws route53 list-resource-record-sets \
+    --hosted-zone-id "${HOSTED_ZONE}" \
+    --query "ResourceRecordSets[?Name==\`${NAME}\` && Type==\`${TYPE}\`]" \
+    --output json)
+
+  if [ -n "${SET_ID}" ]; then
+    MATCHED=$(echo "${RRSETS_JSON}" | jq -c --arg id "${SET_ID}" '[.[] | select(.SetIdentifier == $id)]')
+  else
+    MATCHED=$(echo "${RRSETS_JSON}" | jq -c '[.[] | select(.Weight != null)]')
+  fi
+
+  if [ "$(echo "${MATCHED}" | jq 'length')" = "0" ]; then
+    echo "No matching weighted RRSet found."
+    exit 3
+  fi
+
+  echo "Backing up matched RRSet(s) to ${BACKUP_FILE}..."
+  echo "${MATCHED}" | jq '.' > "${BACKUP_FILE}"
+
+  # build changes: set .Weight = WEIGHT (keep other fields)
+  CHANGES=$(echo "${MATCHED}" | jq --argjson w "${WEIGHT}" 'map({ Action:"UPSERT", ResourceRecordSet:(. + {Weight:$w}) })')
+  CHANGE_BATCH_FILE=$(mktemp /tmp/r53-change.XXXX.json)
+  jq -n --argjson changes "${CHANGES}" '{Changes:$changes}' > "${CHANGE_BATCH_FILE}"
+
+  echo "Submitting change-batch..."
+  OUT=$(aws route53 change-resource-record-sets --hosted-zone-id "${HOSTED_ZONE}" --change-batch "file://${CHANGE_BATCH_FILE}" --output json)
+  echo "Change submitted: ${OUT}"
+
+  # optionally wait for INSYNC
+  if [ "${WAIT}" = "true" ]; then
+    CHANGE_ID=$(echo "${OUT}" | jq -r '.ChangeInfo.Id')
+    wait_for_change "${CHANGE_ID}" "${WAIT_TIMEOUT}" "${WAIT_INTERVAL}" || {
+      echo "Wait failed or timed out."
+      rm -f "${CHANGE_BATCH_FILE}"
+      exit 4
+    }
+  fi
+
+  rm -f "${CHANGE_BATCH_FILE}"
+
+  sleep_if "${DELAY_AFTER}"
+
+  echo "Change action completed."
+
+elif [ "${ACTION}" = "restore" ]; then
+  if [ ! -f "${BACKUP_FILE}" ]; then
+    echo "Backup file not found: ${BACKUP_FILE}"
+    exit 2
+  fi
+
+  sleep_if "${DELAY_BEFORE}"
+
+  ORIG=$(cat "${BACKUP_FILE}")
+  CHANGES=$(echo "${ORIG}" | jq 'map({ Action:"UPSERT", ResourceRecordSet:. })')
+  CHANGE_BATCH_FILE=$(mktemp /tmp/r53-restore.XXXX.json)
+  jq -n --argjson changes "${CHANGES}" '{Changes:$changes}' > "${CHANGE_BATCH_FILE}"
+
+  echo "Submitting restore change..."
+  OUT=$(aws route53 change-resource-record-sets --hosted-zone-id "${HOSTED_ZONE}" --change-batch "file://${CHANGE_BATCH_FILE}" --output json)
+  echo "Restore submitted: ${OUT}"
+
+  if [ "${WAIT}" = "true" ]; then
+    CHANGE_ID=$(echo "${OUT}" | jq -r '.ChangeInfo.Id')
+    wait_for_change "${CHANGE_ID}" "${WAIT_TIMEOUT}" "${WAIT_INTERVAL}" || {
+      echo "Wait failed or timed out."
+      rm -f "${CHANGE_BATCH_FILE}"
+      exit 4
+    }
+  fi
+
+  rm -f "${CHANGE_BATCH_FILE}"
+
+  sleep_if "${DELAY_AFTER}"
+
+  echo "Restore action completed."
+
+else
+  echo "Unknown action: ${ACTION}"
+  usage
+fi
+
+
+---
+
+使用示例（三种常见场景）
+
+1. 先等待 10s 再把权重改为 0，并等待 INSYNC（最多 120s）：
+
+
+
+./r53_weight_ctl.sh change --hosted-zone Z123 --name api.example.com. --type A --weight 0 --delay-before 10 --wait --wait-timeout 120
+
+2. 立即修改权重，但在修改后再等待 60s（观察系统行为）：
+
+
+
+./r53_weight_ctl.sh change --hosted-zone Z123 --name api.example.com. --type A --weight 0 --delay-after 60
+
+3. 恢复时在执行前延迟 30s，并等待变更 INSYNC：
+
+
+
+./r53_weight_ctl.sh restore --hosted-zone Z123 --backup /tmp/route53_backup.json --delay-before 30 --wait
+
+
+---
+
+关于 IAM 权限（回顾，必须包含）
+
+route53:ListResourceRecordSets（读取当前记录）
+
+route53:ChangeResourceRecordSets（提交 UPSERT）
+
+route53:GetChange（如果使用 --wait 需要）
+
+可选：s3:GetObject / s3:PutObject（如果你把备份保存在 S3）
+
+
+示例 policy 见我之前给你的那段（可限制到 arn:aws:route53:::hostedzone/你的ID）。
+
+
+---
+
+如果你想，我可以进一步：
+
+把脚本改为在没有本地写盘环境时自动用 S3 存备份（自动带临时凭证逻辑）；
+
+强制 --set-id 必填以避免误伤（更安全生产策略）；
+
+把脚本封装成 AWS Lambda（Python）以供 FIS 直接调用。
+
+
+想要哪个改动就回一句：“S3备份” / “强制SetIdentifier” / “Lambda版”，我马上给出对应实现。
+
