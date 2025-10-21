@@ -1,0 +1,128 @@
+下面给你一份 最小权限（least privilege）的 IAM policy，只允许修改指定 Hosted Zone 下面的记录（更安全生产做法），并且包含等待 (GetChange) 所需权限。
+
+
+---
+
+✅ Route53 修改权重（Change/Restore）所需的 IAM 权限
+
+最小权限 policy（按 HostedZone 限定）
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListRecordsInSpecificZone",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/<HOSTED_ZONE_ID>"
+    },
+    {
+      "Sid": "ChangeRecordsInSpecificZone",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/<HOSTED_ZONE_ID>"
+    },
+    {
+      "Sid": "AllowWaitCheck",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetChange"
+      ],
+      "Resource": "arn:aws:route53:::change/*"
+    }
+  ]
+}
+
+把 <HOSTED_ZONE_ID> 换成你的 Zone ID，比如 Z0458324ABCDE。
+
+
+---
+
+✅ 什么时候需要额外权限？
+
+场景	额外需要
+
+备份文件存 S3	s3:GetObject, s3:PutObject
+使用 AWS FIS 调这个脚本	FIS Role 需要 iam:PassRole
+GitLab Runner assume-role	运行脚本的 Runner 需要 sts:AssumeRole
+想把权限进一步最小化	可以限定特定 record name
+
+
+如果你后面想把它交给 FIS 注故障，还需要一个外层的 assume role（FIS 调用这个 Route53 Role 的 passRole）。
+
+
+---
+
+✅ 扩展版（包含 S3 备份能力）
+
+如果你之后把 backup.json 存 S3：
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListRecordsInSpecificZone",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/<HOSTED_ZONE_ID>"
+    },
+    {
+      "Sid": "ChangeRecordsInSpecificZone",
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/<HOSTED_ZONE_ID>"
+    },
+    {
+      "Sid": "AllowWaitCheck",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetChange"
+      ],
+      "Resource": "arn:aws:route53:::change/*"
+    },
+    {
+      "Sid": "AllowS3Backup",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::<YOUR_BACKUP_BUCKET>/*"
+    }
+  ]
+}
+
+
+---
+
+✅ GitLab Runner Assume Role（如果你从 GitLab CI 调用）
+
+你的 GitLab runner 的 IAM 需要：
+
+{
+  "Effect": "Allow",
+  "Action": "sts:AssumeRole",
+  "Resource": "arn:aws:iam::<ACCOUNT_ID>:role/<ROUTE53_ROLE_NAME>"
+}
+
+
+---
+
+如果你要我继续帮你把 FIS 角色 + GitLab Runner Assume Role 的结构图 + 完整 trust policy 全生成，我可以一并给出。
+
+只要回复一句：
+
+> “帮我连同 FIS trust policy 一起生成”
+
+
+
+我就给你完整的 end-to-end 版本（附 trust policy 和调用链），可以直接贴 IAM 里使用。
+
