@@ -1,0 +1,246 @@
+好 —— 我先把原来两脚本的关键点拆解解释一遍（告诉你每段在做什么），然后给出更简洁、可选 SetIdentifier、并且更稳健的精简版本（两个脚本：change_weight_simple.sh 和 restore_weight_simple.sh），并说明我做了哪些简化与改进。
+
+1) 快速解析（你原始脚本的主要步骤）
+
+校验工具：检查 aws/jq 是否存在。
+
+找到目标 RRSet：用 aws route53 list-resource-record-sets，按 Name/Type 过滤。
+
+识别 weighted RRSet：从返回中挑出带 Weight 字段的记录（weighted record）。
+
+备份：把这些 RRSet 写到本地文件（或上传到 S3）以便恢复。
+
+构造 change-batch：把每个 RRSet 原样保留但把 Weight 改成目标值，封装成 {"Changes":[... ]}。
+
+提交变更：aws route53 change-resource-record-sets --change-batch <json>。
+
+恢复脚本：从备份读出 RRSet，用 UPSERT 恢复原样。
+
+
+2) 常见可简化 / 改进点（为什么要改）
+
+原脚本把 Weight 先 del 再 + { "Weight": $w }，可以直接 .Weight = $w，更直观。
+
+将 change-batch 直接通过 stdin 字符串传到 aws 容易导致 shell/JSON 转义问题；用临时文件 file:// 更安全。
+
+提交后最好返回 ChangeInfo.Id 并可选轮询 GetChange 等待完成（更可靠）。
+
+支持按 SetIdentifier 精确修改（避免误改所有 weighted record）。
+
+把 S3 上传/下载作为可选，而不是默认分支分叉太多逻辑。
+
+将通用参数变成命令行参数，便于自动化使用。
+
+
+3) 我做的简化版（更小、更安全、支持 SetIdentifier、支持等待 change 完成）
+
+保存为 change_weight_simple.sh（注：jq 与 aws 必须可用）：
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $0 --hosted-zone ZONE --name NAME --type TYPE --weight W [--set-id ID] [--backup FILE] [--wait]
+Examples:
+  HOSTED_ZONE=Z123... NAME=api.example.com. TYPE=A W=0 ./change_weight_simple.sh --hosted-zone Z123... --name api.example.com. --type A --weight 0 --wait
+EOF
+  exit 1
+}
+
+# Parse minimal args
+HOSTED_ZONE=""
+NAME=""
+TYPE=""
+WEIGHT=""
+SET_ID=""
+BACKUP_FILE="/tmp/route53_backup.json"
+WAIT="false"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --hosted-zone) HOSTED_ZONE="$2"; shift 2;;
+    --name) NAME="$2"; shift 2;;
+    --type) TYPE="$2"; shift 2;;
+    --weight) WEIGHT="$2"; shift 2;;
+    --set-id) SET_ID="$2"; shift 2;;
+    --backup) BACKUP_FILE="$2"; shift 2;;
+    --wait) WAIT="true"; shift;;
+    -h|--help) usage;;
+    *) echo "Unknown $1"; usage;;
+  esac
+done
+
+[ -n "$HOSTED_ZONE" ] || usage
+[ -n "$NAME" ] || usage
+[ -n "$TYPE" ] || usage
+[ -n "$WEIGHT" ] || usage
+
+command -v aws >/dev/null 2>&1 || { echo "aws cli required"; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "jq required"; exit 2; }
+
+echo "Listing RRSets for ${NAME} ${TYPE} in ${HOSTED_ZONE}..."
+RRSETS_JSON=$(aws route53 list-resource-record-sets \
+  --hosted-zone-id "${HOSTED_ZONE}" \
+  --query "ResourceRecordSets[?Name==\`${NAME}\` && Type==\`${TYPE}\`]" \
+  --output json)
+
+# filter weighted sets (and optionally SetIdentifier)
+if [ -n "${SET_ID}" ]; then
+  MATCHED=$(echo "$RRSETS_JSON" | jq -c --arg id "$SET_ID" '[.[] | select(.SetIdentifier == $id)]')
+else
+  MATCHED=$(echo "$RRSETS_JSON" | jq -c '[.[] | select(.Weight != null)]')
+fi
+
+if [ "$(echo "$MATCHED" | jq 'length')" = "0" ]; then
+  echo "No matching weighted RRSet found."
+  exit 3
+fi
+
+# backup
+echo "$MATCHED" | jq '.' > "${BACKUP_FILE}"
+echo "Backup written to ${BACKUP_FILE}"
+
+# build changes: set .Weight = TARGET
+CHANGES=$(echo "$MATCHED" | jq --argjson w "${WEIGHT}" 'map({ Action:"UPSERT", ResourceRecordSet:(. + {Weight:$w}) })')
+
+CHANGE_BATCH_FILE=$(mktemp /tmp/r53-change.XXXX.json)
+jq -n --argjson changes "$CHANGES" '{Changes:$changes}' > "${CHANGE_BATCH_FILE}"
+
+echo "Change batch:"
+cat "${CHANGE_BATCH_FILE}"
+
+OUT=$(aws route53 change-resource-record-sets --hosted-zone-id "${HOSTED_ZONE}" --change-batch "file://${CHANGE_BATCH_FILE}" --output json)
+echo "Change submitted: $OUT"
+
+if [ "${WAIT}" = "true" ]; then
+  CHANGE_ID=$(echo "$OUT" | jq -r '.ChangeInfo.Id')
+  echo "Waiting for change ${CHANGE_ID} to INSYNC..."
+  while true; do
+    STATUS=$(aws route53 get-change --id "${CHANGE_ID}" --output json | jq -r '.ChangeInfo.Status')
+    echo "Status: $STATUS"
+    [ "$STATUS" = "INSYNC" ] && break
+    sleep 3
+  done
+  echo "Change is INSYNC."
+fi
+
+# cleanup
+rm -f "${CHANGE_BATCH_FILE}"
+echo "Done."
+
+然后 restore_weight_simple.sh（从备份恢复）：
+
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ $# -lt 2 ]; then
+  echo "Usage: $0 --hosted-zone ZONE --backup FILE"
+  exit 1
+fi
+
+HOSTED_ZONE=""
+BACKUP_FILE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --hosted-zone) HOSTED_ZONE="$2"; shift 2;;
+    --backup) BACKUP_FILE="$2"; shift 2;;
+    *) echo "Unknown $1"; exit 1;;
+  esac
+done
+
+[ -n "$HOSTED_ZONE" ] || { echo "hosted-zone required"; exit 1; }
+[ -f "$BACKUP_FILE" ] || { echo "backup file not found: $BACKUP_FILE"; exit 2; }
+
+command -v aws >/dev/null 2>&1 || { echo "aws cli required"; exit 2; }
+command -v jq >/dev/null 2>&1 || { echo "jq required"; exit 2; }
+
+ORIG=$(cat "$BACKUP_FILE")
+CHANGES=$(echo "$ORIG" | jq 'map({ Action:"UPSERT", ResourceRecordSet:. })')
+CHANGE_BATCH_FILE=$(mktemp /tmp/r53-restore.XXXX.json)
+jq -n --argjson changes "$CHANGES" '{Changes:$changes}' > "${CHANGE_BATCH_FILE}"
+
+echo "Submitting restore change..."
+aws route53 change-resource-record-sets --hosted-zone-id "${HOSTED_ZONE}" --change-batch "file://${CHANGE_BATCH_FILE}" --output json
+
+rm -f "${CHANGE_BATCH_FILE}"
+echo "Restore submitted."
+
+4) 我做了哪些具体简化与改进
+
+参数化并用命令行参数（更易 CI/SSM 调用）。
+
+用 file:// 临时文件传 --change-batch，避免 JSON 转义坑。
+
+支持可选 --set-id（只改特定 SetIdentifier），避免误伤其它条目。
+
+支持 --wait 参数等待 change 完成。
+
+恢复脚本更短、更直接：从备份文件构造 UPSERT。
+
+更清晰的错误码与提示，便于自动化判定失败原因。
+
+
+5) 最小 IAM 权限（回顾）
+
+保留你之前的最小权限策略即可（针对该 hosted zone）：
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": [
+        "arn:aws:route53:::hostedzone/RESOURCE_HOSTED_ZONE_ID"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetChange"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+      ]
+    }
+  ]
+}
+
+（S3 条目仅在你启用 S3 备份时需要）
+
+6) 额外注意事项（短）
+
+测试先在非生产或私有 hosted zone 做演练（weighted change 会影响流量分配）。
+
+TTL 与客户端缓存会影响“立刻生效”的表象。
+
+如果你需要“只修改某个后端的权重”而不是全部 weighted RRSet，请一定传 --set-id。
+
+我可以把 --set-id 强制为必填（更安全），或者把脚本改成只匹配第一个找到的 weighted RRSet（如果这是你想要的）。
+
+
+
+---
+
+要不要我：
+
+把脚本再改成 只修改指定 SetIdentifier 并做更严格校验（更安全，推荐用于生产）？
+
+或者我把这两个脚本打包成一个单文件，可用 --action change|restore 切换？
+
+
+回复你想要的改动（例如 “只要 SetIdentifier 版本” 或 “合并成单脚本”），我立刻把 final 代码贴给你。
+
