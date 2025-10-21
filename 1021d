@@ -1,0 +1,72 @@
+明白 ✅
+你是 另外一个目的：
+不是因为报错
+只是要把 2025-10-01 13:20:55 这种格式转换成 20251001 再传入。
+
+那你在第一个 job 里把值格式化一下即可。
+
+
+---
+
+✅ 转换逻辑（第一 job 里做）
+
+RAW="2025-10-01 13:20:55"
+DATE_NUM=$(echo "$RAW" | awk '{print $1}' | tr -d '-')
+# → 20251001
+
+如果你要时分秒一起：
+
+DATE_FULL=$(echo "$RAW" | sed 's/[- :]//g')
+# → 20251001132055
+
+
+---
+
+✅ 放回 pipeline 例子
+
+query_remote:
+  stage: prepare
+  script:
+    - RAW=$(sshpass -p "$REMOTE_PASS" ssh user@host 'sh /path/xxx.sh')
+    - DATE_NUM=$(echo "$RAW" | awk '{print $1}' | tr -d '-')
+    - echo "REMOTE_VALUE=$DATE_NUM" > remote.env
+  artifacts:
+    reports:
+      dotenv: remote.env
+
+第二个 job ：
+
+use_remote_value:
+  stage: deploy
+  needs: ["query_remote"]
+  script:
+    - echo "converted: $REMOTE_VALUE"
+    - ./run_something.sh "$REMOTE_VALUE"
+
+
+---
+
+我再确认一下你的需求 👇
+
+你要的最终格式是：
+
+20251001 ✅ 还是
+
+20251001132055 ❓
+
+
+另外是否之后还要支持：
+
+加 1 天 / 减 1 天？
+
+比如第二个 job 根据这个日期做运算？
+
+
+只要你告诉我格式，我就给你一版最终成品脚本（复制粘贴即可跑）。
+
+👉 回复我：
+“我要 yyyyMMdd” 或
+“我要 yyyyMMddHHmmss”
+
+我就把最终可用版本贴给你。
+
