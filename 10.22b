@@ -1,0 +1,96 @@
+可以通过 sh / bash 脚本直接修改 Route53 记录，从而实现“DNS 故障”效果（比如解析到无效 IP、黑洞 IP、暂停健康检查结果等），这也是 Chaos 工程里最常见的 DNS 类故障模拟方式之一。
+不过这属于“你自己写脚本修改 DNS”，不是 FIS 内置 action——FIS 只是负责 orchestrate（编排），并不会直接改 Route53。
+
+
+---
+
+✅ 常用 Route53 DNS 故障注入方式
+
+故障类型	方式	模拟效果
+
+黑洞	A记录指向 127.0.0.1 或 0.0.0.0	完全不可达
+误路由	指向错误后端 IP	错误路由
+延迟	指向 test ALB with high latency	延迟爆炸
+权重改变	改 weighted record	部分流量失败
+切换region失败	failover / routing policy 注入错误	灾备不触发
+
+
+
+---
+
+✅ 示例：用 sh 脚本临时把 A 记录改成 127.0.0.1
+
+#!/usr/bin/env bash
+
+HOSTED_ZONE_ID="Z123456789"
+RECORD_NAME="api.example.com."
+ORIGINAL_IP="10.0.3.15"   # 正常后端
+FAIL_IP="127.0.0.1"       # 故障IP
+
+aws route53 change-resource-record-sets \
+  --hosted-zone-id "${HOSTED_ZONE_ID}" \
+  --change-batch "{
+    \"Changes\": [{
+      \"Action\": \"UPSERT\",
+      \"ResourceRecordSet\": {
+        \"Name\": \"${RECORD_NAME}\",
+        \"Type\": \"A\",
+        \"TTL\": 30,
+        \"ResourceRecords\": [{\"Value\": \"${FAIL_IP}\"}]
+      }
+    }]
+  }"
+
+恢复也一样 UPSERT 回原值即可。
+
+
+---
+
+✅ 在 FIS 中 orchestrate
+
+你只要把上面 sh 脚本塞进 FIS aws:ssm:start-automation-execution 或 aws:ssm:send-command 里就实现“FIS 驱动 DNS 故障”。
+
+
+---
+
+✅ 注意事项（否则容易误伤）
+
+问题	推荐做法
+
+修改影响范围太大	用 weighted record，故障权重 100 → 0
+想 rollback	用 JSON 文件+backup 保存旧IP
+prod 容灾验证	用 health check failover policy
+想只影响一部分 client	使用 latency-based + 误绑定 region
+
+
+
+---
+
+如果你告诉我：
+
+你是 A 记录还是 CNAME
+
+是 simple routing 还是 weighted/failover
+
+是否需要自动恢复
+
+是否要放进 FIS
+
+
+我就可以给你一个完整可运行的 FIS + Route53 注入脚本，包括：
+
+故障注入脚本 dns_fail.sh
+
+回滚脚本 dns_rollback.sh
+
+最小 IAM 权限
+
+可直接 copy/paste 到 pipeline 或 lambda
+
+
+只要一句话回复我就行，比如：
+
+“我要 weighted A 记录并支持 rollback”
+
+我就给你一套完整的 solution。
+
