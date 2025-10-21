@@ -1,0 +1,151 @@
+可以 — 但不是直接由 FIS 内建“DNS 故障”action 去做，而是通过 FIS 去 执行会破坏 DNS 的动作（比如在目标实例上通过 SSM 运行命令修改 DNS 配置 / 停止本地 DNS 服务 / 用 iptables 阻断 53 端口），或者由 FIS 触发 Lambda 去修改 Route53 记录来造成 DNS 解析异常。换句话说，FIS 是调度器/编排器，你用它去运行会产生 DNS 故障的动作。
+
+下面把实现思路、示例和注意事项写清楚，方便你直接拿去用。
+
+
+---
+
+实现思路（两种常用方式）
+
+1. 在目标实例上破坏 DNS 解析（通过 SSM run-command）
+
+FIS 支持 aws:ssm:send-command，可以在被管理的 EC2 实例上运行任意 shell 命令（需要 SSM Agent 已安装并且实例被 Systems Manager 管理）。用它可以：停止 systemd-resolved / dnsmasq、替换 /etc/resolv.conf、或用 iptables 阻断 53 端口，从而造成该实例 DNS 解析失败。
+
+
+
+2. 通过修改 Route53（或调用 Lambda）模拟域名解析错误/删除记录
+
+在受控的 hosted zone 上，写个 Lambda（或脚本）把目标记录改成不可解析的值或删除记录/修改别名；用 FIS 去触发这个 Lambda（或调用 SDK/CLI）。Route53 记录变更会影响解析行为（注意 TTL/缓存和客户端 DNS 缓存）。
+
+
+
+
+
+---
+
+示例：用 FIS + SSM 在实例上临时禁用 DNS（伪代码 / 片段）
+
+SSM 命令内容（在实例上把 /etc/resolv.conf 指向 127.0.0.1 并阻断 53）
+
+# save current
+cp /etc/resolv.conf /tmp/resolv.conf.backup
+# point to invalid resolver
+echo "nameserver 127.0.0.1" > /etc/resolv.conf
+# block DNS traffic (UDP/TCP 53) temporarily
+iptables -I OUTPUT -p udp --dport 53 -j DROP
+iptables -I OUTPUT -p tcp --dport 53 -j DROP
+
+恢复命令
+
+# restore resolv.conf and remove iptables rules
+mv /tmp/resolv.conf.backup /etc/resolv.conf
+iptables -D OUTPUT -p udp --dport 53 -j DROP || true
+iptables -D OUTPUT -p tcp --dport 53 -j DROP || true
+
+FIS 实验 template（片段） — 使用 aws:ssm:send-command action（简化示例，实际需填充角色、targets 等）：
+
+{
+  "description": "Simulate DNS failure on web nodes",
+  "targets": {
+    "web_nodes": {
+      "resourceType": "aws:ec2:instance",
+      "resourceTags": { "Role": "web" }
+    }
+  },
+  "actions": {
+    "break_dns": {
+      "actionId": "aws:ssm:send-command",
+      "parameters": {
+        "DocumentName": "AWS-RunShellScript",
+        "Parameters": {
+          "commands": [
+            "cp /etc/resolv.conf /tmp/resolv.conf.backup",
+            "echo 'nameserver 127.0.0.1' > /etc/resolv.conf",
+            "iptables -I OUTPUT -p udp --dport 53 -j DROP",
+            "iptables -I OUTPUT -p tcp --dport 53 -j DROP"
+          ]
+        }
+      },
+      "targets": ["web_nodes"]
+    },
+    "restore_dns": {
+      "actionId": "aws:ssm:send-command",
+      "parameters": {
+        "DocumentName": "AWS-RunShellScript",
+        "Parameters": {
+          "commands": [
+            "mv /tmp/resolv.conf.backup /etc/resolv.conf || true",
+            "iptables -D OUTPUT -p udp --dport 53 -j DROP || true",
+            "iptables -D OUTPUT -p tcp --dport 53 -j DROP || true"
+          ]
+        }
+      },
+      "targets": ["web_nodes"]
+    }
+  },
+  "stopConditions": [{"source": "none"}],
+  "roleArn": "arn:aws:iam::123456789012:role/MyFISRole"
+}
+
+> 说明：FIS template 的 action 可以直接调用 SSM run-command。FIS 文档展示了如何把 SSM 文档和 FIS 一起用。
+
+
+
+
+---
+
+示例：用 FIS 触发 Lambda 修改 Route53（思路）
+
+写一个 Lambda（有权限变更你托管区的记录），Lambda 接口支持 action=poison / action=restore。
+
+在 FIS 动作里调用该 Lambda（可通过 aws:invokeLambda 的自定义 action 或把 Lambda 暴露给一个 API 并在 FIS 使用 aws:ssm:send-command 去触发 curl 调用）。
+
+Lambda 把 A/ALIAS 记录改为错误地址或把记录删除，恢复时再改回。注意 TTL 和客户端缓存问题（效果可能滞后）。
+
+
+
+---
+
+注意事项 / 风险和最佳实践
+
+必须先在测试环境演练，DNS 故障会导致监控/日志/报警失去可见性或触发大量 cascading failures。不要直接在生产未经评估的流量面上运行。
+
+SSM 要可用：目标实例必须安装并注册 SSM Agent，并且 FIS 角色要有权限 ssm:SendCommand 等。FIS 的 action list 与权限在官方文档里列出。
+
+回滚一定要写好：把备份、恢复命令和实验停止条件写清楚（FIS 支持 stopCondition 及自动 cleanup 逻辑）。
+
+Route53 方式有缓存延迟：修改 DNS 记录会受客户端/ISP DNS 缓存、TTL 影响，效果并不立即或一模一样。用低 TTL 测试或在受控私有托管区做试验。
+
+权限控制：FIS 角色需要最小权限去执行 SSM / Lambda / Route53 的相应 action。不要赋予过宽权限。
+
+
+
+---
+
+建议（实践流程）
+
+1. 在隔离的测试 VPC/账号上做 PoC：用 FIS+SSM 在几台实例上阻断 53，观察服务表现。
+
+
+2. 同步监控/报警以确保能检测到 DNS 故障（和可能的沉默监控点）。
+
+
+3. 写好恢复脚本并把它设为 FIS 的恢复 action，测试多次。
+
+
+4. 若想模拟“全局”DNS 问题，使用 Route53 Lambda 方案，但谨慎处理 TTL/缓存。
+
+
+
+
+---
+
+如果你愿意，我可以：
+
+给你一份 可直接部署的 FIS experiment template（JSON）+ SSM command，包含恢复步骤和最小 IAM policy 示例；或
+
+给你 Route53+Lambda 的完整 PoC（包含 Lambda 代码和 IAM policy）。
+
+
+选一个：“SSM 方案” 或 “Route53 方案”，我马上把完整范例（含最小 IAM 权限）贴给你。
+
