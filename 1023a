@@ -1,0 +1,98 @@
+这个问题我大概就明白你意思了：
+
+> 你在 Helm chart 的模板里找不到 policy exemption（豁免/例外规则）
+说明它 根本就不在 chart 里面。
+它属于 集群级准入策略系统（policy engine） 的规则，而不是 chart 的定义。
+
+
+
+所以找不到是“正常的”。
+
+
+---
+
+✅ 为什么 Helm chart 里找不到？
+
+Helm Chart 管什么	不管什么
+
+Deployment / Service / Ingress 等应用自身资源	Policy/Gatekeeper/Kyverno/OPA 规则
+values.yaml → 变更 app 行为	准入策略（Admission control）
+namespace 范围资源	cluster 范围策略
+
+
+也就是说：
+Policy Exemption 是集群级安全策略，不属于 Helm chart 模板内容。
+
+
+---
+
+✅ 正确应该去哪里找？
+
+根据你集群装的策略引擎不同，豁免配置会在不同对象里：
+
+策略系统	豁免位置	如何查看
+
+OPA Gatekeeper	Constraint / Config 里的 exemptions	kubectl get config gatekeeper -o yaml
+Kyverno	ClusterPolicy / Policy + spec.validationFailureActionOverrides / match.exclude	kubectl get clusterpolicy -A -o yaml
+AWS EKS Pod Security（PSA/PSP 代替）	namespace annotation	kubectl get ns <ns> -o yaml
+AdmissionWebhook（自定义）	MutatingWebhook/ValidatingWebhook	kubectl get validatingwebhookconfiguration -A
+
+
+> 大多数企业/云厂环境的 “policy exemption” 都是在 Gatekeeper 或 Kyverno 里。
+
+
+
+
+---
+
+✅ 你可以用这几条快速查是哪种策略生效
+
+1️⃣ 查看是否安装 Gatekeeper
+
+kubectl get pods -A | grep gatekeeper
+
+2️⃣ 查看是否安装 Kyverno
+
+kubectl get pods -A | grep kyverno
+
+3️⃣ 如果是 Gatekeeper（常见） → 查看豁免
+
+kubectl get config config -n gatekeeper-system -o yaml
+
+4️⃣ 如果是 Kyverno（也很多） → 找 exclude
+
+kubectl get clusterpolicy -A -o yaml | grep -C5 "exclude"
+
+
+---
+
+✅ 你如果把“报错里的策略名字”给我
+
+我可以告诉你准确去哪个 CRD / 哪个 namespace 里找 exemption。
+
+通常错误会长这样：
+
+denied by policy <xxxx> : ...
+
+或者
+
+violates constraint <xxx>
+
+只要你贴：
+
+错误中的 policy/constraint 名字（比如 disallow-late-binding、block-privileged、restrict-ingress这种）
+
+或 screenshot
+
+
+我就能： ✔ 告诉你它属于 Gatekeeper / Kyverno / PSA 哪一种
+✔ 精确告诉你 exemption 应该在哪里改
+✔ Helm chart 为什么不会包含它
+✔ 如何正确添加豁免
+
+
+---
+
+如果你愿意，下一条把错误里的 policy 名字发我，我给你定位出真正的定义位置。
+只要一句：“这是报错：xxx” 我继续。
+
