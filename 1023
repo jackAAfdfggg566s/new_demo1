@@ -1,0 +1,102 @@
+如果你只有一个正在运行的 Pod，但不知道它是由哪个 Helm chart 部署的，可以通过它带的 label 找到 release 名字 和 chart 名字。
+
+
+---
+
+✅ 第一步：看 Pod 上的 Helm 标识 label
+
+kubectl get pod <pod-name> -n <namespace> -o jsonpath='{.metadata.labels}'
+
+如果它是 Helm 安装的，一般会看到这些 label：
+
+label key	含义
+
+app.kubernetes.io/instance	release 名（Helm install 时的名字）
+app.kubernetes.io/managed-by=Helm	确认是 Helm 管理
+helm.sh/chart	chart 名和版本
+
+
+例如输出类似：
+
+"app.kubernetes.io/instance":"my-app",
+"helm.sh/chart":"nginx-13.2.1",
+"app.kubernetes.io/managed-by":"Helm"
+
+
+---
+
+✅ 第二步：根据 release 找到 Helm chart
+
+helm list -A | grep <instance-name>
+
+例如：
+
+helm list -A | grep my-app
+
+你就会得到：
+
+NAME	NAMESPACE	CHART	VERSION
+
+my-app	prod	nginx-13.2.1	13.2.1
+
+
+
+---
+
+✅ 第三步：查看该 release 的渲染 manifest（已经安装到集群里的）
+
+helm get manifest my-app -n prod
+
+这就是 Helm chart 渲染后的最终文件，可直接看到 PodSpec 定义。
+
+
+---
+
+✅ 第四步：如果想直接查看 chart 源码（模板）
+
+Helm 自身不存源码模板，但如果你想拉回 chart 源码（必须 chart 可从 repo 下载）
+
+helm pull <chart-name> --version <version> --untar
+
+例如：
+
+helm pull nginx --version 13.2.1 --untar
+
+然后就可以看到：
+
+nginx/
+ └── templates/
+     ├── deployment.yaml
+     ├── service.yaml
+     ├── _helpers.tpl
+     ...
+
+
+---
+
+👇 一条命令总结（最常用）
+
+直接查 chart 名 + release 名：
+
+kubectl get pod <pod> -n <ns> -o jsonpath='{.metadata.labels.helm\.sh/chart}{"\n"}{.metadata.labels.app\.kubernetes\.io/instance}{"\n"}'
+
+
+---
+
+如果你把 pod 名和 namespace 发我（或执行上面第一条命令的输出发我），我可以帮你：
+
+确认它到底是不是 Helm 部署
+
+对应 Helm release 名
+
+对应 chart 名
+
+可以直接分析它的 chart 中 PodSpec 在模板的位置文件
+
+
+直接发：
+
+kubectl get pod <pod> -n <ns> -o jsonpath='{.metadata.labels}'
+
+输出给我即可，我继续帮你下一步。
+
