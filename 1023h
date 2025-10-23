@@ -1,0 +1,77 @@
+你想要的是：
+
+有两个候选目录：dir1 和 dir2
+
+只要哪个存在，就把里面的文件 copy 出来
+
+另一个不存在也不要报错
+
+for filename in ls ... 风格，但避免 ls 报错
+
+
+可以用 2>/dev/null 或 test -d 判断目录是否存在
+
+
+---
+
+✅ 最推荐写法（简单健壮）
+
+#!/bin/bash
+
+for DIR in /path/dir1 /path/dir2; do
+  if [ -d "$DIR" ]; then
+    for FILE in "$DIR"/*; do
+      [ -e "$FILE" ] || continue     # 目录为空不报错
+      cp "$FILE" /dest/
+    done
+  fi
+done
+
+
+---
+
+✅ 如果你坚持使用 ls（但不想报错）
+
+#!/bin/bash
+
+for DIR in /path/dir1 /path/dir2; do
+  for FILE in $(ls "$DIR" 2>/dev/null); do
+    cp "$DIR/$FILE" /dest/
+  done
+done
+
+2>/dev/null 会把 “No such file or directory” 错误隐藏掉。
+
+
+---
+
+✅ 最极简一行版
+
+for dir in /path/dir1 /path/dir2; do [ -d "$dir" ] && cp "$dir"/* /dest/ 2>/dev/null; done
+
+
+---
+
+✅ 如果只想拷贝第一个存在的目录（优先级）
+
+for DIR in /path/dir1 /path/dir2; do
+  if [ -d "$DIR" ]; then
+    cp "$DIR"/* /dest/ 2>/dev/null
+    break
+  fi
+done
+
+
+---
+
+要我给你加：
+
+目录不存在时 echo log（但不报错）？
+
+区分为空 vs 不存在？
+
+过滤文件类型？
+
+
+告诉我，我可以继续帮你改成最终版本。
+
