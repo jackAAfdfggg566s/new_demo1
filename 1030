@@ -1,0 +1,67 @@
+如果是类似 .cfg / .conf 配置文件，bash 里常见做法就是grep 判断字段是否存在，再做后续逻辑。
+
+下面给你一个最实用、可直接复制的范例：
+
+
+---
+
+✅ 检查字段是否存在
+
+CONFIG_FILE="xxx.cfg"
+KEY="myParam"
+
+if grep -qE "^\s*${KEY}\s*=" "$CONFIG_FILE"; then
+    echo "字段 ${KEY} 存在"
+else
+    echo "字段 ${KEY} 不存在"
+fi
+
+解释：
+
+部分	含义
+
+-q	静默模式，不输出内容
+-E	支持扩展正则
+^\s*${KEY}\s*=	防止误匹配，如 myParam2
+
+
+
+---
+
+✅ 如果字段不存在则追加一行
+
+CONFIG_FILE="xxx.cfg"
+KEY="myParam"
+VALUE="someValue"
+
+if ! grep -qE "^\s*${KEY}\s*=" "$CONFIG_FILE"; then
+    echo "${KEY}=${VALUE}" >> "$CONFIG_FILE"
+fi
+
+
+---
+
+✅ 如果存在则更新值（覆盖）
+
+CONFIG_FILE="xxx.cfg"
+KEY="myParam"
+VALUE="newValue"
+
+if grep -qE "^\s*${KEY}\s*=" "$CONFIG_FILE"; then
+    sed -i "s|^\s*${KEY}\s*=.*|${KEY}=${VALUE}|" "$CONFIG_FILE"
+else
+    echo "${KEY}=${VALUE}" >> "$CONFIG_FILE"
+fi
+
+
+---
+
+如果你提供下 cfg 文件范例（例如里面字段是否有 = 或者 : 分隔、是否有注释符 # 或 ;），我可以根据你的实际格式再给你更精准的脚本（避免误伤同名字段、支持复杂空格、注释行跳过等）。
+
+要不要我帮你写成一个通用函数形式，方便复用？
+例如：
+
+set_cfg_param <file> <key> <value>
+get_cfg_param <file> <key>
+
+一句调用就可以完成。只要你说“要函数版”，我给你完整成品。要吗？
