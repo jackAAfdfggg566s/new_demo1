@@ -1,0 +1,115 @@
+非常好的下一步 👍
+你现在想要的是：
+✅ 在 Ansible 里先找到 .7z 文件名
+✅ 输出（或传入）这个文件名
+✅ 调用远端已有的 Shell 脚本，比如 /opt/deploy/run_deploy.sh，让它用这个文件名去做备份、解压等动作
+
+
+---
+
+下面是一个完整的可直接用模板 👇
+
+
+---
+
+✅ Ansible Playbook 示例
+
+- hosts: target
+  gather_facts: no
+  vars:
+    deploy_dir: /tmp
+    remote_script: /opt/deploy/run_deploy.sh
+
+  tasks:
+    - name: Copy 7z file(s) to remote
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ deploy_dir }}/"
+      with_fileglob:
+        - "*.7z"
+      register: copied_files
+
+    - name: Set archive_name from first copied file
+      ansible.builtin.set_fact:
+        archive_name: "{{ copied_files.results[0].item | basename }}"
+
+    - name: Show copied archive name
+      ansible.builtin.debug:
+        msg: "Archive file is {{ archive_name }}"
+
+    - name: Execute remote deploy script
+      ansible.builtin.shell: |
+        bash "{{ remote_script }}" "{{ deploy_dir }}/{{ archive_name }}"
+      args:
+        executable: /bin/bash
+
+
+---
+
+✅ 对应远端脚本示例（/opt/deploy/run_deploy.sh）
+
+#!/bin/bash
+set -e
+
+ARCHIVE_PATH="$1"
+
+if [ -z "$ARCHIVE_PATH" ]; then
+    echo "Usage: $0 <archive_path>"
+    exit 1
+fi
+
+BACKUP_DIR="/opt/backup/$(date +%Y%m%d_%H%M%S)"
+DEPLOY_DIR="/app"
+
+echo ">>> [1/3] Backup current version to $BACKUP_DIR"
+mkdir -p "$BACKUP_DIR"
+cp -r "$DEPLOY_DIR"/* "$BACKUP_DIR"/ 2>/dev/null || true
+
+echo ">>> [2/3] Extract new archive: $ARCHIVE_PATH"
+mkdir -p "$DEPLOY_DIR"
+7z x "$ARCHIVE_PATH" -o"$DEPLOY_DIR" -y
+
+echo ">>> [3/3] Restart service"
+systemctl restart myapp.service
+
+echo ">>> Deployment finished."
+
+
+---
+
+🧩 说明
+
+archive_name 从 copy 任务自动获取；
+
+bash "{{ remote_script }}" "{{ deploy_dir }}/{{ archive_name }}"
+→ 把文件全路径传给脚本；
+
+你的脚本内部就能根据 $1 知道具体的 .7z 文件；
+
+整个过程不需要硬编码文件名，每次匹配新的包即可。
+
+
+
+---
+
+✅ 如果你想打印日志
+
+可以让脚本输出带时间戳：
+
+echo "$(date '+%F %T') - Unzipping $ARCHIVE_PATH"
+
+或者在 Ansible 里捕获输出：
+
+- name: Run deploy script
+  ansible.builtin.shell: |
+    bash "{{ remote_script }}" "{{ deploy_dir }}/{{ archive_name }}"
+  register: deploy_result
+
+- debug:
+    var: deploy_result.stdout_lines
+
+
+---
+
+要不要我帮你把上面这套改成能同时匹配多个 .7z 并自动选最新那个的版本？
+（很多人构建输出多个包，只想解压最新的那个）
