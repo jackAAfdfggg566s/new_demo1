@@ -1,0 +1,146 @@
+非常好的问题 👍 ——这个场景在 Ansible 里很常见：
+你用 with_fileglob: "*.7z" 找到一个本地文件（或多个），register 后再传到远程，然后在远程执行脚本时需要知道具体文件名来解压。
+
+下面我给你完整思路 + 可运行示例。
+
+
+---
+
+✅ 一、核心原理
+
+在 Ansible 里，with_fileglob 会返回 本地匹配的所有文件路径。
+如果你 register:，变量会包含一个 results 列表。
+比如：
+
+- name: find 7z files
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /tmp/
+  with_fileglob:
+    - "*.7z"
+  register: copied_files
+
+执行后，你可以打印出来看看：
+
+- debug:
+    var: copied_files
+
+输出大概是：
+
+copied_files:
+  results:
+    - item: /home/ansible/build/package_20251030.7z
+      dest: /tmp/package_20251030.7z
+      ...
+    - item: /home/ansible/build/package_20251031.7z
+      dest: /tmp/package_20251031.7z
+      ...
+
+
+---
+
+✅ 二、取到文件名（含或不含路径）
+
+例如你要在后续 task 中使用第一个文件名：
+
+- set_fact:
+    archive_name: "{{ copied_files.results[0].item | basename }}"
+
+说明：
+
+item 是本地路径；
+
+basename 是 Jinja2 过滤器，可取文件名部分；
+
+你也可以取 dest（远端路径）。
+
+
+
+---
+
+✅ 三、在远程执行脚本时用到文件名
+
+假设你 copy 到 /tmp，接着在远程解压：
+
+- name: unzip archive on remote
+  ansible.builtin.shell: |
+    cd /tmp
+    7z x "{{ archive_name }}" -o/app/
+  args:
+    executable: /bin/bash
+
+这就能自动解压上一步复制的具体 .7z 文件。
+
+
+---
+
+✅ 四、完整可运行示例
+
+- hosts: target
+  gather_facts: no
+  tasks:
+    - name: Copy 7z file(s)
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: /tmp/
+      with_fileglob:
+        - "*.7z"
+      register: copied_files
+
+    - name: Set archive name (first match)
+      ansible.builtin.set_fact:
+        archive_name: "{{ copied_files.results[0].item | basename }}"
+
+    - name: Debug print file name
+      ansible.builtin.debug:
+        msg: "Copied file name is {{ archive_name }}"
+
+    - name: Unzip archive on remote
+      ansible.builtin.shell: |
+        cd /tmp
+        7z x "{{ archive_name }}" -o/app/
+      args:
+        executable: /bin/bash
+
+
+---
+
+✅ 五、如果你有多个 .7z 文件要解压
+
+也可以循环执行：
+
+- name: Unzip all archives
+  ansible.builtin.shell: |
+    cd /tmp
+    7z x "{{ item.item | basename }}" -o/app/
+  args:
+    executable: /bin/bash
+  loop: "{{ copied_files.results }}"
+
+
+---
+
+✅ 六、小技巧
+
+如果你只想匹配“最新的” .7z 文件（比如构建输出最新包），
+可以在 find 模块中用 sort_by 实现：
+
+- name: Find latest 7z
+  find:
+    paths: /home/ansible/build
+    patterns: "*.7z"
+    recurse: no
+    sort_by: mtime
+    sort_order: descending
+    file_type: file
+  register: found
+
+- set_fact:
+    latest_archive: "{{ found.files[0].path | basename }}"
+
+
+---
+
+是否方便贴你现在那段 playbook 的代码片段？
+我可以帮你把 “register → copy → 解压” 那部分连起来，
+让变量传递最简洁（不论多个文件或单个文件都能通用）。
