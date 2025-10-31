@@ -1,0 +1,115 @@
+好的 👍 我来帮你整理一个完整的 Ansible Playbook 示例，实现以下流程：
+
+> 目标： 1️⃣ 本地找到 .7z 文件名（假设是动态的，不固定）
+2️⃣ 将该文件复制到远程机器
+3️⃣ 在远程机器上解压
+4️⃣ 解压后运行一个远程脚本（例如 deploy.sh）
+
+
+
+
+---
+
+✅ 示例 Playbook：deploy.yml
+
+---
+- name: Deploy archive and run remote script
+  hosts: my_remote
+  gather_facts: no
+  vars:
+    local_dir: "./builds"
+    remote_dir: "/opt/app"
+    remote_script: "/opt/app/deploy.sh"
+
+  tasks:
+
+    - name: Find .7z file in local directory
+      find:
+        paths: "{{ local_dir }}"
+        patterns: "*.7z"
+      register: found_files
+      delegate_to: localhost
+
+    - name: Set archive filename variable
+      set_fact:
+        archive_file: "{{ found_files.files[0].path }}"
+      when: found_files.matched > 0
+
+    - name: Copy archive to remote host
+      copy:
+        src: "{{ archive_file }}"
+        dest: "{{ remote_dir }}/"
+        mode: '0644'
+
+    - name: Extract archive on remote host
+      shell: |
+        cd {{ remote_dir }}
+        7z x {{ archive_file | basename }} -y
+      args:
+        chdir: "{{ remote_dir }}"
+
+    - name: Run deploy script on remote host
+      shell: |
+        chmod +x {{ remote_script }}
+        {{ remote_script }}
+      args:
+        chdir: "{{ remote_dir }}"
+
+
+---
+
+📂 文件结构示例
+
+project/
+│
+├─ builds/
+│   └─ app_v1.2.7z
+│
+├─ deploy.yml
+└─ (远程服务器上有 deploy.sh)
+
+
+---
+
+🧠 说明
+
+步骤	模块	作用
+
+①	find（delegate_to localhost）	在本地找 .7z 文件
+②	set_fact	保存找到的文件路径
+③	copy	上传到远程
+④	shell	在远程解压
+⑤	shell	在远程执行脚本
+
+
+
+---
+
+🧪 执行命令
+
+ansible-playbook -i hosts deploy.yml
+
+hosts 文件中定义：
+
+[my_remote]
+192.168.1.10 ansible_user=ec2-user ansible_ssh_pass=yourpass ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+
+---
+
+💡 可选优化
+
+如果想自动找最新的 .7z 文件：
+
+- name: Get latest .7z file
+  set_fact:
+    archive_file: "{{ found_files.files | sort(attribute='mtime', reverse=True) | first | default({}) | map(attribute='path') | first }}"
+
+
+---
+
+是否希望我帮你加上判断逻辑，比如：
+
+如果没有找到 .7z 文件则直接 fail；
+
+或者自动删除远程旧版本？
