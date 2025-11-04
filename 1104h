@@ -1,0 +1,89 @@
+明白，你的目标是：
+在 CloudWatch Logs Insights 中，想确认某个服务在某段时间 是否“没有日志”（即可能没处理连接），但因为日志太多、同一时间戳（timestamp）内有很多重复内容，想要按分钟去重或汇总，只看每分钟是否有日志。
+
+下面是几种常用写法👇
+
+
+---
+
+✅ 1️⃣ 只看每分钟是否有日志（按分钟去重）
+
+fields @timestamp
+| stats count(*) as log_count by bin(@timestamp, 1m)
+| sort @timestamp asc
+
+解释：
+
+bin(@timestamp, 1m)：把时间按 1分钟 分桶；
+
+count(*)：统计每分钟日志数量；
+
+没有日志的分钟不会出现 → 如果你想看“缺失的分钟”，可以和期望时间范围对比。
+
+
+
+---
+
+✅ 2️⃣ 查看某关键字日志，每分钟出现次数
+
+fields @timestamp, @message
+| filter @message like /连接成功/  or  @message like /processed/
+| stats count(*) as hits by bin(@timestamp, 1m)
+| sort @timestamp asc
+
+可换成你要查的关键字，比如 "processed"、"connected" 等。
+
+
+---
+
+✅ 3️⃣ 想“去重”相同内容（同一分钟内相同日志）
+
+如果你日志内容完全重复（同一分钟出现多次同样的 message），可以先去重：
+
+fields @timestamp, @message
+| stats count_distinct(@message) as unique_logs by bin(@timestamp, 1m)
+| sort @timestamp asc
+
+这样你能看到每分钟出现了多少条不同内容的日志。
+
+
+---
+
+✅ 4️⃣ 如果想看“哪一分钟完全没日志”
+
+CloudWatch 不会自动显示“空分钟”，
+你可以：
+
+先跑上面第 1 个查询；
+
+导出结果（CSV）；
+
+在 Excel / 脚本中与完整时间段对比，找出缺口。
+
+
+或者用 CloudWatch Metric Filter + Alarm 来监控“日志是否停更”。
+
+
+---
+
+✅ 5️⃣ 示例：只看过去 1 小时的日志活跃情况
+
+fields @timestamp
+| filter @logStream like /api-server/
+| stats count(*) as logs_per_minute by bin(@timestamp, 1m)
+| sort @timestamp asc
+
+> 输出会显示类似：
+
+@timestamp            logs_per_minute
+2025-11-04 08:10:00   25
+2025-11-04 08:11:00   0   ← 没有日志
+2025-11-04 08:12:00   31
+
+
+
+
+---
+
+是否方便告诉我你日志的关键字或结构？
+我可以帮你写一个能直接判断“这段时间有没有处理连接”的精准过滤语句。
