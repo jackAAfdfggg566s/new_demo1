@@ -1,0 +1,175 @@
+非常好 👍 这个问题是 GitLab CI/CD 高级用法之一：
+
+> 根据变量的值，动态调用不同的 !reference 块（比如 before_script、script 模板等）。
+
+
+
+
+---
+
+💡 关键理解
+
+!reference 是在 YAML 解析阶段 生效的，而不是在运行时。
+👉 也就是说，GitLab 在 pipeline 启动前 就已经把 .gitlab-ci.yml 展开了。
+所以它不能像 shell 那样动态判断变量值（比如 $ENV）再决定引用哪个块。
+
+> ❌ 不支持这种形式：
+
+before_script:
+  - !reference [.$ENV, before_script]
+
+这在解析阶段会报错：
+mapping values are not allowed here 或 undefined reference.
+
+
+
+
+---
+
+✅ 解决思路（3种可行方案）
+
+
+---
+
+🧱 方案 1：使用 rules + extends 控制引用（推荐）
+
+最清晰、最常用。
+
+.setup_prod:
+  before_script:
+    - echo "Setup for PROD"
+
+.setup_dev:
+  before_script:
+    - echo "Setup for DEV"
+
+job_prod:
+  stage: build
+  rules:
+    - if: '$DEPLOY_ENV == "prod"'
+  extends: .setup_prod
+  script:
+    - echo "Building PROD"
+
+job_dev:
+  stage: build
+  rules:
+    - if: '$DEPLOY_ENV == "dev"'
+  extends: .setup_dev
+  script:
+    - echo "Building DEV"
+
+✅ 优点：
+
+不同环境逻辑完全隔离；
+
+!reference 仍然是静态的，但用 rules 控制哪个 job 运行。
+
+
+
+---
+
+🧠 方案 2：一个 job 内动态判断变量 + 引用多个 reference
+
+如果你不想拆多个 job，可以把几个引用放进来，然后通过变量逻辑控制。
+
+.common_before:
+  before_script:
+    - echo "Common setup"
+
+.prod_setup:
+  before_script:
+    - echo "Prod setup"
+
+.dev_setup:
+  before_script:
+    - echo "Dev setup"
+
+main_job:
+  stage: build
+  before_script:
+    - !reference [.common_before, before_script]
+    - !reference [.prod_setup, before_script]
+    - !reference [.dev_setup, before_script]
+    - |
+      if [ "$DEPLOY_ENV" = "prod" ]; then
+        echo "Running prod logic"
+      elif [ "$DEPLOY_ENV" = "dev" ]; then
+        echo "Running dev logic"
+      fi
+
+✅ 注意：
+
+GitLab 会把所有引用都展开；
+
+但最终执行逻辑仍由 $DEPLOY_ENV 控制；
+
+对于命令类差异可以用 shell if。
+
+
+
+---
+
+🪄 方案 3：动态 include 外部文件（GitLab 17+ 新特性）
+
+如果你用的是 GitLab 17.0 及以上版本，支持 include 使用变量：
+
+variables:
+  DEPLOY_ENV: "dev"
+
+include:
+  - local: "ci/setup_${DEPLOY_ENV}.yml"
+
+在不同文件：
+
+ci/setup_dev.yml
+ci/setup_prod.yml
+
+各自定义自己的模板或引用。
+
+> ✅ 真正的“动态引用”，推荐用新版本这个写法。
+
+
+
+
+---
+
+🧩 方案 4（备用）：用 rules 控制 include
+
+如果版本旧（16.x），不支持 include 变量，可以这样写：
+
+include:
+  - rules:
+      - if: '$DEPLOY_ENV == "prod"'
+    local: "ci/setup_prod.yml"
+  - rules:
+      - if: '$DEPLOY_ENV == "dev"'
+    local: "ci/setup_dev.yml"
+
+
+---
+
+✅ 总结对比表
+
+需求	推荐方案	说明
+
+不同环境 job 完全不同	方案 1 (rules + extends)	清晰稳定
+同一个 job 内逻辑分支	方案 2 (!reference 多模板 + if 判断)	灵活
+想根据变量加载不同模板文件	方案 3（GitLab 17+ 动态 include）	最优雅
+GitLab < 17，不能用变量 include	方案 4（rules 控制 include）	向后兼容
+
+
+
+---
+
+如果你告诉我：
+
+你当前 GitLab 版本（大概 16 还是 17？）
+
+变量名（比如 DEPLOY_ENV / TARGET / TYPE）
+
+你想引用的 reference 名称（比如 .setup_dev, .setup_prod）
+
+
+我可以帮你写出一段完全可运行的示例。
+要我帮你定制成可直接跑的版本吗？
