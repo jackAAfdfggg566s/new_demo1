@@ -1,0 +1,121 @@
+👌 明白了——非常关键的一点：
+
+> 你在 GitLab Pipeline 中使用 sshpass + ssh 登录远程服务器，
+但是 $MY_PASSWORD 不是 SSH 登录密码，
+而是想传给远程脚本中使用的“别的业务密码”（例如数据库密码、部署密码等）。
+
+
+
+
+---
+
+我们可以安全地、正确地把这个 GitLab 变量传给远程主机执行的脚本👇
+
+
+---
+
+✅ 一、核心思路
+
+SSH 登录用的是固定账户（可能用公钥登录），
+而 $MY_PASSWORD 是 GitLab 变量中的敏感值，
+你要把它传入远端脚本里作为环境变量或参数。
+
+> 👉 GitLab Runner 里 $MY_PASSWORD 存在，
+但远端机器是全新的 shell，需要你主动传进去。
+
+
+
+
+---
+
+✅ 二、安全推荐方式：环境变量传递（不出现在命令行）
+
+在 .gitlab-ci.yml 里写：
+
+deploy_job:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh sshpass
+  script:
+    # 用 ssh 登录远端并注入 GitLab 变量
+    - |
+      sshpass -p "$SSH_LOGIN_PASS" ssh -o StrictHostKeyChecking=no user@remote_host \
+      "MY_PASSWORD='$MY_PASSWORD' bash -s" < scripts/deploy.sh
+
+
+---
+
+🧩 deploy.sh（远端执行的脚本）
+
+#!/bin/bash
+echo "远端收到的业务密码: $MY_PASSWORD"
+# 举例：用于部署或连接数据库
+some_command --password "$MY_PASSWORD"
+
+📌 优点：
+
+密码不会出现在命令行参数中；
+
+日志中被 GitLab Mask；
+
+不需要临时文件；
+
+不依赖 AcceptEnv。
+
+
+
+---
+
+✅ 三、如果脚本已经在远端（比如你 scp 上去了）
+
+你也可以这样执行：
+
+script:
+  - sshpass -p "$SSH_LOGIN_PASS" ssh -o StrictHostKeyChecking=no user@remote_host \
+      "MY_PASSWORD='$MY_PASSWORD' bash /path/to/deploy.sh"
+
+一样效果：
+$MY_PASSWORD 在远端脚本里就是一个普通的环境变量。
+
+
+---
+
+✅ 四、如果你想传多个变量
+
+script:
+  - sshpass -p "$SSH_LOGIN_PASS" ssh -o StrictHostKeyChecking=no user@remote_host \
+      "DB_PASS='$DB_PASS' API_TOKEN='$API_TOKEN' bash -s" < scripts/deploy.sh
+
+远端脚本：
+
+#!/bin/bash
+echo "数据库密码: $DB_PASS"
+echo "API Token: $API_TOKEN"
+
+
+---
+
+✅ 五、安全性说明
+
+传递方式	是否安全	说明
+
+ssh "bash -s" + 环境变量传递	✅ 安全，密码不会出现在远端命令行	推荐
+命令参数传递（如 bash script.sh $MY_PASSWORD）	⚠️ 不安全	密码会出现在 ps 中
+上传文件再读取密码	✅ 安全性取决于文件权限	不推荐临时存文件
+GitLab Masked Variable	✅ 避免日志泄露	必须勾选
+
+
+
+---
+
+✅ 六、完整例子（SSH 登录 + 传业务密码）
+
+stages:
+  - deploy
+
+deploy_job:
+  stage: deploy
+  image: alpine:latest
+  before_script:
+    - apk add
