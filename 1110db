@@ -1,0 +1,96 @@
+非常好 👍 那你这种情况其实最常见，也是 GitLab CI/CD 默认支持的方式。
+你只需要确认变量是在 GitLab 里定义好的，然后在你的 sh 脚本里直接使用就可以。
+
+下面是详细、安全的写法示例👇
+
+
+---
+
+✅ 一、在 GitLab 设置变量
+
+到项目的：
+
+> Settings → CI/CD → Variables → Add variable
+
+
+
+例如你加一个变量：
+
+Key: MY_PASSWORD
+Value: SuperSecret123
+Type: Variable
+Masked: ✅
+
+
+---
+
+✅ 二、在 .gitlab-ci.yml 调用脚本
+
+例如：
+
+stages:
+  - deploy
+
+deploy_job:
+  stage: deploy
+  script:
+    - chmod +x scripts/deploy.sh
+    - ./scripts/deploy.sh
+
+GitLab 会自动把 MY_PASSWORD 作为环境变量传给 deploy.sh。
+
+
+---
+
+✅ 三、在 scripts/deploy.sh 中使用变量
+
+#!/bin/sh
+
+# 读取 GitLab pipeline 传入的变量
+PASSWORD="$MY_PASSWORD"
+
+echo "开始部署..."
+# 不要直接 echo 密码，这里仅示例
+# echo "密码是：$PASSWORD"
+
+# 例如用密码连接数据库：
+psql -U user -h db.example.com -W "$PASSWORD"
+
+# 或者传递给命令
+my_app --password="$PASSWORD"
+
+这个脚本在 GitLab Runner 上执行时， $MY_PASSWORD 会自动从 pipeline 的变量注入进来。
+
+
+---
+
+✅ 四、如果你想调试变量是否被注入
+
+可以临时在 .gitlab-ci.yml 里输出环境变量：
+
+script:
+  - echo "Environment vars:"
+  - env | grep MY_PASSWORD
+
+> ⚠️ 但如果变量被 Masked（隐藏），你不会看到实际密码内容，只会看到 *****，这表示它确实被注入了。
+
+
+
+
+---
+
+✅ 五、总结要点
+
+步骤	动作	说明
+
+1	在 GitLab → Settings → CI/CD → Variables 里定义变量	比如 MY_PASSWORD
+2	在 .gitlab-ci.yml 调用你的 .sh 脚本	GitLab 会自动注入环境变量
+3	在脚本里用 $MY_PASSWORD 读取	不需要 export 或传参
+4	避免在日志中打印密码	用 Masked 选项防泄露
+
+
+
+---
+
+如果你想，我可以帮你把你现在的 .gitlab-ci.yml 和 .sh 文件片段改成能安全使用 GitLab variable 的版本。
+你贴出两段内容（删掉敏感值）我来帮你修改。
