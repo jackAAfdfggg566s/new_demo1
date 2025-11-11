@@ -1,0 +1,29 @@
+以下是英文邮件模板，可以直接发给相关负责人或管理员：
+
+
+---
+
+Subject: Request to Create Service Account in EKS Cluster for FIS Experiment
+
+Hi [Name],
+
+To run an FIS experiment in the nft2 environment, I need to create a service account in the following EKS cluster:
+
+Cluster name: [insert cluster name]
+
+Service account name: xxx
+
+
+Please grant it the same permissions as the service account in nft01.
+
+Let me know if you need any additional details or configuration information.
+
+Thanks for your help!
+
+Best regards,
+[Your Name]
+
+
+---
+
+是否需要我帮你把 [insert cluster name] 和 xxx 填进去？
