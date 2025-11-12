@@ -1,0 +1,32 @@
+当然可以，下面是一封专业、清晰的英文邮件模板，适合发给负责网络或防火墙配置的团队👇
+
+
+---
+
+Subject: Request to Create Firewall Rule for N2 Environment DB Pipeline
+
+Hi [Team/Name],
+
+We would like to request a new firewall (FW) rule to support the GitLab agent for our N2 environment DB pipeline.
+
+Details:
+
+Source: GitLab agent (N2 environment)
+
+Destination: [please fill in target system or IPs]
+
+Purpose: To enable the DB pipeline to connect and operate correctly in the N2 environment
+
+
+Please assist in creating the corresponding firewall rule. Let us know if any additional information or approvals are required.
+
+Thank you for your help.
+
+Best regards,
+[Your Name]
+[Your Team/Project]
+
+
+---
+
+是否要我帮你补全上面的源端、目标格式（比如 source: eks cluster subnet、destination: database endpoint）？这样我可以帮你生成更正式、可直接发出的版本。
