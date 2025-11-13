@@ -1,0 +1,103 @@
+下面给你一个可以直接用的 GitLab CI 模板，演示：
+
+你有一段 公共逻辑（extend 用的模板）
+
+公共逻辑 接收一个输入变量
+
+在模板里做 if/else，赋值其它变量
+
+在最终 job 中直接使用这些变量
+
+
+
+---
+
+✅ 实现方式：使用 extends + variables + script 组合
+
+GitLab 模板 不能直接写 if/else 的 variables
+但可以在 公共模板的 script 里处理变量，把结果写入 CI_JOB_VARIABLES（通过 export）。
+
+
+---
+
+✅ 1. 创建公共模板 .common-template
+
+.common-template:
+  script:
+    - echo "进入公共逻辑模板"
+    - |
+      if [[ "$INPUT_TYPE" == "A" ]]; then
+        export FINAL_VALUE="Value from A"
+      else
+        export FINAL_VALUE="Value from B"
+      fi
+    - echo "FINAL_VALUE=$FINAL_VALUE"
+
+这里你传一个变量 INPUT_TYPE 进去，模板内部做判断，并 export 出最终要给 job 用的变量。
+
+
+---
+
+✅ 2. 每个 job 使用 extends，并传不同变量
+
+job_a:
+  extends: .common-template
+  variables:
+    INPUT_TYPE: "A"
+  script:
+    - echo "Job A 最终使用 FINAL_VALUE=$FINAL_VALUE"
+    - echo "继续做 job A 的逻辑"
+
+job_b:
+  extends: .common-template
+  variables:
+    INPUT_TYPE: "B"
+  script:
+    - echo "Job B 最终使用 FINAL_VALUE=$FINAL_VALUE"
+    - echo "继续做 job B 的逻辑"
+
+
+---
+
+🔍 工作流程解释
+
+1. Job A 或 Job B 被执行
+
+
+2. 它 first 执行 .common-template 的 script
+
+
+3. 你在模板里做 if/else → 设置 FINAL_VALUE
+
+
+4. Job 自己的 script 会在同一 job shell 中执行
+→ 所以能直接用 FINAL_VALUE
+
+
+
+这是 GitLab CI 中最通用、最稳定的做法。
+
+
+---
+
+📌 如果想让所有 jobs 重用这段公共逻辑（只改变量）
+
+你已经做对了：用 extends，传变量即可。
+
+
+---
+
+🚀 如果你想 FINAL_VALUE 变成 GitLab 的 “变量”，还能 artifacts 输出给下个 job？
+
+我也可以给你写更高级版本（dependencies / artifacts / dotenv），例如：
+
+artifacts:
+  reports:
+    dotenv: output.env
+
+告诉我需不需要。
+
+
+---
+
+如果你愿意，我可以帮你把你的实际 pipeline 代码改成可运行的版本。
