@@ -1,0 +1,152 @@
+下面给你一个 可运行的 GitLab Agent/CI 方案，实现：
+
+在 before_script 中
+
+根据变量值（例如 TYPE=A/B）
+
+调用不同的公共代码块（!reference）
+
+
+
+---
+
+❗️重点：
+
+GitLab 的 !reference 不能在脚本里动态调用
+因为它是 YAML 编译期指令，不是运行期指令。
+
+也就是说：
+
+> 你不能用 if 判断，然后在运行时选择 !reference 哪一段。
+
+
+
+但你可以通过 YAML 的静态结构 + runtime 的 if 组合实现“动态效果”。
+
+
+---
+
+✅ 正确做法（推荐，100% 可运行）
+
+你写 两个模板，每个模板包含不同的 before_script 内容，然后根据变量选择 extends 哪个模板。
+
+
+---
+
+1️⃣ 定义两个公共模板
+
+.before_A:
+  before_script:
+    - echo "This is A logic"
+    - export FINAL="Value from A"
+
+.before_B:
+  before_script:
+    - echo "This is B logic"
+    - export FINAL="Value from B"
+
+
+---
+
+2️⃣ 再定义一个中间模板，根据变量选择 extends
+
+GitLab 支持 rules → extends 方式动态选择模板：
+
+.dynamic_before:
+  rules:
+    - if: '$TYPE == "A"'
+      extends: .before_A
+    - if: '$TYPE == "B"'
+      extends: .before_B
+
+
+---
+
+3️⃣ Job 使用这个“动态模板”
+
+job1:
+  extends:
+    - .dynamic_before
+  variables:
+    TYPE: "A"
+  script:
+    - echo "Final = $FINAL"
+
+
+---
+
+🔥 执行效果
+
+如果 TYPE=A
+
+job 继承 .before_A，输出：
+
+This is A logic
+Final = Value from A
+
+如果 TYPE=B
+
+job 继承 .before_B，输出：
+
+This is B logic
+Final = Value from B
+
+
+---
+
+❗️为什么不能写这样？（错误）
+
+before_script:
+  - if [[ "$TYPE" == "A" ]]; then
+      !reference [.before_A, before_script]
+    fi
+
+因为：
+
+!reference 是 YAML 解析阶段执行
+
+shell 的 if 是运行阶段
+
+两者混不到一起
+
+
+
+---
+
+✅ 如果你坚持只要一个模板，我也能给你这个版本：
+
+在 before_script 里用 if/else，实现动态逻辑（不需要 reference）：
+
+.common_before:
+  before_script:
+    - |
+      if [[ "$TYPE" == "A" ]]; then
+        echo "Use logic A"
+        export FINAL="Value A"
+      else
+        echo "Use logic B"
+        export FINAL="Value B"
+      fi
+
+然后 job：
+
+job1:
+  extends: .common_before
+  variables:
+    TYPE: "A"
+  script:
+    - echo "Final = $FINAL"
+
+
+---
+
+📌 总结最佳方案
+
+要动态选择不同脚本 → rules + extends 两层模板（推荐）
+
+要在一个模板内写逻辑 → if/else in shell（不能用 !reference）
+
+
+---
+
+如果你把你的 .gitlab-ci.yml 贴出来，我可以直接帮你改成最简洁能跑的版本。
