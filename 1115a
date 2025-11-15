@@ -1,0 +1,134 @@
+问题原因（简单直说）
+
+错误 rule config contains unknown key extrnds 是因为你把 extends（或拼写错误的 extrnds）放在了 rules: 条目里。
+GitLab CI 的 rules 只接受特定的 keys（比如 if, when, variables, changes 等），不接受 extends。
+把 extends 放到 rules 下面就会触发该报错；或者是拼写错（extrnds）也会被当作未知 key。
+
+下面给你三个可靠、常用且 不会报这个错 的修正方案（拷一份就能用）。
+
+
+---
+
+方案 A（最简单 & 推荐）：在公共模板里用 shell if/else（runtime 决定）
+
+把判断放在 before_script 或 script 里运行，而不是用 YAML 去动态扩展。
+
+.common_before:
+  before_script:
+    - |
+      echo "输入 TYPE=$TYPE"
+      if [[ "$TYPE" == "A" ]]; then
+        echo "Use logic A"
+        export FINAL="Value_A"
+      else
+        echo "Use logic B"
+        export FINAL="Value_B"
+      fi
+      echo "FINAL=$FINAL"
+
+job:
+  stage: test
+  extends: .common_before
+  variables:
+    TYPE: "A"
+  script:
+    - echo "Final in job: $FINAL"
+
+优点：简单、稳定，不会有 YAML 编译期错误。
+
+
+---
+
+方案 B：静态模板 + 不同 job（用 rules 在 job 级别选择哪个 job 运行）
+
+为 A/B 各建一个 job，每个 job extends 不同模板，使用 rules 控制哪个 job 被执行（而不是在 rules 里放 extends）。
+
+.before_A:
+  before_script:
+    - echo "=== BEFORE A ==="
+    - export FINAL="Value_A"
+
+.before_B:
+  before_script:
+    - echo "=== BEFORE B ==="
+    - export FINAL="Value_B"
+
+job_A:
+  stage: test
+  extends: .before_A
+  rules:
+    - if: '$TYPE == "A"'
+      when: always
+    - when: never
+  script:
+    - echo "Job A final: $FINAL"
+
+job_B:
+  stage: test
+  extends: .before_B
+  rules:
+    - if: '$TYPE == "B"'
+      when: always
+    - when: never
+  script:
+    - echo "Job B final: $FINAL"
+
+优点：YAML 结构清晰、适用于两套完全不同的模板。
+
+
+---
+
+方案 C：rules 设置变量，job 使用静态 extends（注意：extends 不能动态由 rules 直接指定）
+
+如果你想使用 rules 来“选择”逻辑，可以让 rules 仅设置变量，然后在模板里根据变量运行（实质上是 A 的变体）：
+
+.dynamic_rules:
+  rules:
+    - if: '$TYPE == "A"'
+      variables:
+        SELECT: "A"
+    - if: '$TYPE == "B"'
+      variables:
+        SELECT: "B"
+    - when: never
+
+.common_before:
+  before_script:
+    - |
+      echo "SELECT=$SELECT"
+      if [[ "$SELECT" == "A" ]]; then
+        export FINAL="Value_A"
+      else
+        export FINAL="Value_B"
+      fi
+
+job:
+  stage: test
+  extends:
+    - .dynamic_rules
+    - .common_before
+  variables:
+    TYPE: "A"
+  script:
+    - echo "Final = $FINAL"
+
+注意：extends 必须是静态写在 job 层（不能把 extends 放在 rules 下）。上面 .dynamic_rules 只是用来在解析规则时设置环境变量，然后 .common_before 根据这个变量决定行为。
+
+
+---
+
+快速检查清单（帮你排错）
+
+✅ 确认没有把 extends（或其他 job-level key）放在 rules: 下。
+
+✅ 检查有没有拼写错误（extrnds、extend、extends: 的冒号/缩进问题）。
+
+✅ 每个 job 如果用 extends，确保所引用的模板确实存在（名字一致）。
+
+✅ job 如果需要运行，别忘了写 stage:（缺 stage 也会报错）。
+
+
+
+---
+
+如果你把出错的那段 .gitlab-ci.yml（只需包含出问题的模板 + job）粘过来，我直接给你改好并返回一个可运行的版本。
