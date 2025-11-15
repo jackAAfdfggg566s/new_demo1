@@ -1,0 +1,134 @@
+你要的是 真正使用 !reference，并且想做到：
+
+> 根据变量 / IF，调用不同的 reference 代码块。
+
+
+
+我现在给你 唯一合法、可运行、真正用到 !reference 的写法。
+
+⚠️ 再强调一次：
+GitLab CI 不支持 at runtime (执行阶段) 决定用哪个 reference。
+但我们可以在 YAML compile-time 用结构“选”一个 reference。
+
+下面的方案是真正使用 !reference 的方案，并且是 GitLab 官方允许的方式。
+
+
+---
+
+✅ 方案：定义两个 reference，然后让 job 自己决定 extend 哪个（静态选择）
+
+1. 定义两个脚本块（A / B 两套逻辑）
+
+.codeA:
+  script:
+    - echo "This is logic A"
+    - export RESULT="A"
+
+.codeB:
+  script:
+    - echo "This is logic B"
+    - export RESULT="B"
+
+
+---
+
+2. 定义两个 wrapper job，只做 reference（真正调用 !reference）
+
+.A_wrapper:
+  script:
+    - !reference [.codeA, script]
+
+.B_wrapper:
+  script:
+    - !reference [.codeB, script]
+
+你需要的 !reference 调用就在这里
+这是真正调用 reference 的最标准方式。
+
+
+---
+
+3. 用户 job 根据变量选择 extend 其中一个 wrapper（静态选择）
+
+GitLab 的 rules 可以控制哪个 job 被运行。
+
+jobA:
+  stage: test
+  extends: .A_wrapper
+  rules:
+    - if: '$TYPE == "A"'
+      when: always
+    - when: never
+
+jobB:
+  stage: test
+  extends: .B_wrapper
+  rules:
+    - if: '$TYPE == "B"'
+      when: always
+    - when: never
+
+
+---
+
+4. 你执行时设置变量 TYPE=A 或 B
+
+variables:
+  TYPE: "A"
+
+
+---
+
+🧪 最终执行效果（示例）
+
+如果 TYPE=A，你会看到 jobA 执行：
+
+This is logic A
+export RESULT=A
+
+如果 TYPE=B，你会看到 jobB 执行：
+
+This is logic B
+export RESULT=B
+
+
+---
+
+📌 为什么这是唯一办法？
+
+因为：
+
+!reference 必须在 YAML 编译阶段确定引用的路径
+
+rules 是运行时
+
+不允许写：
+
+
+extends: ${TEMPLATE}
+
+也不允许：
+
+if ... then !reference ...
+
+所以 唯一能“动态”调不同 reference 的办法 就是：
+
+> 用 rules 控制哪个 job 运行 → 每个 job extends 不同 wrapper → wrapper 调用不同 reference
+
+
+
+
+---
+
+📩 如果你希望 “只有一个 job”，我可以给你更高级的版本
+
+例如：
+
+一个 job 名字不变
+
+但内部根据变量选不同 reference
+
+通过 anchor/mapping trick 实现
+
+
+告诉我你是不是只想要 一个 job 名字, 我可以给你单 job + 多 reference 的 YAML 黑科技版本。
