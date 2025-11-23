@@ -1,0 +1,250 @@
+下面给你一个可直接用的方案，说明如何用 AWS FIS（Fault Injection Simulator）测试 DMS（Database Migration Service）任务的可靠性，包括思路、常见实验、IAM、以及实验模板示例。
+
+
+---
+
+✅ 一、测试目标
+
+用 FIS 测试 DMS 的核心是观察：
+
+DMS 遇到网络中断是否自动恢复？
+
+DMS 遇到源库/目标库短暂不可用时是否会重试？
+
+DMS task 失败后是否会自动重跑？
+
+DMS replication instance 遇到 CPU、IO 压力时的表现？
+
+
+
+---
+
+✅ 二、常见 FIS 故障类型（针对 DMS 测试）
+
+1. 注入网络延迟 / 网络中断
+
+模拟：
+
+源数据库网络变差
+
+目标数据库网络变差
+
+DMS 实例与数据库之间临时网络断开
+
+
+FIS 可对 EC2/ENI 注入：
+
+网络延迟（latency）
+
+网络丢包（packet loss）
+
+网络完全阻断（blackhole）
+
+
+
+---
+
+2. 让数据库（源库/目标库）中断
+
+例如：
+
+RDS 重启
+
+Aurora failover
+
+RDS CPU 撑满导致响应慢
+
+
+FIS 有内置 action：
+
+aws:rds:failover-db-cluster
+
+aws:rds:reboot-db-instance
+
+
+
+---
+
+3. 增加 DMS replication instance 压力
+
+对 DMS 实例所在的 EC2（实际上是由 AWS 管理的 VM）无法直接注入故障。
+
+但你可以：
+
+方法 A：注入源库大量事务
+
+模拟高写入压力 → 看 DMS 是否赶得上。
+
+方法 B：缩小 DMS 实例规模（手动）后运行 FIS
+
+观察 task 是否 backlog。
+
+方法 C：强制终止 DMS task（FIS 通过 API 调用 Lambda）
+
+使用 FIS 调用 Lambda → Lambda 调用 DMS 的 StopReplicationTask
+看看断点是否会恢复。
+
+
+---
+
+✅ 三、推荐的 FIS 演练场景组合（常用且有效）
+
+🎯 场景 1：源数据库网络完全阻断 30 秒
+
+目的：DMS 是否自动 reconnect？
+
+FIS action：
+
+aws:ec2:network-blackhole
+
+
+---
+
+🎯 场景 2：RDS 主库 failover
+
+目的：在 Failover 期间 DMS 会停多久？是否恢复？
+
+FIS action：
+
+aws:rds:failover-db-cluster
+
+
+---
+
+🎯 场景 3：目标数据库 CPU 100% / IO 等待
+
+目的：目标库背压时，DMS 是否会排队 + 恢复？
+
+通过 FIS 注入 CPU 压力：
+
+aws:ec2:stress-ng-cpu
+
+
+---
+
+🎯 场景 4：目标库短暂断连（黑洞 30 秒）
+
+与场景 1 类似，但针对目标库。
+
+
+---
+
+🎯 场景 5：强制停止 DMS task，再启动
+
+FIS → Lambda → 调用：
+
+StopReplicationTask
+
+StartReplicationTask (resume-processing)
+
+
+模拟 DMS 意外重启。
+
+
+---
+
+✅ 四、关键观察点（评估是否可靠）
+
+测试期间重点关注：
+
+🔹 DMS CloudWatch 指标
+
+CDCLatencySource
+
+CDCLatencyTarget
+
+ReplicationLatency
+
+CPUUtilization（DMS instance）
+
+FreeStorageSpace
+
+NetworkThroughput
+
+
+🔹 DMS task 状态日志
+
+是否自动 retry？
+
+是否进入 Stopped / Error？
+
+
+🔹 是否出现 data loss？
+
+
+---
+
+✅ 五、FIS 模板示例（可直接用）
+
+以下是一个 AWS FIS experiment template（JSON），会对 源库 注入 30 秒网络阻断。
+
+{
+  "description": "Test DMS source DB network interruption",
+  "targets": {
+    "SourceDBInstance": {
+      "resourceType": "aws:ec2:instance",
+      "selectionMode": "ALL",
+      "resourceTags": {
+        "Role": "DMS-Source-DB"
+      }
+    }
+  },
+  "actions": {
+    "BlackholeNetwork": {
+      "actionId": "aws:ec2:network-blackhole",
+      "targets": {
+        "Instances": "SourceDBInstance"
+      },
+      "parameters": {
+        "duration": "PT30S"
+      }
+    }
+  },
+  "stopConditions": [
+    {
+      "source": "none"
+    }
+  ],
+  "roleArn": "arn:aws:iam::<account>:role/FIS-ExperimentRole"
+}
+
+把源库 EC2 或 RDS proxy node 打上 Role=DMS-Source-DB 的 tag 即可。
+
+
+---
+
+✅ 六、IAM 权限（必须要有）
+
+你需要的 FIS Role 权限：
+
+fis:*
+
+ec2:RebootInstances
+
+ec2:CreateTags
+
+rds:FailoverDBCluster
+
+rds:RebootDBInstance
+
+（若用 Lambda）lambda:InvokeFunction
+
+
+AWS 有官方模板：
+AWSFaultInjectionSimulatorRole
+
+
+---
+
+✅ 七、如果你告诉我你的架构（例如 DMS 源库/目标库 类型：RDS？Aurora？EC2？）
+
+我可以帮你：
+
+直接生成完整可用的 FIS template
+
+设计对应的 DMS 恢复测试用例
+
+给你自动化脚本（Terraform / CDK / CloudFormation）
+
+
+随时发我你的 DMS 架构就行，我帮你生成最适合你的测试方案。
