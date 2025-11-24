@@ -1,0 +1,187 @@
+下面用最简单、最实用的方式告诉你 GitLab CI/CD 中 extends 和 !reference 的区别，以及你什么时候应该用哪一个。
+
+
+---
+
+✅ 1. 核心区别一句话总结
+
+功能	extends	!reference
+
+目的	继承一个 Job/模板	引用某个字段（script 等）到当前 job
+作用范围	整个 job 结构	job 内的某个具体字段
+会覆盖吗？	子 job 可以覆盖父的字段	引入后字段内容合并（list append）或被覆盖（scalar）
+语法	YAML 原生	GitLab 特有模板语法
+
+
+
+---
+
+✅ 2. extends：继承模板（最常用）
+
+像 继承类，你定义一个基础 job，然后其它 job 继承它。
+
+✔ 示例
+
+.base_job:
+  image: alpine
+  before_script:
+    - echo "common before script"
+
+job1:
+  extends: .base_job
+  script:
+    - echo "job1"
+
+⭐ 适用场景
+
+多个 job 有 重复结构：image、before_script、tags、rules、artifacts…
+
+希望覆盖某些字段，就像 OOP 继承一样
+
+
+
+---
+
+✅ 3. !reference：引用某个字段（script、before_script 等）
+
+像 复制粘贴一个字段的内容。
+
+✔ 示例
+
+.base_job:
+  script:
+    - echo "common"
+    - echo "do something"
+
+job1:
+  script:
+    - !reference [.base_job, script]
+    - echo "job1 extra"
+
+⭐ 适用场景
+
+你只想 重用某个字段（尤其是 script），不想用 extends
+例如：
+
+你要用相同的 script，但 job 的 image / tags 不同
+
+你要 组合多个 reference
+
+你不要继承 rules / artifacts，只要其中一段 script
+
+
+
+---
+
+🔍 深入对比（实际项目最常遇到的区别）
+
+🔸 1. extends 会合并整个 job，reference 只会复制字段
+
+如果你只想重复 script，extends 会带来太多东西（rules、artifacts 都会跟着来），所以用 !reference 更灵活。
+
+
+---
+
+🔸 2. extends 无法直接组合多个 job 的 script
+
+你不能这样写：
+
+extends:
+  - base1
+  - base2
+
+但 !reference 可以：
+
+script:
+  - !reference [.base1, script]
+  - !reference [.base2, script]
+
+
+---
+
+🔸 3. reference 是“复制内容”，extends 是继承结构
+
+两者底层概念完全不同，所以很多时候 reference 更灵活。
+
+
+---
+
+🧪 实际项目建议（最常用组合）
+
+✔ pattern 1：结构用 extends，行为用 reference
+
+.job_template:
+  image: alpine
+  before_script:
+    - do login
+
+.shared_script:
+  script:
+    - echo "shared"
+
+job1:
+  extends: .job_template
+  script:
+    - !reference [.shared_script, script]
+    - echo "job1 extra"
+
+最推荐的写法
+清晰又灵活。
+
+
+---
+
+❌ 什么时候不该用 reference？
+
+你拿来引用的 job 没有定义 script
+
+你引用的 job 是动态 include 的（引用不到）
+
+你引用的是 rules（不支持）
+
+
+
+---
+
+🧩 你之前遇到的问题解释一下：
+
+> Script 下面 reference 会 command not found
+
+
+
+常见原因：
+
+1. 你引用的 script 最后没有真正是 shell 命令（是空值 / null）
+
+
+2. YAML list 嵌套错了：
+
+
+
+❌ 错误示例
+
+script:
+  - - !reference [.base_job, script]
+
+3. 被引用 job 的 script 里是数组，这里又包了一层数组导致 shell 收到 ['cmd'] 而不是 cmd
+
+
+
+你给我你的 YAML，我可以直接帮你修。
+
+
+---
+
+📌 总结一句话
+
+extends = 继承整个 job 结构
+
+!reference = 引用某个字段的值（如 script）
+
+
+两者搭配用效果最好。
+
+
+---
+
+如果你愿意，你可以直接把你现在的 gitlab-ci.yml 发来，我帮你根据你的情况重新整理成最佳写法，减少重复代码。
