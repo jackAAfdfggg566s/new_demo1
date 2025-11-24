@@ -1,0 +1,152 @@
+你遇到的这个问题非常典型：
+把 !reference 放在 script 的多行字符串里（| 或 - |），GitLab 会把它当成 shell 文字去执行 → 当然 !reference 就变成 “命令不存在”。
+
+例如你现在可能写了这样：
+
+script:
+  - |
+    case "$C1_ENV" in
+      env1) !reference [.comp1_env1, script] ;;   # ❌ 会被当成 shell 命令
+    esac
+
+GitLab 会展开成：
+
+!reference .comp1_env1 script
+
+→ Shell 执行 → command not found
+
+
+---
+
+✅ 正确写法（必须让 !reference 成为 script 列表项，而不是字符串内容）
+
+⚠ !reference 只能作为 YAML 列表项
+⚠ 不能放在字符串里，也不能放在 case/if/for 里面
+⚠ GitLab YAML 是静态展开，shell 不认识 !reference
+
+所以不能用 case + reference，这是 GitLab 限制。
+
+
+---
+
+那么如何实现"动态组合选择"？
+
+你只有 两种完全可行 的方案：
+
+
+---
+
+✅ 方案 1：每个组件-环境组合是独立 job + rules 控制（推荐）
+
+GitLab 本身就是“用 rules 决定哪个 job 运行”。
+你要四种组合，就定义四个 job，没有重复代码，因为 script 可以 reference：
+
+1. 定义可复用脚本块
+
+.comp1_env1: &C1E1
+  script:
+    - echo "comp1 env1"
+    - ./comp1_env1.sh
+
+.comp1_env2: &C1E2
+  script:
+    - echo "comp1 env2"
+    - ./comp1_env2.sh
+
+.comp2_env1: &C2E1
+  script:
+    - echo "comp2 env1"
+    - ./comp2_env1.sh
+
+.comp2_env2: &C2E2
+  script:
+    - echo "comp2 env2"
+    - ./comp2_env2.sh
+
+2. 四个组合，只运行一个，不重复代码
+
+combo_c1e1_c2e1:
+  rules:
+    - if: '$C1_ENV == "env1" && $C2_ENV == "env1"'
+  script:
+    - !reference [.comp1_env1, script]
+    - !reference [.comp2_env1, script]
+
+combo_c1e1_c2e2:
+  rules:
+    - if: '$C1_ENV == "env1" && $C2_ENV == "env2"'
+  script:
+    - !reference [.comp1_env1, script]
+    - !reference [.comp2_env2, script]
+
+combo_c1e2_c2e1:
+  rules:
+    - if: '$C1_ENV == "env2" && $C2_ENV == "env1"'
+  script:
+    - !reference [.comp1_env2, script]
+    - !reference [.comp2_env1, script]
+
+combo_c1e2_c2e2:
+  rules:
+    - if: '$C1_ENV == "env2" && $C2_ENV == "env2"'
+  script:
+    - !reference [.comp1_env2, script]
+    - !reference [.comp2_env2, script]
+
+优点
+
+完全无重复代码（四个组合的 script 都仅引用）
+
+只运行一个 job
+
+!reference 正确展开，不会 command not found
+
+结构清晰、可维护性强
+
+
+GitLab 官方推荐用 rules 做 job 选择，不推荐在同一个 job 里搞“动态脚本”。
+
+
+---
+
+❗ 方案 2（你之前尝试的）：单 job + case + reference
+
+⚠ GitLab 不支持。
+
+因为：
+
+!reference 只能是 YAML 的一个列表项
+
+shell 里不能写它（会被当成命令）
+
+
+所以永远会报：
+
+!reference: command not found
+
+这是 GitLab 的硬限制，不是你写错。
+
+
+---
+
+🎯 结论（最靠谱）
+
+你不能在一个 job 里动态选择 reference。必须使用多个 job + rules 选择执行哪个。
+
+反而这样的结构是 GitLab 官方推荐的，而且不会重复代码，因为所有逻辑都集中在 re-usable reference 块里。
+
+
+---
+
+📌 如果你愿意，我可以根据你的真实组件名、环境名，帮你生成最终可用的 YAML（最简、最干净）。
+
+你只要告诉我：
+
+组件 1 名字
+
+组件 2 名字
+
+两个环境名字（env1/env2？dev/prod？）
+
+
+我就给你完整成品。
