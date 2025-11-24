@@ -1,0 +1,124 @@
+你想做到的是：
+同一个 job（或模板）用 extends，但根据 variable 的不同，继承不同的模板。
+
+⚠️ GitLab CI 语法中 extends: 本身不能写 if/else，也不能动态选择字符串。
+但可以借助 rules:extends 的写法，实现“根据 variable 选择不同的 extends”。
+
+下面给你最清晰、最实用的解决方案。
+
+
+---
+
+✅ 方式 1：用 rules:extends（官方支持，最简洁）
+
+GitLab 14.0+ 支持 rules:extends，可以根据条件决定继承哪个模板。
+
+✔ 示例
+
+.base_dev:
+  script:
+    - echo "run dev"
+
+.base_prod:
+  script:
+    - echo "run prod"
+
+job:
+  rules:
+    - if: '$TARGET == "dev"'
+      extends: .base_dev
+    - if: '$TARGET == "prod"'
+      extends: .base_prod
+    - when: never
+
+运行：
+
+TARGET=dev       → 继承 .base_dev
+TARGET=prod      → 继承 .base_prod
+
+🌟 这是唯一可以真正“根据变量选择不同 extends”的方式。
+
+
+---
+
+✅ 方式 2：多个 job，rules 控制哪个 job 触发
+
+如果你不能用 rules:extends，你可以把 job 拆成多个，同名逻辑，不同模板：
+
+job_dev:
+  extends: .base_dev
+  rules:
+    - if: '$TARGET == "dev"'
+
+job_prod:
+  extends: .base_prod
+  rules:
+    - if: '$TARGET == "prod"'
+
+优点：简单清晰
+缺点：生成多个 job
+
+
+---
+
+✅ 方式 3：使用 include 动态选择模板（适合大项目）
+
+主 pipeline 根据变量 include 不同文件：
+
+main.gitlab-ci.yml
+
+include:
+  - local: "templates/${TARGET}.yml"
+
+模板文件：
+
+templates/dev.yml
+
+job:
+  extends: .base_dev
+
+templates/prod.yml
+
+job:
+  extends: .base_prod
+
+适合复杂 pipeline。
+
+
+---
+
+🔥 最推荐（你应该用这个）
+
+如果你只是：
+
+> 想用一个 job，然后根据 variable 选择不同的模板
+
+
+
+➡️ 用 rules:extends 最好：
+
+job:
+  rules:
+    - if: '$TARGET == "dev"'
+      extends: .base_dev
+    - if: '$TARGET == "prod"'
+      extends: .base_prod
+    - when: never
+
+
+---
+
+如果你愿意
+
+把你现在的 .gitlab-ci.yml 贴给我，我可以直接帮你写出：
+
+最简版本
+
+按你的 variable 自动切换 extends
+
+避免 command not found
+
+避免重复代码
+
+
+你之前遇到的 reference command not found 我也能一起帮你修。
