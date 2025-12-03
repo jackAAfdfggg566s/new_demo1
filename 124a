@@ -1,0 +1,88 @@
+明白——你想的是：
+把正常 Running/Ready 的排除掉，只过滤出有问题的 Pod（Fail / Error / CrashLoopBackOff / ImagePullBackOff 这些）。
+
+下面给你最准确、最简洁的几种。
+
+
+---
+
+✅ 方法 1：最简单（直接用 STATUS 字段过滤）
+
+kubectl get pods --no-headers \
+  | grep -E "CrashLoopBackOff|Error|Failed|ImagePullBackOff|Init|Terminating"
+
+输出的都是有问题的 pod。
+
+
+---
+
+✅ 方法 2：更干净，只保留不是 Running 的 Pod
+
+kubectl get pods --no-headers \
+  | awk '$3 != "Running"'
+
+这会把 Running 的排除掉，剩下的都是：
+
+CrashLoopBackOff
+
+Error
+
+Pending
+
+Failed
+
+Completed
+
+Init 中
+
+Terminating
+
+
+
+---
+
+✅ 方法 3：只过滤 CrashLoopBackOff（精准版）
+
+kubectl get pods --no-headers | grep CrashLoopBackOff
+
+
+---
+
+✅ 方法 4：过滤 “Ready 不等于 True” 的（最准确，不会漏掉多容器）
+
+kubectl get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' \
+  | grep -v True
+
+所有 Ready=False 或缺失 Ready 条件的 Pod 都会被列出来，包括 CrashLoopBackOff。
+
+
+---
+
+✅ 方法 5：过滤 restart 过高的（CrashLoop 常伴随高 restartCount）
+
+kubectl get pods -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[*].restartCount}{"\n"}{end}' \
+  | awk '$2 > 3'
+
+
+---
+
+🔥 推荐最佳组合（你大概率就要这个）
+
+过滤所有 异常状态（CrashLoopBackOff + Failed + Error + ImagePullBackOff + InitError）：
+
+kubectl get pods --no-headers \
+  | grep -E "CrashLoopBackOff|Error|Failed|ImagePullBackOff|Init"
+
+
+---
+
+如果你愿意，我还可以帮你写一个：
+
+check_bad_pods.sh 脚本
+
+自动列出异常 Pod
+
+按原因分类：Crash / InitFail / ImagePullFail / NotReady
+
+
+要不要？
