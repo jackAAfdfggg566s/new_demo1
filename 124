@@ -1,0 +1,74 @@
+如果你只是想 过滤出真正 Running（正常运行） 的 Pod，并且 不包含 CrashLoopBackOff、Error、Init 等异常状态，最稳妥的方式是下面这两种。
+
+
+---
+
+✅ 方法 1：最简单、安全
+
+只过滤出 STATUS 字段为 “Running” 的 Pod：
+
+kubectl get pods --field-selector=status.phase=Running
+
+⚠️ 注意
+
+status.phase=Running 不会把 CrashLoopBackOff 的 Pod 过滤进来，因为 CrashLoopBackOff 的 phase 通常是 Running 没错, 但 condition Ready=False。
+所以这个命令能保证：
+
+✔ 不会包含 Pending / Failed / Succeeded / Unknown
+✔ 不会包含刚创建的
+❗ 但是仍会把 “Running + CrashLoopBackOff” 也包含进来（因为 phase 还是 Running）
+
+如果你只想过滤出来 Running（不管是否 Ready），用上面这个即可。
+
+但如果你指 只要真正健康的 Running（排除 CrashLoopBackOff），那你需要方法 2。
+
+
+---
+
+✅ 方法 2：过滤 Running 且 Ready 的 Pod（推荐）
+
+真正健康的 Pod 必须满足 2 点：
+
+1. phase = Running
+
+
+2. Ready condition = True
+
+
+
+kubectl get pods \
+  -o jsonpath='{range .items[?(@.status.phase=="Running")]}{.metadata.name}{"\t"}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' \
+  | grep True
+
+输出只会是：
+
+my-app-1   True
+my-worker-2 True
+
+👍 这样能过滤掉：
+
+CrashLoopBackOff（Ready=False）
+
+ImagePullBackOff
+
+Error
+
+InitError
+
+NotReady
+
+
+只留下 真正健康的 Running。
+
+
+---
+
+✅ 最短命令（我建议你用这个）
+
+kubectl get pods | grep "Running" | grep "1/1"
+
+对于多容器 Pod：
+
+kubectl get pods | awk '$3=="Running" && $2==$2 {print}'
+
+如果你告诉我你是 单容器 Pod 还是 多容器 Pod，我可以给你一个更准确的过滤命令（避免误判）。
