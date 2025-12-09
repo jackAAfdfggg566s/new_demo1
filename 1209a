@@ -1,0 +1,115 @@
+明白，你现在的问题是：
+从 CLI 获取到 AZ（比如 ap-southeast-2a），提取成 2a 后，if 判断却进不去。
+
+→ 99% 是因为 CLI 输出里带了隐藏字符（换行 \n 或回车 \r）导致比较失败。
+
+我给你一个最小调试版，可以直接看出问题在哪里。
+
+
+---
+
+🔍 最小可调试示例（你直接复制运行）
+
+AZ_FULL=$(aws ec2 describe-instances --instance-id i-xxxx \
+  --query "Reservations[0].Instances[0].Placement.AvailabilityZone" \
+  --output text)
+
+AZ="${AZ_FULL##*-}"
+
+echo "AZ_FULL=[$AZ_FULL]"
+echo "AZ=[$AZ]"
+
+if [ "$AZ" = "2a" ]; then
+    echo "YES: 进 if 了"
+else
+    echo "NO: 没进去"
+fi
+
+
+---
+
+🔥 如果你输出看到这样：
+
+AZ=[2a]
+
+就正常。
+
+但你很可能看到：
+
+AZ=[2a^M]
+
+或
+
+AZ=[2a ]
+
+或
+
+AZ=[2a
+]
+
+这些隐藏字符（空格 / 换行 / 回车）都会导致 if 不等！
+
+
+---
+
+✔ 修复方法（最小改动）
+
+只需要加一行去掉隐藏字符：
+
+AZ=$(echo -n "$AZ" | tr -d '\r\n ')
+
+完整版：
+
+AZ_FULL=$(aws ec2 ...)
+
+AZ="${AZ_FULL##*-}"
+AZ=$(echo -n "$AZ" | tr -d '\r\n ')
+
+if [ "$AZ" = "2a" ]; then
+    echo "YES"
+else
+    echo "NO: AZ=[$AZ]"
+fi
+
+
+---
+
+🎯 为什么从 CLI 获取的字符串会导致 if 不进？
+
+因为 AWS CLI 输出 默认带一个换行符：
+
+ap-southeast-2a\n
+
+你提取的 2a 实际是：
+
+"2a\n"
+
+而这与 "2a" 完全不相等。
+
+
+---
+
+⚡ 你可以做的最简单验证：看看有没有隐藏字符
+
+printf '%q\n' "$AZ"
+
+如果输出：
+
+2a
+
+→ 正常。
+
+如果输出类似：
+
+2a\n
+
+或
+
+2a$'\r'
+
+→ 就是这个导致 if 失败。
+
+
+---
+
+🔥 如果你愿意把你两三行真实代码贴出来，我可以按你的原样把它修成可以进 if 的版本（不用任何多余语句）。
