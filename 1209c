@@ -1,0 +1,66 @@
+你看到 2a\，这就说明你的变量 末尾多了一个反斜杠 \（常见原因是 CLI 输出换行被解释成反斜杠，或者你前面有 echo -n 等操作）。
+
+👉 这个反斜杠会导致 if 永远不等于 "2a"。
+
+下面给你最小可用的“去掉末尾反斜杠”的版本，直接能用：
+
+
+---
+
+✔ 最小修复（删除末尾的反斜杠）
+
+AZ_FULL=$(aws ec2 describe-instances --instance-id i-xxxx \
+  --query "Reservations[0].Instances[0].Placement.AvailabilityZone" \
+  --output text)
+
+AZ="${AZ_FULL##*-}"
+
+# 去掉 AZ 里可能存在的末尾反斜杠
+AZ=$(echo -n "$AZ" | sed 's/\\$//')
+
+echo "最终AZ=[$AZ]"
+
+if [ "$AZ" = "2a" ]; then
+    echo "进 if 了"
+else
+    echo "没进去，AZ=[$AZ]"
+fi
+
+
+---
+
+✔ 更保险的写法（同时去掉换行、回车、空格、反斜杠）
+
+AZ=$(echo -n "$AZ" | tr -d '\r\n ' | sed 's/\\$//')
+
+
+---
+
+🧪 验证你的问题（你也可以跑这个）
+
+printf '%q\n' "$AZ"
+
+你之前看到的应该是：
+
+2a\
+
+这表示变量内容实际是：
+
+"2a\"
+
+当然不会和 "2a" 相等。
+
+
+---
+
+🧩 你想要最简单版本？给你最简单版本：
+
+AZ=$(aws ec2 ... | sed 's/.*-//' | sed 's/\\$//' | tr -d '\r\n ')
+if [ "$AZ" = "2a" ]; then
+    echo yes
+fi
+
+
+---
+
+如果你愿意贴你的三五行真实代码，我可以直接根据你的版本给最小修改，只改一两处就能进 if。
