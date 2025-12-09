@@ -1,0 +1,65 @@
+如果你的 az 变量内容是 "ap 2a"（中间有空格），在 sh/bash 里比较时必须加引号，否则会被当成两个参数。
+
+下面给你最安全的写法：
+
+
+---
+
+✅ 字符串等于 "ap 2a"
+
+if [ "$az" = "ap 2a" ]; then
+    echo "matched"
+else
+    echo "not match"
+fi
+
+关键点：
+
+一定要用双引号把变量和字符串都包住
+
+否则 "ap 2a" 会被当成 "ap" 和 "2a" 两个字段
+
+
+
+---
+
+🔥 如果你是从 AWS 读到 AZ，一般是 ap-southeast-2a
+
+如果你实际想匹配的是这种：
+
+ap-southeast-2a
+
+用：
+
+if [ "$az" = "ap-southeast-2a" ]; then
+    echo "yes"
+fi
+
+
+---
+
+🚀 若你想匹配包含 "2a" 的 AZ（通用写法）
+
+（只能在 bash 下用 [[ ]]）
+
+if [[ "$az" == *"2a"* ]]; then
+    echo "contains 2a"
+fi
+
+
+---
+
+🔧 如果你确实需要匹配 "ap 2a"（带空格）
+
+也可以：
+
+target="ap 2a"
+
+if [ "$az" = "$target" ]; then
+    echo "match"
+fi
+
+
+---
+
+如果你愿意，把你实际的 az 值贴给我，我给你写最合适的比较逻辑。
