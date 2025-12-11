@@ -1,0 +1,117 @@
+下面给你一个 最实用、最简短的 Bash + AWS CLI for 循环示例，
+可以满足你的需求：
+
+根据一组 tag（1、2、3），依次：
+
+1. 找到 EC2 instance ID
+
+
+2. 找到它所在的 AZ（如 ap-southeast-2a）
+
+
+3. 根据 AZ 找到对应的 subnet ID
+
+
+4. 最后专门过滤 2a 的 subnet ID
+
+
+
+
+---
+
+✅ 完整 Bash 脚本案例（可直接用）
+
+#!/bin/bash
+
+TAGS=("1" "2" "3")
+REGION="ap-southeast-2"
+
+for tag in "${TAGS[@]}"; do
+  echo "== Tag = $tag =="
+
+  # 1. 根据 tag 取 instance id
+  INSTANCE_ID=$(aws ec2 describe-instances \
+    --filters "Name=tag:Name,Values=$tag" \
+    --query "Reservations[].Instances[].InstanceId" \
+    --output text \
+    --region $REGION)
+
+  echo "Instance: $INSTANCE_ID"
+
+  # 2. 获取它的 AZ
+  AZ=$(aws ec2 describe-instances \
+    --instance-ids "$INSTANCE_ID" \
+    --query "Reservations[].Instances[].Placement.AvailabilityZone" \
+    --output text \
+    --region $REGION)
+
+  echo "AZ: $AZ"
+
+  # 3. 找到这个 AZ 下的 subnet
+  SUBNET_ID=$(aws ec2 describe-subnets \
+    --filters "Name=availabilityZone,Values=$AZ" \
+    --query "Subnets[].SubnetId" \
+    --output text \
+    --region $REGION)
+
+  echo "Subnet(s): $SUBNET_ID"
+
+  # 4. 如果是 2a，则输出
+  if [[ "$AZ" == *"2a" ]]; then
+    echo ">>> This is 2a subnet: $SUBNET_ID"
+  fi
+
+  echo
+done
+
+
+---
+
+⭐ 说明
+
+1. TAGS=("1" "2" "3")
+
+你可以换成任何 tag 值。
+
+如果你的 tag key 不是 Name，比如 Environment，就改成：
+
+--filters "Name=tag:Environment,Values=$tag"
+
+
+---
+
+2. 关键命令解释
+
+获取 instance id
+
+aws ec2 describe-instances --filters "Name=tag:Name,Values=$tag"
+
+获取它的 AZ
+
+aws ec2 describe-instances --instance-ids $INSTANCE_ID
+
+获取 AZ 对应的 subnet
+
+aws ec2 describe-subnets --filters "Name=availabilityZone,Values=$AZ"
+
+
+---
+
+👍 如果你只想得到 所有 tag 中属于 2a 的 subnet id（最终结果），下面是最精简版：
+
+for t in 1 2 3; do
+  iid=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=$t" --query "Reservations[].Instances[].InstanceId" --output text)
+  az=$(aws ec2 describe-instances --instance-ids $iid --query "Reservations[].Instances[].Placement.AvailabilityZone" --output text)
+
+  if [[ $az == *"2a" ]]; then
+    subnet=$(aws ec2 describe-subnets --filters "Name=availabilityZone,Values=$az" --query "Subnets[].SubnetId" --output text)
+    echo "$t → $iid → $az → $subnet"
+  fi
+done
+
+
+---
+
+📌 如果你告诉我你的 tag 的 key（Name? Role? Env?）
+
+我可以把脚本改成你完全能复制粘贴直接用的版本。
