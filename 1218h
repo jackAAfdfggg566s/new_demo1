@@ -1,0 +1,140 @@
+明白了 👍
+你现在的场景是：
+
+.eks_base 里有 连接 EKS 的逻辑
+
+deploy 里有 其他业务逻辑（比如 kubectl apply / helm / 自定义脚本）
+
+
+核心问题：GitLab CI 的 extends 不会自动合并 before_script / script，后面的 job 会覆盖前面的。
+
+所以我们需要一个既复用 base，又能执行 deploy 自己逻辑的安全方案。
+
+
+---
+
+一、方案思路
+
+1. 把 base 的逻辑抽成 shell 脚本（推荐）
+
+base 的 before_script 或 script 只做 “连接 EKS”
+
+deploy 的 job 调用这个脚本，再加自己的逻辑
+
+这样不会被覆盖
+
+
+
+2. 或者显式在 deploy 里调用 base 的逻辑
+
+GitLab CI 不会自动 append
+
+需要写在 deploy 的 before_script 或 script 中
+
+
+
+
+
+---
+
+二、方案 A（抽成脚本，最干净）
+
+1️⃣ 创建一个 shell 脚本
+
+./scripts/connect-eks.sh：
+
+#!/bin/bash
+set -e
+
+echo ">>> Connecting to EKS..."
+case "$ENV" in
+  dev)
+    AWS_REGION="ap-southeast-2"
+    EKS_CLUSTER_NAME="my-eks-dev"
+    ;;
+  prod)
+    AWS_REGION="ap-southeast-2"
+    EKS_CLUSTER_NAME="my-eks-prod"
+    ;;
+  *)
+    echo "Invalid ENV: $ENV"
+    exit 1
+    ;;
+esac
+
+export AWS_REGION EKS_CLUSTER_NAME
+
+aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+kubectl config current-context
+
+
+---
+
+2️⃣ 在 base 中调用（可选）
+
+.eks_base:
+  stage: deploy
+  before_script:
+    - ./scripts/connect-eks.sh
+
+
+---
+
+3️⃣ deploy job 中继续写自己的逻辑
+
+deploy_dev:
+  extends: .eks_base
+  variables:
+    ENV: dev
+  script:
+    - echo ">>> Deploying API service"
+    - kubectl apply -f k8s/api/
+    - echo ">>> Deploying Web service"
+    - kubectl apply -f k8s/web/
+
+✅ 这样 deploy 自己的 script 不会覆盖连接逻辑
+✅ 逻辑清晰，可维护
+
+
+---
+
+三、方案 B（显式调用 base 的 before_script）
+
+如果你不想用脚本，也可以在 deploy job 里直接调用 base 里的逻辑：
+
+deploy_dev:
+  extends: .eks_base
+  variables:
+    ENV: dev
+  before_script:
+    - echo ">>> Connecting to EKS"
+    - aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
+  script:
+    - kubectl apply -f k8s/api/
+
+⚠️ 缺点：base 改了连接逻辑，需要每个 job 同步修改
+
+
+---
+
+四、推荐做法总结
+
+1. 把所有共用逻辑抽成脚本（连接 EKS、校验权限等）
+
+
+2. job 里只写自己的业务逻辑
+
+
+3. 环境变量决定不同 cluster / region
+
+
+
+这样既能复用，又能保留 job 自己的逻辑。
+
+
+---
+
+如果你愿意，我可以帮你 直接改写你现在的 deploy + eks_base 结构，
+生成一个 安全、复用、可维护的 GitLab CI 配置，不用再担心覆盖问题。
+
+你希望我帮你直接改吗？
