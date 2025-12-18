@@ -1,0 +1,164 @@
+可以，但要分清楚「在哪里加 if」——这是关键。
+结论先给你：
+
+> ✅ 可以在被 extends 的“第一个公共模板”里写 if 判断 variable
+❌ 不可以在 extends: 语法里写 if 判断
+
+
+
+下面把对 / 错 / 正确姿势一次讲清楚。
+
+
+---
+
+一、❌ 错误理解（很多人会这么想）
+
+deploy_dev:
+  extends: .eks_base
+  if: '$ENV == "dev"'   # ❌ 这种语法不存在
+
+或者：
+
+extends:
+  - .eks_base if ENV=dev   # ❌ GitLab 不支持
+
+👉 extends 只能合并配置，不能做条件判断
+
+
+---
+
+二、✅ 正确做法（你问的“原有第一个代码”场景）
+
+你完全可以在 .eks_base 里加 if（shell 判断）
+而且这正是推荐做法。
+
+公共模板（加 if 判断 variable）
+
+.eks_base:
+  image: amazon/aws-cli:2
+  stage: deploy
+  before_script:
+    - |
+      echo "ENV=$ENV"
+
+      if [ "$ENV" = "dev" ]; then
+        AWS_REGION="ap-southeast-2"
+        EKS_CLUSTER_NAME="my-eks-dev"
+      elif [ "$ENV" = "prod" ]; then
+        AWS_REGION="ap-southeast-2"
+        EKS_CLUSTER_NAME="my-eks-prod"
+      else
+        echo "Unknown ENV: $ENV"
+        exit 1
+      fi
+
+      aws eks update-kubeconfig \
+        --region "$AWS_REGION" \
+        --name "$EKS_CLUSTER_NAME"
+  script:
+    - kubectl get ns
+
+Job 只负责 extends + 传变量
+
+deploy:
+  extends: .eks_base
+  variables:
+    ENV: dev
+
+或手动触发：
+
+deploy:
+  extends: .eks_base
+
+Pipeline variable 里传 ENV=prod
+
+
+---
+
+三、为什么「只能在模板里 if」？
+
+extends 发生在 YAML 解析阶段
+
+if / case 发生在 Runner 执行阶段
+
+解析 .gitlab-ci.yml
+  ↓
+合并 extends
+  ↓
+启动 job
+  ↓
+执行 before_script（这里才能 if）
+
+所以：
+
+extends ❌ 不能判断
+
+script / before_script ✅ 可以判断变量
+
+
+
+---
+
+四、推荐你的小优化（更干净）
+
+用 case，避免 if 链
+
+case "$ENV" in
+  dev)
+    AWS_REGION=ap-southeast-2
+    EKS_CLUSTER_NAME=my-eks-dev
+    ;;
+  prod)
+    AWS_REGION=ap-southeast-2
+    EKS_CLUSTER_NAME=my-eks-prod
+    ;;
+  *)
+    echo "Unsupported ENV: $ENV"
+    exit 1
+    ;;
+esac
+
+
+---
+
+五、⚠️ 3 个常见坑（提前帮你避）
+
+1️⃣ 忘了 export
+
+export AWS_REGION EKS_CLUSTER_NAME
+
+否则后面的 script 用不到
+
+2️⃣ ENV 没传
+
+👉 模板里一定要校验，不然会连错集群（生产事故）
+
+3️⃣ prod/dev 权限一样
+
+👉 prod 建议单独 role（哪怕逻辑一样）
+
+
+---
+
+六、最终一句话总结
+
+> 你可以、也应该：
+在第一个被 extends 的公共模板里，根据 variable 写 if 判断
+
+
+
+这是 合法、推荐、可维护 的写法 👍
+
+
+---
+
+如果你愿意，下一步我可以帮你把：
+
+if 判断 ➜ 参数表（map）
+
+AWS key ➜ OIDC
+
+一个 job ➜ 支持多环境手动切换
+
+
+你现在是 单 job 多环境，还是 多 job 共用模板？
