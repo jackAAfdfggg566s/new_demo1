@@ -1,0 +1,144 @@
+明白了，你现在的情况是：
+
+你在 GitLab CI 的 脚本里运行了 AWS 初始化和 EKS 连接
+
+但是当这些逻辑放到 独立的 scripts/connect-eks.sh 里执行时，kubectl 报错 You must be logged in
+
+
+这其实是一个 环境变量 / 权限上下文 的问题，不是逻辑本身错误。
+
+
+---
+
+一、为什么放到脚本就可能没权限
+
+1. GitLab CI 的变量在 job 环境中生效
+
+直接在 before_script 里执行命令，变量 $AWS_ACCESS_KEY_ID 等都是当前 shell 的环境变量
+
+
+
+2. 调用独立 shell 脚本 时，如果脚本是用 sh ./scripts/connect-eks.sh 或者在子 shell 里执行：
+
+默认情况下，子 shell 会继承环境变量
+
+但是如果脚本里有 set -e 或 sudo 或者被 runner 以不同用户执行，可能会丢失环境变量
+
+
+
+3. kubeconfig 文件的权限
+
+update-kubeconfig 默认生成在 ~/.kube/config
+
+如果 runner 以不同用户执行，kubectl 无法访问，导致 “You must be logged in”
+
+
+
+
+
+---
+
+二、解决方案
+
+方案 1：保证脚本继承 job 环境变量
+
+before_script:
+  - export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+  - export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+  - export AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION
+  - ./scripts/connect-eks.sh
+
+> 确保不要用 sudo 或 sh -c 去执行脚本
+直接 ./scripts/connect-eks.sh 或 bash ./scripts/connect-eks.sh
+
+
+
+
+---
+
+方案 2：在脚本里使用参数或显式 export
+
+connect-eks.sh：
+
+#!/bin/bash
+set -e
+
+AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-$1}
+AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-$2}
+AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-$3}
+ENV=${ENV:-$4}
+
+export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
+
+case "$ENV" in
+  dev)
+    EKS_CLUSTER_NAME="my-eks-dev"
+    ;;
+  prod)
+    EKS_CLUSTER_NAME="my-eks-prod"
+    ;;
+  *)
+    echo "Invalid ENV"
+    exit 1
+    ;;
+esac
+
+aws eks update-kubeconfig --region "$AWS_DEFAULT_REGION" --name "$EKS_CLUSTER_NAME"
+kubectl config current-context
+
+调用时：
+
+before_script:
+  - ./scripts/connect-eks.sh $AWS_ACCESS_KEY_ID $AWS_SECRET_ACCESS_KEY $AWS_DEFAULT_REGION $ENV
+
+> 这样无论脚本在子 shell 执行还是不同用户，都能拿到凭证
+
+
+
+
+---
+
+方案 3：指定 kubeconfig 路径（避免权限问题）
+
+export KUBECONFIG=$CI_PROJECT_DIR/.kube/config
+mkdir -p $(dirname $KUBECONFIG)
+aws eks update-kubeconfig --region "$AWS_DEFAULT_REGION" --name "$EKS_CLUSTER_NAME" --kubeconfig $KUBECONFIG
+
+然后后续 kubectl 命令都加：
+
+kubectl --kubeconfig $KUBECONFIG get ns
+
+> 这样不会依赖 runner 用户主目录权限，也避免不同 shell 丢失权限问题
+
+
+
+
+---
+
+三、总结
+
+1. 不要用 sudo / sh -c 执行脚本
+
+
+2. 保证脚本继承 job 环境变量（export 或参数传入）
+
+
+3. 最好指定 kubeconfig 路径到项目目录，避免权限问题
+
+
+
+
+---
+
+我可以帮你写一个 完整可复用的 GitLab CI + connect-eks.sh 示例，
+
+多环境可用
+
+deploy job 自己的 before_script 可以保留
+
+kubeconfig 权限问题解决
+
+不再报 You must be logged in
+
+
+你希望我直接写吗？
