@@ -1,0 +1,181 @@
+这是 GitLab Agent（连接不同 EKS 集群）+ 多环境 + 多 job 场景里最常见、也最容易写乱的地方。给你一个实战可落地、不重复代码的做法，从「最推荐」到「进阶」。
+
+
+---
+
+✅ 最推荐方案：用 extends + 公共模板 + 环境变量驱动
+
+核心思想一句话：
+
+> 所有 job 逻辑只写一次，通过变量切换不同 EKS / Agent / kube-context
+
+
+
+
+---
+
+一、定义一个「公共 Job 模板」
+
+只写 一次 kubectl / helm / eks 操作逻辑
+
+.k8s_job_template:
+  image: bitnami/kubectl:latest
+  stage: deploy
+  variables:
+    KUBE_NAMESPACE: default
+  script:
+    - echo "Deploy to $ENV_NAME"
+    - kubectl config use-context "$KUBE_CONTEXT"
+    - kubectl get ns
+    - kubectl apply -f k8s/
+
+👉 这里完全不关心是哪个 EKS
+
+
+---
+
+二、定义「环境专属变量模板」
+
+每个 EKS / Agent 只定义 变量，不写脚本
+
+🟦 EKS A（dev）
+
+.eks_dev_vars:
+  variables:
+    ENV_NAME: dev
+    KUBE_CONTEXT: agent:my-group/my-project:eks-dev
+
+🟩 EKS B（prod）
+
+.eks_prod_vars:
+  variables:
+    ENV_NAME: prod
+    KUBE_CONTEXT: agent:my-group/my-project:eks-prod
+
+> ⚠️ agent:xxx 是 GitLab Agent 标准写法
+
+
+
+
+---
+
+三、真正的 Job：组合 extends（不重复代码）
+
+deploy_dev:
+  extends:
+    - .k8s_job_template
+    - .eks_dev_vars
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+
+deploy_prod:
+  extends:
+    - .k8s_job_template
+    - .eks_prod_vars
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+🎯 效果：
+
+kubectl 逻辑只写 1 次
+
+环境差异只在 variables
+
+任意增加 job 都是“拼积木”
+
+
+
+---
+
+四、很多 job 怎么办？（scale 到 20+ job）
+
+你可以这样：
+
+.deploy_service:
+  extends: .k8s_job_template
+  script:
+    - kubectl apply -f services/$SERVICE_NAME/
+
+deploy_api_dev:
+  extends:
+    - .deploy_service
+    - .eks_dev_vars
+  variables:
+    SERVICE_NAME: api
+
+deploy_web_prod:
+  extends:
+    - .deploy_service
+    - .eks_prod_vars
+  variables:
+    SERVICE_NAME: web
+
+
+---
+
+五、进阶：用 matrix 一次生成多环境 job（可选）
+
+如果你真的 job 爆炸：
+
+deploy:
+  extends: .k8s_job_template
+  parallel:
+    matrix:
+      - ENV_NAME: dev
+        KUBE_CONTEXT: agent:my-group/my-project:eks-dev
+      - ENV_NAME: prod
+        KUBE_CONTEXT: agent:my-group/my-project:eks-prod
+
+⚠️ 考试/生产一般还是分 job 比较安全
+
+
+---
+
+六、⚠️ 常见错误（你可能踩过）
+
+❌ 错误 1：在 script 里写 if 判断环境
+
+👉 可读性差 + 不可维护
+
+❌ 错误 2：每个 job copy kubectl
+
+👉 灾难级重复
+
+❌ 错误 3：用 include 但不抽变量
+
+👉 换环境还是要改脚本
+
+
+---
+
+七、我建议你的最终结构
+
+.gitlab-ci.yml
+├── .k8s_job_template
+├── .eks_dev_vars
+├── .eks_prod_vars
+├── deploy_api_dev
+├── deploy_api_prod
+├── deploy_web_dev
+└── deploy_web_prod
+
+
+---
+
+如果你愿意，我可以：
+
+🔧 直接帮你重构现有 .gitlab-ci.yml
+
+🔍 针对 GitLab Agent + EKS context 写最佳实践
+
+🧠 告诉你什么时候用 extends，什么时候用 reference
+
+
+你现在是：
+
+一个 repo 部署多个服务？
+
+还是多个 repo 共用一个 EKS？
+
+
+把现有结构贴一小段出来，我可以直接给你改。
