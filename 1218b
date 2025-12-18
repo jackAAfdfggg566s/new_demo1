@@ -1,0 +1,163 @@
+可以，而且非常适合用 extends。
+你这个场景本质是：同一套 kubectl/helm 逻辑，只是 aws eks update-kubeconfig 的参数不同 ——这正是 extends + 变量的用武之地。
+
+下面给你一个标准、稳定、考试/生产都安全的写法。
+
+
+---
+
+一、核心原则（先记住这 3 条）
+
+1. aws eks update-kubeconfig 只写一次
+
+
+2. 不同环境只通过变量控制
+
+
+3. Job 只负责“组合模板”，不写逻辑
+
+
+
+
+---
+
+二、公共模板（只写一次 update-kubeconfig）
+
+.eks_base:
+  image: amazon/aws-cli:2
+  stage: deploy
+  before_script:
+    - aws --version
+    - aws eks update-kubeconfig \
+        --region "$AWS_REGION" \
+        --name "$EKS_CLUSTER_NAME"
+    - kubectl config current-context
+  script:
+    - kubectl get ns
+
+👉 这里完全不知道是 dev / prod
+
+
+---
+
+三、环境变量模板（重点）
+
+🟦 DEV 环境
+
+.eks_dev:
+  variables:
+    AWS_REGION: ap-southeast-2
+    EKS_CLUSTER_NAME: my-eks-dev
+
+🟥 PROD 环境
+
+.eks_prod:
+  variables:
+    AWS_REGION: ap-southeast-2
+    EKS_CLUSTER_NAME: my-eks-prod
+
+
+---
+
+四、真正的 Job（只用 extends 组合）
+
+deploy_dev:
+  extends:
+    - .eks_base
+    - .eks_dev
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+
+deploy_prod:
+  extends:
+    - .eks_base
+    - .eks_prod
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+✅ 没有任何重复代码
+✅ 换环境 = 换变量
+✅ 可无限加 job
+
+
+---
+
+五、如果你有很多服务（强烈推荐）
+
+.deploy_service:
+  extends: .eks_base
+  script:
+    - kubectl apply -f k8s/$SERVICE/
+
+deploy_api_dev:
+  extends:
+    - .deploy_service
+    - .eks_dev
+  variables:
+    SERVICE: api
+
+deploy_web_prod:
+  extends:
+    - .deploy_service
+    - .eks_prod
+  variables:
+    SERVICE: web
+
+
+---
+
+六、⚠️ 必须注意的 3 个坑（很关键）
+
+1️⃣ 不要把 update-kubeconfig 写在多个 job
+
+👉 kubeconfig 会覆盖，维护灾难
+
+2️⃣ 不要用 if 判断环境
+
+if [ "$ENV" = "dev" ]; then ...
+
+❌ 可读性差 + 难扩展
+
+3️⃣ CI 里不要用默认 AWS 凭证
+
+必须用：
+
+GitLab CI variables
+或
+
+AWS OIDC（更推荐）
+
+
+
+---
+
+七、如果你同时用 GitLab Agent + update-kubeconfig？
+
+⚠️ 二选一，别混用
+
+方式	适合
+
+aws eks update-kubeconfig	你现在这种
+GitLab Agent	多集群长期连接
+
+
+如果你愿意，我可以帮你 迁移成 Agent 模式（更干净）
+
+
+---
+
+八、结论（直接回答你）
+
+> 是的，完全可以，而且这是最佳实践
+
+
+
+✔️ extends 用来复用逻辑
+✔️ 变量控制不同 EKS
+✔️ Job 只做组合
+
+
+---
+
+如果你愿意，把你现在的 **一小段 .gitlab-ci.yml（哪怕打码）**贴出来
+我可以 直接帮你重构成最优版本。
