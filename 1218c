@@ -1,0 +1,159 @@
+明白了 👍
+你是想 在 job 里根据 variable 做判断（shell / before_script 里），而不是用 rules 控制 job 是否运行。
+这个在 EKS + 多环境复用 场景是完全可以、而且很常见的。
+
+下面给你 正确、可维护、不踩坑 的做法。
+
+
+---
+
+一、核心结论（先给答案）
+
+✅ 可以根据 variable 判断
+✅ 逻辑放在「公共模板」里
+❌ 不要在每个 job 里写 if
+
+
+---
+
+二、推荐结构（只写一次判断）
+
+1️⃣ 公共模板：在 before_script 里判断变量
+
+.eks_base:
+  image: amazon/aws-cli:2
+  stage: deploy
+  before_script:
+    - |
+      echo "ENV = $ENV"
+
+      if [ "$ENV" = "dev" ]; then
+        export AWS_REGION="ap-southeast-2"
+        export EKS_CLUSTER_NAME="my-eks-dev"
+      elif [ "$ENV" = "prod" ]; then
+        export AWS_REGION="ap-southeast-2"
+        export EKS_CLUSTER_NAME="my-eks-prod"
+      else
+        echo "Unknown ENV: $ENV"
+        exit 1
+      fi
+
+      aws eks update-kubeconfig \
+        --region "$AWS_REGION" \
+        --name "$EKS_CLUSTER_NAME"
+
+      kubectl config current-context
+  script:
+    - kubectl get ns
+
+👉 判断逻辑集中在一个地方
+
+
+---
+
+2️⃣ Job 只传变量（不写逻辑）
+
+deploy_dev:
+  extends: .eks_base
+  variables:
+    ENV: dev
+
+deploy_prod:
+  extends: .eks_base
+  variables:
+    ENV: prod
+
+
+---
+
+三、如果你环境多于 2 个（更优雅）
+
+用 case，比 if 好维护
+
+case "$ENV" in
+  dev)
+    AWS_REGION="ap-southeast-2"
+    EKS_CLUSTER_NAME="my-eks-dev"
+    ;;
+  staging)
+    AWS_REGION="ap-southeast-2"
+    EKS_CLUSTER_NAME="my-eks-staging"
+    ;;
+  prod)
+    AWS_REGION="ap-southeast-2"
+    EKS_CLUSTER_NAME="my-eks-prod"
+    ;;
+  *)
+    echo "Unsupported ENV: $ENV"
+    exit 1
+    ;;
+esac
+
+
+---
+
+四、进阶：变量 → map（最干净写法）
+
+如果你讨厌 if / case 👇
+
+.eks_base:
+  before_script:
+    - |
+      declare -A CLUSTER_MAP=(
+        [dev]="ap-southeast-2 my-eks-dev"
+        [prod]="ap-southeast-2 my-eks-prod"
+      )
+
+      if [ -z "${CLUSTER_MAP[$ENV]}" ]; then
+        echo "Invalid ENV: $ENV"
+        exit 1
+      fi
+
+      read AWS_REGION EKS_CLUSTER_NAME <<< "${CLUSTER_MAP[$ENV]}"
+
+      aws eks update-kubeconfig \
+        --region "$AWS_REGION" \
+        --name "$EKS_CLUSTER_NAME"
+
+
+---
+
+五、什么时候「变量判断」是对的？
+
+✔️ 环境共享同一套 job
+✔️ 只是参数不同（cluster / region / namespace）
+✔️ 你想一个 job 跑多个环境（手动触发）
+
+
+---
+
+六、什么时候不该这样？
+
+❌ prod / dev 流程差异很大
+❌ 权限完全不同
+❌ 需要不同 approval（这时用 rules）
+
+
+---
+
+七、总结一句话
+
+> extends 复用结构，variable 决定行为，判断逻辑集中在模板
+
+
+
+你这个需求是 完全正确的用法 👍
+
+
+---
+
+如果你愿意，我可以下一步帮你：
+
+🔐 把 AWS 凭证改成 OIDC（不存 key）
+
+🧹 把判断逻辑抽成 单独 shell 脚本
+
+🧠 评估你现在用 variable 判断是不是比 rules 更合适
+
+
+你现在是 手动触发传 ENV，还是 pipeline variable 默认值？
