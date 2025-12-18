@@ -1,0 +1,103 @@
+在脚本里用 kubectl 安全检查 namespace 下有没有 Pod，关键是 避免“没有资源”导致脚本报错或退出。下面给你几种最稳妥、最常用的写法，按推荐顺序来 👍
+
+
+---
+
+✅ 推荐方案 1（最简单、最稳）
+
+判断有没有 Pod（不看状态）
+
+if [ -z "$(kubectl get pod -n my-namespace --no-headers 2>/dev/null)" ]; then
+  echo "❌ namespace 中没有 Pod"
+else
+  echo "✅ namespace 中有 Pod"
+fi
+
+为什么好
+
+--no-headers：避免表头干扰
+
+-z：字符串为空 = 没有 Pod
+
+2>/dev/null：namespace 不存在也不会报错
+
+
+👉 最常用，90% 场景都够了
+
+
+---
+
+✅ 推荐方案 2（只判断 Running 的 Pod）
+
+如果你只关心 Running 的 Pod：
+
+if [ -z "$(kubectl get pod -n my-namespace --field-selector=status.phase=Running --no-headers 2>/dev/null)" ]; then
+  echo "❌ 没有 Running Pod"
+else
+  echo "✅ 有 Running Pod"
+fi
+
+
+---
+
+✅ 推荐方案 3（数量判断，适合写逻辑）
+
+POD_COUNT=$(kubectl get pod -n my-namespace --no-headers 2>/dev/null | wc -l)
+
+if [ "$POD_COUNT" -eq 0 ]; then
+  echo "❌ 没有 Pod"
+else
+  echo "✅ 有 $POD_COUNT 个 Pod"
+fi
+
+适合：
+
+scale / rollout 前检查
+
+打日志用
+
+
+
+---
+
+⚠️ 不推荐的写法（容易踩坑）
+
+kubectl get pod -n my-namespace
+
+❌ 问题：
+
+没 Pod 会显示 No resources found
+
+在 set -e 或 CI 中可能直接失败
+
+
+
+---
+
+✅ 如果你在 set -e 脚本里（重要）
+
+必须这样包一层：
+
+PODS=$(kubectl get pod -n my-namespace --no-headers 2>/dev/null || true)
+
+if [ -z "$PODS" ]; then
+  echo "❌ 没有 Pod"
+fi
+
+否则脚本会直接退出。
+
+
+---
+
+📌 总结（直接记这一句）
+
+> 判断 namespace 下是否有 Pod，最稳的一句：
+
+
+
+kubectl get pod -n ns --no-headers 2>/dev/null | grep -q . || echo "no pod"
+
+
+---
+
+如果你愿意，我可以按你现在的脚本（GitLab CI / sh / bash）直接帮你改成完整可用版本，贴一小段出来就行。
