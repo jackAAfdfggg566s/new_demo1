@@ -1,0 +1,118 @@
+这个就是 Aurora 集群 场景了 👍
+目标：1 个 writer + 2 个 reader，分别输出各自的 AZ
+
+下面给你 最实用、可直接用在脚本里的几种方式。
+
+
+---
+
+一、一次性列出 Writer / Reader + AZ（最推荐 ✅）
+
+aws rds describe-db-instances \
+  --query 'DBInstances[?DBClusterIdentifier==`my-aurora-cluster`].[DBInstanceIdentifier,DBInstanceRole,AvailabilityZone]' \
+  --output table
+
+输出示例：
+
+------------------------------------------------------
+|            DescribeDBInstances                     |
++----------------------+---------+------------------+
+| aurora-db-writer-1  | WRITER  | ap-southeast-2a |
+| aurora-db-reader-1  | READER  | ap-southeast-2b |
+| aurora-db-reader-2  | READER  | ap-southeast-2c |
++----------------------+---------+------------------+
+
+> ✔ Aurora 真正区分 writer / reader 的字段是 DBInstanceRole
+
+
+
+
+---
+
+二、脚本里分别拿 Writer / Reader 的 AZ（自动化常用）
+
+1️⃣ Writer AZ
+
+WRITER_AZ=$(aws rds describe-db-instances \
+  --query 'DBInstances[?DBClusterIdentifier==`my-aurora-cluster` && DBInstanceRole==`WRITER`].AvailabilityZone' \
+  --output text)
+
+echo "Writer AZ: $WRITER_AZ"
+
+
+---
+
+2️⃣ Reader AZ（2 个，会返回 2 行）
+
+READER_AZS=$(aws rds describe-db-instances \
+  --query 'DBInstances[?DBClusterIdentifier==`my-aurora-cluster` && DBInstanceRole==`READER`].AvailabilityZone' \
+  --output text)
+
+echo "Reader AZs: $READER_AZS"
+
+输出：
+
+Reader AZs: ap-southeast-2b ap-southeast-2c
+
+
+---
+
+三、分别输出（writer / reader1 / reader2）
+
+如果你明确知道有 2 个 reader：
+
+read WRITER_AZ <<< $(aws rds describe-db-instances \
+  --query 'DBInstances[?DBClusterIdentifier==`my-aurora-cluster` && DBInstanceRole==`WRITER`].AvailabilityZone' \
+  --output text)
+
+read READER1_AZ READER2_AZ <<< $(aws rds describe-db-instances \
+  --query 'DBInstances[?DBClusterIdentifier==`my-aurora-cluster` && DBInstanceRole==`READER`].AvailabilityZone' \
+  --output text)
+
+echo "Writer  AZ : $WRITER_AZ"
+echo "Reader1 AZ : $READER1_AZ"
+echo "Reader2 AZ : $READER2_AZ"
+
+
+---
+
+四、带实例名一起输出（最清晰，适合日志）
+
+aws rds describe-db-instances \
+  --query 'DBInstances[?DBClusterIdentifier==`my-aurora-cluster`].{Instance:DBInstanceIdentifier,Role:DBInstanceRole,AZ:AvailabilityZone}' \
+  --output json
+
+
+---
+
+五、常见坑提醒 ⚠️
+
+1. Aurora 没有 SecondaryAvailabilityZone
+
+
+2. Writer / Reader 随 failover 会变
+
+
+3. 一定用 DBInstanceRole，不要靠名字猜
+
+
+
+
+---
+
+六、你这个需求下一步通常是 👇
+
+我猜你后面可能要：
+
+❓ 判断 writer 是否在 2a
+
+❓ 避免 EKS Pod 跟 writer 同 AZ
+
+❓ failover 前后 对比 AZ 是否变化
+
+❓ 根据 AZ 找 subnet / nodegroup
+
+
+你直接说一句
+👉「我要拿 writer / reader AZ 去做什么」
+我帮你把 完整脚本 + 判断逻辑 一次写好。
