@@ -1,0 +1,86 @@
+可以的，RDS 根据实例名（DB Instance Identifier）获取 AZ，用 AWS CLI 一行就行 👍
+
+
+---
+
+一、普通 RDS 实例（非 Aurora）
+
+aws rds describe-db-instances \
+  --db-instance-identifier my-db-instance \
+  --query 'DBInstances[0].AvailabilityZone' \
+  --output text
+
+🔹 返回示例：
+
+ap-southeast-2a
+
+
+---
+
+二、同时拿实例名 + AZ（方便脚本用）
+
+aws rds describe-db-instances \
+  --db-instance-identifier my-db-instance \
+  --query 'DBInstances[0].[DBInstanceIdentifier,AvailabilityZone]' \
+  --output text
+
+输出：
+
+my-db-instance   ap-southeast-2a
+
+
+---
+
+三、列出所有 RDS 实例及所在 AZ
+
+aws rds describe-db-instances \
+  --query 'DBInstances[].{Name:DBInstanceIdentifier,AZ:AvailabilityZone}' \
+  --output table
+
+
+---
+
+四、Aurora（Cluster）注意点 ⚠️
+
+Aurora 没有单一 AZ，而是跨多个 AZ：
+
+aws rds describe-db-clusters \
+  --db-cluster-identifier my-aurora-cluster \
+  --query 'DBClusters[0].AvailabilityZones' \
+  --output text
+
+输出示例：
+
+ap-southeast-2a ap-southeast-2b ap-southeast-2c
+
+如果你想看 Aurora 集群里某个具体 instance 的 AZ：
+
+aws rds describe-db-instances \
+  --query 'DBInstances[?DBClusterIdentifier==`my-aurora-cluster`].[DBInstanceIdentifier,AvailabilityZone]' \
+  --output table
+
+
+---
+
+五、Shell 脚本中常用写法
+
+AZ=$(aws rds describe-db-instances \
+  --db-instance-identifier my-db-instance \
+  --query 'DBInstances[0].AvailabilityZone' \
+  --output text)
+
+echo "AZ is $AZ"
+
+
+---
+
+如果你下一步是：
+
+👉 根据 AZ 找 subnet
+
+👉 和 EKS / EC2 的 AZ 对齐
+
+👉 判断是否在 2a / 2b 做逻辑分支
+
+
+直接说你的使用场景，我帮你把整段脚本写完整。
