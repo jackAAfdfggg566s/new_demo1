@@ -1,0 +1,68 @@
+可以的，这个在 Aurora RDS 里很常见。下面给你一个实用、可直接用的 AWS CLI 方法，根据 cluster name（DB cluster identifier）获取主库 / 从库各自所在的 AZ。
+一、核心思路（先让你不迷糊）
+Cluster 本身没有主从 AZ
+主 / 从是在 DB instances 上
+逻辑是：
+用 cluster name 找到所有 DB instances
+判断哪个是 Writer（主）
+读取每个 instance 的 AvailabilityZone
+二、一步到位（推荐用法）
+✅ 命令：根据 cluster name 获取主从 + AZ
+复制代码
+Bash
+aws rds describe-db-instances \
+  --query "DBInstances[?DBClusterIdentifier=='your-cluster-name'].{\
+Role:DBInstanceRole,\
+Instance:DBInstanceIdentifier,\
+AZ:AvailabilityZone}" \
+  --output table
+📌 输出示例
+复制代码
+
+----------------------------------------
+|        DescribeDBInstances            |
++---------+----------------+------------+
+| Role    | Instance       | AZ         |
++---------+----------------+------------+
+| WRITER  | aurora-1       | ap-southeast-2a |
+| READER  | aurora-2       | ap-southeast-2b |
+| READER  | aurora-3       | ap-southeast-2c |
++---------+----------------+------------+
+✔️ 一眼就能看出 哪个是主、哪个是从、各自在哪个 AZ
+三、如果你只想单独拿主 / 从
+🔹 只拿主库 AZ
+复制代码
+Bash
+aws rds describe-db-instances \
+  --query "DBInstances[?DBClusterIdentifier=='your-cluster-name' && DBInstanceRole=='WRITER'].AvailabilityZone" \
+  --output text
+🔹 只拿从库 AZ（多个）
+复制代码
+Bash
+aws rds describe-db-instances \
+  --query "DBInstances[?DBClusterIdentifier=='your-cluster-name' && DBInstanceRole=='READER'].AvailabilityZone" \
+  --output text
+四、Shell 脚本可直接用（你之前经常写 sh）
+复制代码
+Bash
+CLUSTER_NAME="your-cluster-name"
+
+aws rds describe-db-instances \
+  --query "DBInstances[?DBClusterIdentifier=='${CLUSTER_NAME}'].{Role:DBInstanceRole,AZ:AvailabilityZone}" \
+  --output text
+输出：
+复制代码
+
+WRITER  ap-southeast-2a
+READER  ap-southeast-2b
+READER  ap-southeast-2c
+五、⚠️ 常见坑（提前帮你避）
+❌ describe-db-clusters 拿不到主从 AZ
+❌ 用 MultiAZ 判断主从（那是非 Aurora 的概念）
+✅ Aurora 一定看 DBInstanceRole
+如果你下一步是想做：
+👉 根据 AZ 找 subnet id
+👉 判断主是否在 2a
+👉 自动给 EC2 / RDS 打 tag
+👉 和你之前的 for 循环脚本合并
+直接把需求甩我，我按你现有脚本风格帮你拼完整 👍
