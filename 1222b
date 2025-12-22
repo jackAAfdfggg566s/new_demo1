@@ -1,0 +1,51 @@
+给你 最简、最准、生产可用的一条方案👇
+只列出某个 Aurora cluster 下「WRITER 实例的 AZ」
+✅ 一条命令（推荐，100% 准）
+复制代码
+Bash
+CLUSTER=your-cluster-name
+
+aws rds describe-db-instances \
+  --query "DBInstances[?DBInstanceIdentifier==\`$(aws rds describe-db-clusters \
+    --db-cluster-identifier $CLUSTER \
+    --query 'DBClusters[0].DBClusterMembers[?IsClusterWriter==`true`].DBInstanceIdentifier' \
+    --output text)\`].[DBInstanceIdentifier,AvailabilityZone]" \
+  --output table
+输出示例
+复制代码
+
+-----------------------------------------
+|          DescribeDBInstances           |
++----------------------+-----------------+
+|  mydb-instance-1     | ap-southeast-2a |
++----------------------+-----------------+
+🧠 原理（你这个问题的关键点）
+WRITER 是 cluster 级概念
+describe-db-instances ❌ 不可靠
+必须先从 describe-db-clusters 找 IsClusterWriter=true
+再用 instance API 查 AZ
+这条命令正是 官方推荐链路。
+🧩 如果你想要「只输出 AZ」（不给实例名）
+复制代码
+Bash
+CLUSTER=your-cluster-name
+
+aws rds describe-db-instances \
+  --query "DBInstances[?DBInstanceIdentifier==\`$(aws rds describe-db-clusters \
+    --db-cluster-identifier $CLUSTER \
+    --query 'DBClusters[0].DBClusterMembers[?IsClusterWriter==`true`].DBInstanceIdentifier' \
+    --output text)\`].AvailabilityZone" \
+  --output text
+输出：
+复制代码
+
+ap-southeast-2a
+⚠️ 注意事项（很重要）
+只适用于 Aurora
+Failover 后这条命令 自动返回新 writer
+不依赖 DBInstanceRole（避免你刚才那个坑）
+如果你下一步是要：
+👉 writer AZ → subnet id
+👉 writer AZ → scale / stop 某些 pod
+👉 writer / reader 分别输出 AZ
+直接说目标，我帮你改成 一条无 for-loop 的命令。
