@@ -1,0 +1,95 @@
+RDS DB instance role = WRITER 过滤不出来，通常不是“权限问题”，而是你用的维度/接口不对。下面按最常见 → 较少见给你一套排查顺序，照着一步步来就能定位。
+一、先确认一个关键事实（最容易踩坑）
+👉 只有 Aurora 才有 WRITER / READER 角色
+Aurora（MySQL / PostgreSQL）
+✅ 有 DBInstanceRole = WRITER | READER
+普通 RDS（MySQL / Postgres / SQL Server / Oracle）
+❌ 没有 WRITER 概念，只有一个主实例 + 只读副本
+→ 你怎么 filter 都不会有 WRITER
+👉 先确认是不是 Aurora
+复制代码
+Bash
+aws rds describe-db-instances \
+  --db-instance-identifier your-instance-id \
+  --query 'DBInstances[0].Engine'
+如果不是 aurora-*，那 WRITER 本身就不存在，这是“根因”。
+二、Aurora 情况下，90% 的问题在这里
+❌ 错误方式（最常见）
+复制代码
+Bash
+aws rds describe-db-instances \
+  --filters Name=db-instance-role,Values=WRITER
+👉 这个 filter 对 describe-db-instances 不生效
+AWS CLI 根本不会按这个字段过滤
+三、✅ 正确的排查 / 获取 WRITER 的方法（推荐）
+方法 1（最稳）：从 DB Cluster 下手
+WRITER 是 cluster 级别概念
+复制代码
+Bash
+aws rds describe-db-clusters \
+  --db-cluster-identifier your-cluster-name \
+  --query 'DBClusters[0].DBClusterMembers'
+你会看到类似：
+复制代码
+Json
+[
+  {
+    "DBInstanceIdentifier": "xxx-1",
+    "IsClusterWriter": true
+  },
+  {
+    "DBInstanceIdentifier": "xxx-2",
+    "IsClusterWriter": false
+  }
+]
+👉 IsClusterWriter = true 的那个就是 WRITER
+方法 2：describe-db-instances + JMESPath 过滤（CLI 推荐）
+复制代码
+Bash
+aws rds describe-db-instances \
+  --query 'DBInstances[?DBClusterIdentifier!=null].[DBInstanceIdentifier,DBClusterIdentifier,DBInstanceRole,AvailabilityZone]'
+如果是 Aurora，DBInstanceRole 会显示：
+WRITER
+READER
+⚠️ 注意：不能用 --filters，只能用 --query
+四、如果 DBInstanceRole 是空的（也很常见）
+排查点：
+实例不是 Aurora
+你查的是只读副本
+region 不对
+cluster 已被 failover，但你缓存了旧数据
+快速验证 region：
+复制代码
+Bash
+aws configure get region
+或者显式指定：
+复制代码
+Bash
+aws rds describe-db-clusters --region ap-southeast-2
+五、Failover 场景特别容易误判
+如果刚发生过 failover：
+Writer 已切换
+你查的还是旧实例名
+Console 和 CLI 显示不一致（几分钟内）
+👉 永远以 describe-db-clusters 为准
+六、给你一个「一行直接拿 WRITER 实例名」的实战命令
+复制代码
+Bash
+aws rds describe-db-clusters \
+  --db-cluster-identifier your-cluster-name \
+  --query 'DBClusters[0].DBClusterMembers[?IsClusterWriter==`true`].DBInstanceIdentifier' \
+  --output text
+七、如果你是想做这些事（提前说，避免走弯路）
+你之前问过：
+根据 WRITER / READER 找 AZ
+根据 WRITER 找 subnet
+根据 WRITER 做运维/脚本判断
+👉 正确链路一定是：
+Cluster → Writer Instance → AZ → Subnet
+而不是反过来 filter instance
+八、你可以直接把下面三点发我，我可以帮你精确定位
+不用截图，直接文本即可：
+Engine（aurora-mysql / mysql / postgres …）
+你现在用的 CLI 命令
+describe-db-clusters 有没有输出
+我可以直接帮你改成 一条能跑通的命令。
