@@ -1,0 +1,73 @@
+明白 👍
+你现在是 Aurora cluster 有 1 个 writer + 2 个 reader，目标是：
+分别获取 2 个 reader 的 AZ，并记录到变量里（shell 脚本可用）
+下面给你 两种最实用写法，按你平时写脚本的风格选。
+✅ 方式一（最推荐）：一次性取出两个 reader AZ → 变量数组
+不写 for，最干净
+复制代码
+Bash
+CLUSTER=your-cluster-name
+
+read -r READER1_AZ READER2_AZ <<< "$(
+  aws rds describe-db-clusters \
+    --db-cluster-identifier $CLUSTER \
+    --query 'DBClusters[0].DBClusterMembers[?IsClusterWriter==`false`].DBInstanceIdentifier' \
+    --output text \
+  | xargs -n1 aws rds describe-db-instances \
+      --query 'DBInstances[0].AvailabilityZone' \
+      --output text
+)"
+结果
+复制代码
+Bash
+echo $READER1_AZ
+echo $READER2_AZ
+✅ 方式二（可读性最好）：显式 for 循环（更稳）
+复制代码
+Bash
+CLUSTER=your-cluster-name
+
+i=1
+for inst in $(aws rds describe-db-clusters \
+  --db-cluster-identifier $CLUSTER \
+  --query 'DBClusters[0].DBClusterMembers[?IsClusterWriter==`false`].DBInstanceIdentifier' \
+  --output text); do
+
+  az=$(aws rds describe-db-instances \
+    --db-instance-identifier $inst \
+    --query 'DBInstances[0].AvailabilityZone' \
+    --output text)
+
+  eval READER${i}_AZ=$az
+  i=$((i+1))
+done
+使用
+复制代码
+Bash
+echo $READER1_AZ
+echo $READER2_AZ
+🧠 如果你其实想要「reader 实例名 + AZ」一起存
+复制代码
+Bash
+declare -A READER_AZ
+
+for inst in $(aws rds describe-db-clusters \
+  --db-cluster-identifier $CLUSTER \
+  --query 'DBClusters[0].DBClusterMembers[?IsClusterWriter==`false`].DBInstanceIdentifier' \
+  --output text); do
+
+  READER_AZ[$inst]=$(aws rds describe-db-instances \
+    --db-instance-identifier $inst \
+    --query 'DBInstances[0].AvailabilityZone' \
+    --output text)
+done
+⚠️ 注意点（你之前踩过的坑）
+reader 数量 不是固定 2 个（脚本里别写死）
+DBInstanceRole ❌ 不可靠
+永远以 IsClusterWriter 为准
+Failover 后脚本自动生效
+如果你下一步是：
+👉 按 reader AZ 停 pod
+👉 排除 writer AZ
+👉 AZ → subnet id
+告诉我你下一步要干嘛，我直接帮你接着写下去。
