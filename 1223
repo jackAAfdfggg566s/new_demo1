@@ -1,0 +1,76 @@
+在 EKS 里你看到的这两种其实是 两个不同层级的 AZ 标识，很多人都会被绕晕 👇
+我按「你现在在 CLI / 运维里怎么拿」来讲。
+一、你看到的两种 AZ 是什么关系
+1️⃣ ap-southeast-2b
+这是账号可见的 AZ 名称
+不同 AWS 账号里，2a / 2b / 2c 映射可能不一样
+EKS / EC2 / Subnet 默认显示的就是这个
+2️⃣ apse2-az1
+这是 AWS 全局唯一的 AZ ID
+所有账号里都一样
+用来解决 “你账号的 2b ≠ 我账号的 2b” 的问题
+👉 对应关系是：
+复制代码
+
+ap-southeast-2b  <-->  apse2-az1
+二、用 AWS CLI 获取「AZ 名 ↔ AZ ID」映射（核心）
+✅ 最标准、推荐的命令
+复制代码
+Bash
+aws ec2 describe-availability-zones \
+  --region ap-southeast-2 \
+  --query 'AvailabilityZones[].{AZName:ZoneName, AZId:ZoneId}'
+  --output table
+示例输出
+复制代码
+
+--------------------------------
+|  DescribeAvailabilityZones   |
++--------------+---------------+
+|   AZName     |     AZId      |
++--------------+---------------+
+| ap-southeast-2a | apse2-az3 |
+| ap-southeast-2b | apse2-az1 |
+| ap-southeast-2c | apse2-az2 |
++--------------+---------------+
+👉 你就能清楚看到
+2b 对应 apse2-az1
+三、从 EKS Node / EC2 直接看到 AZ ID（你排查时很有用）
+1️⃣ 通过 Node 对应的 EC2 实例
+复制代码
+Bash
+aws ec2 describe-instances \
+  --instance-ids i-xxxx \
+  --query 'Reservations[].Instances[].Placement.{AZ:AvailabilityZone, AZId:AvailabilityZoneId}'
+  --output table
+输出类似：
+复制代码
+
+AZ               AZId
+ap-southeast-2b  apse2-az1
+四、kubectl 里怎么看（EKS 常用）
+Node 上的 label（只有 AZ 名，没有 AZ ID）
+复制代码
+Bash
+kubectl get nodes --show-labels | grep topology.kubernetes.io/zone
+常见 label：
+复制代码
+
+topology.kubernetes.io/zone=ap-southeast-2b
+⚠️ Kubernetes 不会直接暴露 apse2-az1 👉 AZ ID 只能通过 AWS CLI / EC2 API 查
+五、运维里常见正确做法（很重要）
+如果你现在做的是：
+EKS 跨 AZ 调度
+对齐 RDS / EBS / Subnet / AZ
+多账号对齐架构
+✅ 推荐策略
+K8s / EKS 层：用 ap-southeast-2b
+AWS 资源对齐 / 架构文档：用 apse2-az1
+很多大厂就是靠 AZ ID 来避免事故的。
+六、如果你现在的真实需求是👇
+你前面问过很多类似问题，我猜你可能是想做其中之一：
+✅ 找 EKS node 所在 AZ → 再找对应 subnet
+✅ 对齐 RDS writer / reader 和 EKS node 的 AZ
+✅ 脚本里判断 apse2-az1 是否等于某个 node
+如果你愿意，把你现在的 脚本目标 直接贴出来
+我可以帮你写一段 一条 CLI + jq/bash 就能跑通的版本 💪
