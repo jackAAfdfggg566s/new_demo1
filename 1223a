@@ -1,0 +1,83 @@
+这个情况很常见，而且不是你命令写错 👍
+结论先给你：
+AvailabilityZoneId 返回 None，通常是因为你用的 AWS CLI / API 版本较老，或者该字段在你当前返回里不存在。
+我一步一步帮你定位。
+一、为什么会是 None
+1️⃣ AvailabilityZoneId 是 后来才加的字段
+老版本 AWS CLI / botocore：
+Placement.AvailabilityZone ✅
+Placement.AvailabilityZoneId ❌（返回 null / none）
+👉 所以 字段存在于文档，不代表你当前 CLI 真支持
+二、先确认：是不是 CLI 版本问题（90% 的原因）
+查看版本
+复制代码
+Bash
+aws --version
+如果你看到类似：
+复制代码
+
+aws-cli/1.xx.xx
+👉 AWS CLI v1 基本都会拿不到 AvailabilityZoneId
+✅ 正确姿势
+请确保是 AWS CLI v2
+复制代码
+
+aws-cli/2.x.x
+如果你在公司服务器 / CI / container 里跑，基本十有八九是 v1
+三、即使 CLI 老，也有「稳定可用」的替代方案（推荐）
+👉 不要从 instance 拿 AZ ID 👉 从 AZ 映射表拿（最稳、最通用）
+✅ 正确 & 通吃写法
+复制代码
+Bash
+aws ec2 describe-availability-zones \
+  --region ap-southeast-2 \
+  --query 'AvailabilityZones[].{AZ:ZoneName, AZId:ZoneId}'
+  --output table
+这个命令：
+不依赖实例
+CLI v1 / v2 都能用
+一定有 ZoneId
+四、把 EC2 / EKS Node 的 AZ 映射成 AZ ID（实战写法）
+Step 1：拿 Node 的 AZ（K8s 层）
+复制代码
+Bash
+kubectl get node <node-name> \
+  -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}'
+输出：
+复制代码
+
+ap-southeast-2b
+Step 2：用 AZ → AZ ID 映射
+复制代码
+Bash
+AZ=ap-southeast-2b
+
+aws ec2 describe-availability-zones \
+  --region ap-southeast-2 \
+  --query "AvailabilityZones[?ZoneName=='$AZ'].ZoneId" \
+  --output text
+输出：
+复制代码
+
+apse2-az1
+✅ 这才是生产里最稳的方式
+五、如果你一定要用 instance 查（不推荐）
+只有在 AWS CLI v2 + 新 botocore 才行：
+复制代码
+Bash
+aws ec2 describe-instances \
+  --instance-ids i-xxxx \
+  --query 'Reservations[].Instances[].Placement'
+你如果看到输出里 根本没有 AvailabilityZoneId 字段
+👉 那就 100% 是 CLI 版本问题，不是你操作问题
+六、我给你一句运维结论（很重要）
+❌ 不要指望从 EC2 / Node 直接拿 apse2-az1
+✅ 永远用 describe-availability-zones 做映射
+AWS 官方也是这么建议的，很多跨账号事故就是没这么干。
+如果你愿意，我可以直接帮你写一段 完整 bash：
+输入：EKS node name
+输出：
+复制代码
+
+node-name  ap-southeast-2b  apse2-az1
+你只要说一句：
