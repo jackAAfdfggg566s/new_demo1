@@ -1,0 +1,101 @@
+这是最关键、也是最多人第一次用这个 action 时的“恍然大悟点”。
+你这个问题本身就说明你已经理解到控制面 vs 数据面的差异了 👍
+我直接给你一个因果链条式解释。
+一句话结论（先记住）
+simulate-insufficient-instance-capacity 本身不会触发新 EC2。
+新 EC2 只会在“系统感知到容量不够”时才会被创建。
+所以：
+👉 有没有新 EC2，取决于你有没有制造“容量需求（capacity demand）”
+一、为什么“没 kill”就“不会新建”？
+EC2 / ASG / EKS 的铁律
+ASG / EKS 只在以下情况才会 launch 新实例：
+实例被终止 / 不健康
+DesiredCapacity ↑
+负载触发 scaling policy
+调度需要（EKS Pod Pending）
+而你这个 action：
+复制代码
+
+aws:ec2:simulate-insufficient-instance-capacity
+❌ 不 kill
+❌ 不标记 unhealthy
+❌ 不改 Desired
+👉 系统完全不知道“该扩容了”
+所以结果就是：
+什么都不会发生（这是“正确但容易被误解”的行为）
+二、那“正确用法”是什么？（核心）
+你必须 配合一个“扩容触发器”
+这个 action 只是 “扩容时拦截”，不是 “制造扩容”
+三、两种场景下，正确的触发方式
+场景 A：EC2（ASG）
+✅ 正确触发方式（选一个）
+方式 1️⃣：手动扩容（最简单、最可控）
+复制代码
+Text
+ASG DesiredCapacity: 4 → 6
+ASG 会尝试：
+launch 2 台新实例
+👉 此时 FIS action 生效
+方式 2️⃣：Alarm / Policy（真实）
+人为制造 CPU / QPS 压力
+CloudWatch alarm 触发 scale-out
+❌ 错误方式
+只跑 FIS
+不改 Desired
+不 kill
+👉 不会有任何新实例
+场景 B：EKS
+EKS 的“扩容触发器”是 Pod Pending
+正确流程
+启动 FIS（block capacity）
+制造调度压力：
+HPA scale replicas
+或 deploy 新 workload
+Pod Pending
+NodeGroup / ASG 尝试 launch node
+👉 FIS action 注入错误
+❌ 错误方式
+只跑 FIS
+不增 Pod
+不 drain node
+👉 Node 数不会变
+四、用一句话画清因果关系
+复制代码
+
+[业务压力 / Desired ↑ / Pod Pending]
+            ↓
+    ASG / NodeGroup scale out
+            ↓
+    RunInstances API call
+            ↓
+[simulate-insufficient-instance-capacity]
+            ↓
+    Launch fail or failover
+五、你在实验设计里“应该这样写”
+正确实验描述（可直接用）
+The experiment does not terminate existing instances.
+Instead, it relies on an explicit scale-out trigger to force new instance provisioning, during which the InsufficientInstanceCapacity fault is injected.
+六、为什么 AWS 要这么设计？（理解就不容易用错）
+因为这个 action 的目标是测试：
+“当系统需要扩容，但 AWS 无法提供容量时，你的系统是否还能正确反应”
+而不是：
+测试节点被杀掉（那是 terminate-instances）
+测试应用容灾（那是另一层）
+七、推荐的“最小可用实验组合”（实战）
+⭐ 最稳妥（评审最爱）
+Phase 1
+手动 ↑ Desired / HPA
+Phase 2
+simulate-insufficient-instance-capacity
+验证 failover
+⭐ 更真实（高级）
+terminate-instances（AZ A）
+simulate-insufficient-instance-capacity（AZ A）
+验证 运行中 + 扩容 双重 failover
+最后一句“点醒式总结”
+FIS 不是“帮你扩容”，它只是“在你扩容时搞破坏”。
+你现在这个问题，正是很多人第一次跑 FIS “啥也没发生” 的根因。
+如果你愿意，我可以：
+帮你设计一个 完整的 Step-by-step 实验 runbook
+或 review 你现在的 ASG / EKS scaling policy，看看为什么“扩不起来”
+这个已经是 资深 SRE 才会问的问题了。
