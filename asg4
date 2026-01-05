@@ -1,0 +1,119 @@
+这个问题问得非常关键，而且正好卡在 FIS 里最容易被误用的点。我直接给你一个**“原理 → 规则 → 正确用法”**的完整解释。
+一、为什么这个 action 里 targets 是空的？
+结论先行
+👉 aws:ec2:simulate-insufficient-instance-capacity 是“全局控制面注入”动作，不作用在具体资源上
+所以 不需要、也不能指定 target。
+1️⃣ 和 terminate-instances 的本质区别
+terminate-instances
+作用对象：具体 EC2 实例
+所以必须：
+复制代码
+Json
+"targets": {
+  "Instances": "MyInstances"
+}
+simulate-insufficient-instance-capacity
+作用对象：EC2 控制面（RunInstances / ASG launch）
+控制的是：
+哪个 AZ
+哪种 InstanceType
+❌ 不是某几台实例
+👉 因此：
+复制代码
+Json
+"targets": {}
+是正确、官方、必须的写法
+2️⃣ 官方语义（你可以直接写进文档）
+This action does not require targets because it injects failures at the EC2 control plane level rather than acting on specific resources.
+二、那 percentage 是什么？到底影响谁？
+percentage 是 FIS Action 参数
+👉 控制“失败注入概率”
+1️⃣ percentage 的真实含义（非常重要）
+For matching RunInstances requests, what percentage should fail with InsufficientInstanceCapacity.
+也就是说：
+每一次 实例启动请求
+按 percentage 概率：
+返回 InsufficientInstanceCapacity
+或正常成功
+2️⃣ 示例说明（用 ASG 更好理解）
+假设：
+ASG scale out 10 台
+percentage = 50
+结果可能是：
+5 次 launch：
+复制代码
+
+InsufficientInstanceCapacity
+5 次 launch：
+成功（可能在其他 AZ / instance type）
+⚠️ 不是一次性决定，而是“每次请求独立判断”
+3️⃣ 常见误解（一定要避开）
+❌ 误解：
+“percentage=100 表示 100% AZ 挂了”
+✅ 正确：
+表示：
+100% 的新建实例请求失败
+仅限：
+指定 AZ
+指定 instance type
+三、正确用法推荐（按测试目的）
+✅ 推荐 1：AZ 完全不可扩容（最常用）
+复制代码
+Json
+"percentage": 100
+用途：
+验证：
+ASG / EKS 是否 100% fail over
+不会死磕一个 AZ
+🟡 推荐 2：容量抖动（高级）
+复制代码
+Json
+"percentage": 30
+用途：
+模拟：
+AZ 容量不稳定
+Spot 抢占 / 热点时段
+验证：
+重试
+backoff
+fallback 策略
+❌ 不推荐（除非你非常清楚）
+复制代码
+Json
+"percentage": 1~5
+原因：
+难复现
+难解释
+reviewer 很容易 challenge 你
+四、一个“完全正确”的 Action 示例（带 percentage）
+复制代码
+Json
+"actions": {
+  "BlockCapacityInAzA": {
+    "actionId": "aws:ec2:simulate-insufficient-instance-capacity",
+    "parameters": {
+      "availabilityZoneIdentifiers": ["ap-southeast-2a"],
+      "instanceTypeIdentifiers": ["m6i.large"],
+      "percentage": "100"
+    }
+  }
+}
+注意：percentage 是 字符串
+五、你在评审里可以这样解释（直接可用）
+This action does not define targets because it injects failures at the EC2 control plane level.
+The percentage parameter controls the probability that instance launch requests in the specified AZ and instance type will fail with InsufficientInstanceCapacity.
+六、常见 reviewer 会问的问题（提前准备）
+Q：为什么不指定 instance？
+Because the failure occurs before any instance is created.
+Q：为什么 100%？
+To deterministically validate AZ-level scale-out failover.
+Q：现有实例会受影响吗？
+No. Only new capacity provisioning is affected.
+最后一句总结
+✅ targets = {} 是 必须且正确
+✅ percentage = 启动失败概率
+✅ 这是一个 scale-time AZ failover 注入
+如果你愿意，我可以下一步直接帮你：
+🧪 设计一个 2-phase Chaos（terminate → insufficient）
+📊 给你一份 ASG / EKS 验证指标清单
+🔍 Review 你现在的 FIS JSON 是否 production-grade
