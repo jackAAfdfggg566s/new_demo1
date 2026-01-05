@@ -1,0 +1,113 @@
+这个问题问得非常到位，而且你已经抓到 “模拟 AZ failover 的本质” 了。
+先给你明确结论，再讲为什么 AWS 要你填 instance type、以及你在真实演练里该怎么做。
+一句话结论（先记住）
+是的，如果你要“像 AZ 真挂了一样”，逻辑上应该影响 所有 instance type
+但：FIS / EC2 的 api-insufficient-instance-capacity-error 机制上 必须 指定 instance type
+👉 这是 AWS API 设计限制，不是你理解错
+一、为什么 AWS 设计成「必须指定 instance type」？
+1️⃣ 真实世界里，容量不足 ≠ AZ 挂了
+在 AWS 的真实事故模型中：
+AZ 挂了 → 所有 instance type 都不可用（极少）
+更常见的是：
+m5.large 没了
+c6i.large 还有
+t3 还有
+所以 EC2 的错误模型是：
+“instance-type 维度的容量不足”
+FIS 只是忠实模拟这一层现实。
+2️⃣ EC2 API 的错误语义就是 instance-type 级别
+你看 EC2 返回的错误是：
+复制代码
+
+InsufficientInstanceCapacity
+但这个错误：
+永远是绑定到 instance type
+不存在 “this AZ is dead” 这种 API 语义
+👉 FIS 只能模拟 EC2 API 能表达的失败
+二、那你“模拟 AZ failover”的直觉对不对？
+👉 对的，而且是架构层面的正确理解。
+AZ failover ≠ 某个 instance type 没容量
+而是：这个 AZ 不再是可选项
+只是 AWS 没给你一个：
+复制代码
+Text
+Disable AZ ap-southeast-2a
+这样的按钮。
+三、那正确的“工程化解法”是什么？（重点）
+✅ 方案 1（官方推荐 / 最常用）
+👉 覆盖 ASG 实际使用的所有 instance type
+如果你是 Single Instance Type
+复制代码
+Json
+"instanceType": "m5.large"
+没问题。
+如果你是 MixedInstancesPolicy（很常见）
+你要做的是：
+列出 ASG 可能用到的所有 instance type
+每个 type 一个 action
+示例（概念）：
+复制代码
+Json
+"actions": {
+  "InjectM5": {
+    "actionId": "aws:ec2:api-insufficient-instance-capacity-error",
+    "parameters": {
+      "availabilityZone": "ap-southeast-2a",
+      "instanceType": "m5.large",
+      "duration": "PT10M"
+    }
+  },
+  "InjectC6i": {
+    "actionId": "aws:ec2:api-insufficient-instance-capacity-error",
+    "parameters": {
+      "availabilityZone": "ap-southeast-2a",
+      "instanceType": "c6i.large",
+      "duration": "PT10M"
+    }
+  }
+}
+👉 合起来 ≈ 这个 AZ “没法起实例”
+✅ 方案 2（更贴近 AZ 挂掉的行为，强烈推荐）
+👉 Terminate + API insufficient（组合拳）
+步骤逻辑：
+Terminate 该 AZ 的所有实例
+同时注入 capacity error（覆盖所有 instance type）
+观察：
+ASG 是否完全避开该 AZ
+EKS 是否只在其他 AZ 重建
+这是 AWS 内部 chaos playbook 里最常见的 AZ 演练方式。
+⚠️ 方案 3（看起来“全类型”，但不真实）
+❌ 不推荐：
+只用 asg-insufficient-instance-capacity-error
+原因：
+EC2 实际是 可用的
+你没测到底层 fallback
+会“高估”系统的健壮性
+四、一个你一定要注意的隐藏坑
+🚨 MixedInstancesPolicy + Spot
+如果你用了：
+On-Demand + Spot
+多个 family
+那你必须：
+覆盖 On-Demand instance types
+覆盖 Spot instance types
+否则 ASG 可能：
+“哦，这个 type 不行？我换一个。”
+五、那为什么 AWS 不直接给“所有类型”的选项？
+真实原因（工程现实）：
+EC2 API 本身不支持
+Capacity 是 instance type + AZ + 时间 的组合
+AWS 不想让你误以为：
+AZ 故障 = 所有容量瞬间消失
+六、给你一句 Runbook 级总结（强烈建议你记）
+FIS 无法直接“关闭一个 AZ”
+要模拟 AZ failover：
+覆盖所有 ASG 可能使用的 instance type
+终止现有实例
+效果 ≈ AZ 不可用
+如果你愿意，下一步我可以直接帮你做一件很实在的事：
+🔍 从你的 ASG / EKS 自动解析所有可能的 instance type
+🧪 自动生成 FIS template（全类型覆盖版）
+📋 顺便帮你写 “为什么这样设计”的审批说明
+你只要告诉我：
+👉 你现在是 ASG 还是 EKS？用没用 MixedInstancesPolicy？
