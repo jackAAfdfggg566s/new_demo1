@@ -1,0 +1,128 @@
+非常好，这两个点问得正中 FIS 的“安全边界”和“真实建模”核心。我分两大块给你讲，都会讲到为什么 AWS 这样设计、你在生产该怎么选。
+一、stopConditions 是什么？为什么一定要有？
+1️⃣ 官方定义（白话版）
+Stop condition = 自动“紧急刹车”条件
+当实验运行中 触发了你定义的信号，FIS 会：
+立刻停止 experiment
+撤销所有还在进行中的 action
+让系统开始恢复
+2️⃣ 不用 stop condition 会发生什么？（真实后果）
+如果你不配 stopConditions：
+实验会：
+完整跑完 duration
+不管业务是不是已经炸了
+你只能：
+人肉点 Stop experiment
+或等 duration 到期
+👉 这在生产环境是 不可接受的
+3️⃣ Stop condition 能用什么？
+目前（也是最常用的）👇
+✅ CloudWatch Alarm（唯一推荐）
+复制代码
+Json
+"stopConditions": [
+  {
+    "source": "aws:cloudwatch:alarm",
+    "value": "arn:aws:cloudwatch:ap-southeast-2:123456789012:alarm:High5xxError"
+  }
+]
+含义：
+只要这个 alarm 进入 ALARM 状态
+FIS 立即停止实验
+4️⃣ 常见 Stop Condition 设计（实战）
+Alarm 类型
+为什么
+ALB 5xx > 阈值
+用户已感知
+Latency p95/p99
+服务质量下降
+Error rate
+逻辑异常
+自定义 SLI
+SLO 被破坏
+👉 Stop condition ≠ 成功条件
+👉 它是 “别再继续伤害了”
+5️⃣ 为什么 stop condition 是“必选项”
+你这类实验：
+AZ 故障
+Capacity 不足
+都是 高破坏性实验。
+AWS 内部的指导原则是：
+任何破坏性 Chaos Experiment，必须有自动 stop
+二、为什么用 ap-southeast-2a，而不是 AZ ID？
+这是一个非常专业的问题，而且很多人第一次都会选错。
+1️⃣ AZ Name vs AZ ID（先区分）
+类型
+示例
+特点
+AZ Name
+ap-southeast-2a
+账号相关
+AZ ID
+apse2-az1
+全球一致
+重点一句话 👇
+不同账号的 2a，不一定是同一个物理 AZ
+2️⃣ 那为什么 FIS / EC2 API 还用 AZ Name？
+原因 1️⃣：EC2 API 的真实参数就是 AZ Name
+例如：
+复制代码
+Bash
+RunInstances --placement AvailabilityZone=ap-southeast-2a
+而不是：
+复制代码
+Text
+AvailabilityZoneId=apse2-az1
+api-insufficient-instance-capacity-error 本质是：
+模拟 EC2 API 返回错误
+👉 EC2 API 用什么参数，FIS 就用什么
+原因 2️⃣：ASG / EKS 内部也是用 AZ Name
+ASG 的 Subnet 绑定 → AZ Name
+Launch Template → AZ Name
+Scaling decision → AZ Name
+FIS 必须 对齐真实控制面
+3️⃣ 那 AZ ID 完全没用吗？❌ 不是
+AZ ID 的正确用途
+场景
+用 AZ ID
+多账号一致性
+✅
+架构设计文档
+✅
+灾备规划
+✅
+分析真实物理隔离
+✅
+但 ⚠️：
+FIS / EC2 Chaos 实验不是“物理建模”，而是“行为建模”
+4️⃣ 如果你用 AZ ID，会怎样？
+🚫 当前 FIS / EC2 action 不支持
+复制代码
+Json
+"availabilityZoneId": "apse2-az1"
+👉 直接不生效 / 校验失败
+5️⃣ 那多账号怎么保证“同一个物理 AZ”一起演练？
+这是个高级玩法 👇
+正确方式：
+用 AZ ID 做映射
+复制代码
+Bash
+describe-availability-zones
+在每个账号里：
+找到对应的 AZ Name
+在 FIS 里用 各自账号的 AZ Name
+👉 这是 AWS 官方推荐的 multi-account chaos 方法
+三、把两个点合起来的一句话总结
+Stop condition = 自动刹车，防止演练变事故
+AZ Name = EC2 控制面真实参数，FIS 必须用它
+四、给你一段可以直接写进 Runbook 的话
+本实验使用 CloudWatch Alarm 作为 stop condition，
+当业务 SLI 超过可接受阈值时，
+FIS 将自动终止实验以限制 blast radius。
+实验中使用 AZ Name（如 ap-southeast-2a），
+因 EC2 与 Auto Scaling 控制面基于 AZ Name 做调度决策。
+如果你愿意，下一步我可以：
+🧪 给你设计一套 “多账号同物理 AZ”Chaos 演练方案
+📋 帮你把这套内容整理成 生产审批 / CAB 文档
+🔍 帮你审一下你现在的 Alarm 是否适合当 stop condition
+你说下一步做哪一个，我直接继续。
