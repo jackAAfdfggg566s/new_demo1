@@ -1,0 +1,104 @@
+明白了，你指的是 AWS FIS 里这两个 action 的区别 👇
+（你图里看到的这两个）
+aws:ec2:api-insufficient-instance-capacity-error
+aws:ec2:asg-insufficient-instance-capacity-error
+这两个名字很像，但层级和效果完全不一样，我给你用一句话 + 对照表 + 选型建议说清楚。
+一句话先给结论（非常重要）
+api = 从 EC2 层“造假”容量不足
+asg = 只让 ASG 自己“以为”扩容失败
+一、aws:ec2:api-insufficient-instance-capacity-error
+👉 它是 EC2 API 层面的故障注入
+做了什么？
+拦截 RunInstances / CreateFleet 等 EC2 API
+返回 InsufficientInstanceCapacity
+就像 EC2 真的在这个 AZ / instance type 没容量
+影响谁？
+ASG ✅
+EKS node group ✅
+手动 run instance ✅
+任何调用 EC2 RunInstances 的服务 ✅
+真实程度
+⭐⭐⭐⭐⭐（最接近真实容量不足）
+适合场景
+AZ 故障演练
+ASG fallback 测试
+EKS node 重建测试
+Chaos Engineering
+二、aws:ec2:asg-insufficient-instance-capacity-error
+👉 它是 ASG 层面的“假失败”
+做了什么？
+不拦 EC2 API
+只是在 ASG 这层：
+人为让 ASG 的 launch 行为失败
+返回 capacity error
+影响谁？
+只有 被选中的 ASG
+❌ 不影响：
+手动 EC2
+EKS
+其他 ASG
+真实程度
+⭐⭐（偏逻辑测试）
+适合场景
+只想测试：
+ASG 的 retry / backoff
+scaling policy 行为
+不想影响其他系统
+三、核心区别对照表（你可以直接截图存）
+维度
+api-insufficient
+asg-insufficient
+注入层级
+EC2 API 层
+ASG 服务层
+EC2 RunInstances
+❌ 失败
+✅ 正常
+ASG 扩容
+❌ 失败
+❌ 失败
+EKS NodeGroup
+❌ 失败
+✅ 正常
+手动建实例
+❌ 失败
+✅ 正常
+真实 AZ 故障相似度
+⭐⭐⭐⭐⭐
+⭐⭐
+影响范围
+广
+仅 ASG
+风险
+较高
+较低
+四、放到你前面说的「方案 B」里，该选哪个？
+✅ 你这个“AZ power-out 近似演练”
+👉 必须选：
+复制代码
+
+aws:ec2:api-insufficient-instance-capacity-error
+原因：
+ASG / EKS / 自动修复 都会一起受影响
+行为最像“这个 AZ 真的废了”
+⚠️ 什么时候才用 asg-insufficient？
+只在这种情况下用：
+你只关心 ASG 行为
+不想影响：
+EKS
+手动扩容
+其他系统
+👉 更多是 ASG 逻辑单测
+五、AWS 官方思路（经验总结）
+想测试“基础设施不可用” → 用 API 层
+想测试“ASG 自己会怎么想” → 用 ASG 层
+六、给你一句 Runbook 级总结
+api-insufficient-instance-capacity-error
+= 模拟“EC2 在该 AZ 没容量”
+asg-insufficient-instance-capacity-error
+= 模拟“ASG 自己扩容失败”
+如果你愿意，下一步我可以直接帮你：
+🧪 设计一份 FIS Experiment：AZ 故障（API 级）完整模板
+🔍 告诉你 怎么限制 blast radius（不误伤别的 AZ / ASG）
+📋 给你 生产可审计的 FIS 演练说明
+你说一声，我直接给。
