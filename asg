@@ -1,0 +1,124 @@
+这是个很好的问题，而且你问到了一个关键点：
+👉 AWS FIS 本身“不能直接制造” EC2 InsufficientInstanceCapacity 错误，但可以间接、可控地模拟“效果等价”的场景。
+我分三部分说清楚：能不能做、怎么模拟、预期结果是什么。
+一、先给结论（很重要）
+❌ FIS 不能直接做的事
+不能让 AWS EC2 API 返回真正的
+InsufficientInstanceCapacity
+不能控制 AWS 底层容量池
+这个错误 只会在 Launch / Scale 时，由 EC2 控制面返回
+二、那应该怎么“模拟”这个错误？
+🎯 模拟目标
+验证你的系统是否能在以下情况下正常工作：
+ASG / EKS / 自愈逻辑 启动实例失败
+重试、回退 AZ / InstanceType
+业务是否可用
+方案一（最接近真实）：FIS + 强制容量耗尽（推荐）
+思路
+用 FIS 先制造“容量紧张”，再触发扩容。
+做法
+FIS Experiment
+action：aws:ec2:terminate-instances
+在 单一 AZ 中终止一批实例
+同时：
+ASG DesiredCapacity ↑
+或 HPA scale out
+ASG 尝试在同一 AZ / InstanceType 拉新实例
+👉 很容易打到：
+复制代码
+
+InsufficientInstanceCapacity
+适合场景
+ASG
+EKS Managed Node Group
+Spot / On-Demand 混合
+预期结果
+部分 Launch 失败
+ASG events 中出现：
+复制代码
+
+Failed to launch instance: InsufficientInstanceCapacity
+如果你配置正确：
+自动换 AZ
+自动换 InstanceType
+或降级成功
+方案二：FIS + 人为限制 ASG（最可控）
+思路
+让系统“以为”在扩容，但永远起不来。
+做法
+ASG 设置：
+MaxSize = CurrentSize
+FIS 执行：
+terminate-instances
+同时触发扩容（CPU / HPA）
+模拟效果
+Scale-out 永远失败
+等价于「容量不可用」
+预期结果
+ASG 不断尝试扩容
+应用负载升高
+告警是否触发（SLO / Pager）
+⚠️ 这是逻辑层模拟，不是 EC2 层
+方案三：Spot + FIS（非常真实）
+如果你用 Spot，这个是最真实的 InsufficientCapacity 模拟
+做法
+ASG 使用：
+Spot
+单一 InstanceType
+单一 AZ
+FIS：
+terminate-instances
+触发 scale out
+预期结果
+大概率出现：
+复制代码
+
+InsufficientInstanceCapacity
+UnfulfillableCapacity
+测试：
+是否 fallback On-Demand
+是否多 instance type 生效
+三、你应该看到的「预期结果」
+1️⃣ 控制面（必须看到）
+ASG Events：
+复制代码
+
+Launch attempt failed due to InsufficientInstanceCapacity
+CloudTrail：
+RunInstances → Error
+2️⃣ 系统行为（你要验证的）
+能力
+预期
+多 AZ
+自动换 AZ
+多 instance type
+自动 fallback
+重试策略
+不进入无限失败
+告警
+CPU / Latency 告警
+业务
+无 / 有限降级
+3️⃣ 反模式（如果出现，说明架构有问题）
+❌ 卡死在单 AZ
+❌ 单 instance type
+❌ ASG 连续失败但无告警
+❌ EKS Node 一直 Pending
+四、官方推荐的“正确测试目标”
+AWS 内部对 FIS 的定位是：
+Test system resilience to capacity loss, not EC2 capacity itself
+所以你的测试目标应该是：
+“当容量拿不到时，我的系统会怎样？”
+而不是：
+“我能不能强制 EC2 返回那个 error”
+五、如果你愿意，我可以帮你进一步做
+你如果告诉我：
+ASG 还是 EKS？
+On-Demand / Spot？
+单 AZ 还是 Multi-AZ？
+是否有 MixedInstancesPolicy？
+我可以直接给你：
+FIS Experiment Template
+ASG / EKS 最小修改建议
+验证 checklist（跑完就知道过没过）
+这个问题你问得非常专业 👍
