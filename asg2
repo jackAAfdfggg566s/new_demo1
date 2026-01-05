@@ -1,0 +1,188 @@
+下面我按你要求分成两种场景来说明：
+场景 A：应用直接跑在 EC2（ASG）上
+场景 B：应用跑在 EKS（Node Group）上
+每个场景都给你：
+👉 测试目标（AZ failover 视角）
+👉 FIS 实验模板（可直接改用）
+👉 测试步骤
+👉 预期结果（必须 / 理想 / 失败信号）
+你可以直接拿去做 Chaos / DR / Resilience 测试文档。
+场景 A：应用运行在 EC2（ASG）
+1️⃣ 测试目标（你在“模拟什么”）
+Simulate Availability Zone–level capacity loss for EC2-based applications.
+具体等价于：
+某一个 AZ 中的 EC2 全部不可用
+新实例 无法在该 AZ 启动
+验证 ASG 是否 自动 fail over 到其他 AZ
+2️⃣ FIS 实验模板（EC2 / ASG）
+🎯 思路
+只杀一个 AZ
+强制 ASG 触发 scale out
+FIS Template（JSON 示例）
+复制代码
+Json
+{
+  "description": "Simulate AZ failure for EC2 ASG",
+  "targets": {
+    "AzAInstances": {
+      "resourceType": "aws:ec2:instance",
+      "resourceTags": {
+        "aws:autoscaling:groupName": "my-asg"
+      },
+      "filters": [
+        {
+          "path": "Placement.AvailabilityZone",
+          "values": ["ap-southeast-2a"]
+        }
+      ],
+      "selectionMode": "ALL"
+    }
+  },
+  "actions": {
+    "TerminateInstances": {
+      "actionId": "aws:ec2:terminate-instances",
+      "parameters": {},
+      "targets": {
+        "Instances": "AzAInstances"
+      }
+    }
+  },
+  "stopConditions": [
+    {
+      "source": "none"
+    }
+  ]
+}
+⚠️ 强烈建议：
+ASG 配置 至少 2 个 AZ
+HealthCheckType = EC2 or ELB
+CapacityRebalance = true
+3️⃣ 测试步骤（EC2）
+确认 ASG 实例分布在多个 AZ
+启动 FIS：
+终止 某一个 AZ 的所有实例
+同时或之后：
+提高 ASG DesiredCapacity
+或
+制造 CPU / 请求压力
+4️⃣ 预期结果（EC2）
+✅ 必须看到（Pass）
+ASG Events：
+复制代码
+
+Launching instance in ap-southeast-2b
+新实例 不再出现在故障 AZ
+ELB / ALB Target 恢复 Healthy
+🟡 理想状态（Excellent）
+ASG：
+自动跨 AZ 补齐容量
+无人工干预
+应用：
+请求成功率轻微波动
+无长时间 5xx
+❌ 失败信号（Fail）
+ASG 一直尝试在 同一个 AZ
+ASG Events 出现循环：
+复制代码
+
+InsufficientInstanceCapacity
+应用容量长期不足
+无告警触发
+场景 B：应用运行在 EKS（Node Group）
+1️⃣ 测试目标（你在“模拟什么”）
+Simulate Availability Zone failure affecting Kubernetes node provisioning.
+等价于：
+某 AZ：
+Node 被大量终止
+新 Node 无法加入集群
+验证：
+NodeGroup / ASG 是否跨 AZ
+Pod 是否自动迁移
+2️⃣ FIS 实验模板（EKS Node）
+🎯 思路
+直接杀 EKS Node（EC2）
+AZ 级别
+FIS Template（JSON 示例）
+复制代码
+Json
+{
+  "description": "Simulate AZ failure for EKS node group",
+  "targets": {
+    "EksNodesAzA": {
+      "resourceType": "aws:ec2:instance",
+      "resourceTags": {
+        "eks:nodegroup-name": "my-node-group"
+      },
+      "filters": [
+        {
+          "path": "Placement.AvailabilityZone",
+          "values": ["ap-southeast-2a"]
+        }
+      ],
+      "selectionMode": "ALL"
+    }
+  },
+  "actions": {
+    "TerminateEksNodes": {
+      "actionId": "aws:ec2:terminate-instances",
+      "parameters": {},
+      "targets": {
+        "Instances": "EksNodesAzA"
+      }
+    }
+  },
+  "stopConditions": [
+    {
+      "source": "none"
+    }
+  ]
+}
+3️⃣ 测试步骤（EKS）
+确认：
+NodeGroup 覆盖 ≥ 2 个 AZ
+Deployment 有多个 replica
+启动 FIS：
+杀掉一个 AZ 的 Node
+触发调度：
+Pod 被 evict
+HPA scale out（可选）
+4️⃣ 预期结果（EKS）
+✅ 必须看到（Pass）
+kubectl get nodes
+其他 AZ Node 数量上升
+kubectl get pods
+Pod 从 Pending → Running
+NodeGroup 自动补齐 capacity
+🟡 理想状态（Excellent）
+PodDisruptionBudget 生效
+请求延迟可控
+无大规模重启风暴
+❌ 失败信号（Fail）
+Pod 长期 Pending
+新 Node 只尝试在同一个 AZ
+NodeGroup scale 但 capacity 不增加
+无告警 / 无自动恢复
+两种场景的关键差异（给 reviewer 用）
+项目
+EC2 应用
+EKS 应用
+Failover 单位
+Instance
+Node + Pod
+关键配置
+ASG AZ 分布
+NodeGroup AZ
+主要风险
+容量不回补
+Pod Pending
+成功标准
+实例恢复
+Pod Running
+一句话总结（你可以直接用）
+EC2 场景验证 ASG 的 AZ-level capacity failover 能力；
+EKS 场景验证 NodeGroup 与 Kubernetes scheduler 在 AZ failure 下的自愈与调度能力。
+如果你愿意，我下一步可以帮你：
+🔍 Review 你现有 ASG / NodeGroup 配置是否真的支持 AZ failover
+🧪 给你一份 Expected Metrics & Alarms Checklist
+📄 帮你把这套内容整理成 Chaos Experiment 文档模板（给 SRE / Audit）
+你这个问题已经是 SRE / 架构评审级别 了。
