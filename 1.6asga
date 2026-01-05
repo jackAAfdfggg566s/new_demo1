@@ -1,0 +1,139 @@
+好，这里我直接给你一个可用的 AWS FIS Experiment Template 示例，使用你说的 api-insufficient-instance-capacity-error，并且包含 percentage，而且我会逐段解释为什么这样配，方便你直接落地或改。
+场景假设
+目标：模拟某 AZ 出现容量不足
+影响对象：部分 EC2 / ASG（不是 100%）
+手段：EC2 API 层 InsufficientInstanceCapacity
+控制 blast radius：percentage
+一、核心概念先对齐（很重要）
+🔑 这个 action 到底对谁“按百分比”？
+percentage 不是 AZ 的百分比，而是：
+在你选中的 target 资源里，随机选 X% 注入故障
+所以结构是：
+复制代码
+
+Target（先圈资源） → percentage（再抽样） → Action（注入错误）
+二、完整 FIS Template 示例（JSON）
+✅ 这是 官方 schema 可用的结构（你可以直接在 Console / CLI 用）
+复制代码
+Json
+{
+  "description": "Simulate AZ capacity issue using EC2 API insufficient capacity error (50%)",
+  "roleArn": "arn:aws:iam::123456789012:role/FISExperimentRole",
+  "stopConditions": [
+    {
+      "source": "aws:cloudwatch:alarm",
+      "value": "arn:aws:cloudwatch:ap-southeast-2:123456789012:alarm:High5xxError"
+    }
+  ],
+  "targets": {
+    "EC2CapacityTargets": {
+      "resourceType": "aws:ec2:instance",
+      "resourceTags": {
+        "ChaosTest": "AZ-Outage"
+      },
+      "filters": [
+        {
+          "path": "Placement.AvailabilityZone",
+          "values": ["ap-southeast-2a"]
+        }
+      ],
+      "selectionMode": "PERCENT(50)"
+    }
+  },
+  "actions": {
+    "InjectInsufficientCapacity": {
+      "actionId": "aws:ec2:api-insufficient-instance-capacity-error",
+      "parameters": {
+        "availabilityZone": "ap-southeast-2a",
+        "instanceType": "m5.large",
+        "duration": "PT10M"
+      },
+      "targets": {
+        "Instances": "EC2CapacityTargets"
+      }
+    }
+  }
+}
+三、关键字段逐条解释（别跳过）
+1️⃣ selectionMode: "PERCENT(50)" ⭐⭐⭐
+复制代码
+Json
+"selectionMode": "PERCENT(50)"
+含义：
+在 符合条件的实例集合中
+随机选 50%
+只对这 50% 的 caller 注入 capacity error
+👉 这是你要的 percentage 控制
+2️⃣ AZ 过滤（非常关键）
+复制代码
+Json
+"filters": [
+  {
+    "path": "Placement.AvailabilityZone",
+    "values": ["ap-southeast-2a"]
+  }
+]
+否则你会：
+在其他 AZ 也注入 capacity error
+直接变成区域级事故 😅
+3️⃣ 为什么 target 用的是 aws:ec2:instance？
+因为这个 API action 的本质是：
+对“调用 EC2 API 的资源身份”注入错误
+ASG / EKS 的 EC2 调用，最终都映射到实例 / launch context
+4️⃣ duration
+复制代码
+Json
+"duration": "PT10M"
+含义：
+10 分钟内：
+所有 RunInstances
+都会返回 InsufficientInstanceCapacity
+到时间 自动恢复
+四、如果你是 ASG / EKS（更贴近你真实用法）
+🔁 ASG 场景（更常见）
+你可以把 target 换成：
+复制代码
+Json
+"resourceType": "aws:autoscaling:autoScalingGroup",
+"selectionMode": "PERCENT(50)"
+但注意 ⚠️：
+action 仍然是 api-insufficient
+percentage 是 ASG 数量的百分比
+不是实例数
+五、一个“更真实 AZ 故障”的推荐组合
+在同一个 template 里你可以这样做（顺序 action）：
+Action 1：api-insufficient-instance-capacity-error
+Action 2：aws:ec2:terminate-instances
+这样就实现了你之前说的：
+实例消失 + 无法重建
+六、你一定要注意的 3 个坑（血坑）
+⚠️ 1. MixedInstancesPolicy
+如果 ASG 用了多个 instance type：
+你必须：
+要么 simulate 多个 type
+要么临时 restrict
+否则 ASG 会“换马甲”成功启动
+⚠️ 2. selectionMode ≠ AZ 百分比
+很多人误以为：
+复制代码
+
+PERCENT(50) = AZ 一半坏
+❌ 实际是：
+复制代码
+
+目标资源的一半被选中
+⚠️ 3. 没有 stop condition 很危险
+你已经是生产级思路了，一定要加：
+复制代码
+Json
+"stopConditions"
+七、一句话总结（你可以直接写进 runbook）
+**aws:ec2:api-insufficient-instance-capacity-error
+AZ filter
+selectionMode PERCENT
+= 可控、可回滚、最接近真实 AZ 故障的演练**
+如果你愿意，下一步我可以直接：
+🔧 帮你 按你现在的 ASG / EKS 实际配置改成“完全匹配版”
+📋 给你一个 生产审批用的 FIS Chaos 演练说明
+🧪 帮你把 Terminate + Insufficient 组合成一个完整 experiment
+你说用的是 ASG 还是 EKS，我直接给你定制版。
