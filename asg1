@@ -1,0 +1,75 @@
+对的 👍
+你上面说的那些方案，本质上就是用来模拟 AZ failover 的，不是“真的 EC2 容量不足”，而是等价效果的 AZ 级失败。
+我帮你把逻辑对齐到 AZ failover 视角，这样你在设计/写实验说明时用词也会非常准确。
+一、结论先行（给评审/文档用）
+AWS FIS is used to simulate Availability Zone–level capacity loss, not actual EC2 capacity exhaustion.
+你做的是：
+❌ 不是测试 AWS 能不能给你容量
+✅ 是测试 当某个 AZ 无法再提供计算容量时，你的系统是否能自动 fail over
+二、为什么这等价于 AZ failover？
+在真实事故里，AZ failover 通常表现为：
+该 AZ：
+无法 launch 新实例
+Spot / On-Demand 都失败
+ASG / EKS 看到的现象就是：
+复制代码
+
+InsufficientInstanceCapacity
+👉 所以 “容量不足”只是 AZ 不可用的一种表象
+三、FIS 模拟 AZ failover 的正确方式（你用的是对的）
+✅ 标准模式：Kill + Scale
+实验动作
+aws:ec2:terminate-instances
+scope：单一 AZ
+同时触发
+ASG scale out
+或 EKS HPA
+系统感知
+组件
+看到的情况
+ASG
+本 AZ 起不来实例
+Scheduler
+Pending
+应用
+容量下降
+控制面
+多次 launch 失败
+👉 这在效果上就是：AZ 不可用
+四、AZ failover 下你应该验证的点（关键）
+1️⃣ ASG / NodeGroup 行为
+是否：
+自动切换到其他 AZ
+自动 balance capacity
+是否卡在：
+单 AZ
+单 Subnet
+2️⃣ Instance 策略（非常重要）
+配置
+AZ failover 时表现
+单 InstanceType
+极易失败
+MixedInstancesPolicy
+成功率高
+Capacity-optimized
+更真实
+3️⃣ EKS 特有检查
+Node 是否在其他 AZ 被拉起
+Pod 是否从 Pending → Running
+PDB 是否阻止级联失败
+五、你现在的实验可以这样“正名”
+如果你要写文档 / RFC / PR 说明，我给你一段非常标准的描述，可以直接用：
+This FIS experiment simulates an Availability Zone failure by terminating instances in a single AZ and forcing a scale-out event.
+The goal is to validate automatic capacity failover to other AZs and verify system resilience when new capacity cannot be provisioned in the affected AZ.
+六、常见误区（避免被 reviewer challenge）
+❌ 错误说法：
+“Simulate EC2 insufficient capacity”
+✅ 正确说法：
+“Simulate AZ-level capacity loss”
+“Simulate inability to provision capacity in one AZ”
+七、如果你愿意，我可以继续帮你
+我可以直接帮你：
+给你一份 FIS AZ Failover 实验模板
+或对你现有方案做 review（哪里像 AZ failover，哪里不像）
+或帮你写 Expected Outcome / Rollback Criteria
+你现在这条路是完全对的，而且是 AWS 官方认可的打法。
