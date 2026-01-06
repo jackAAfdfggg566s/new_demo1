@@ -1,0 +1,128 @@
+明白了，你说的是 AWS FIS（Fault Injection Simulator）的 EBS Volume IO 相关 action，不是快照 👍
+我直接给你准确到 FIS action 级别的答案，并解释为什么需要这些权限。
+一、FIS 的 EBS Volume IO 是什么 action？
+真实名称是这类（核心）👇
+aws:ebs:pause-volume-io
+👉 模拟 EBS IO hang / 卡死 / 无响应
+👉 非 terminate、非 detach，最接近真实存储故障
+这是生产级别用来验证：
+应用 IO 超时处理
+数据库 / 文件系统容错
+EKS / EC2 对 IO stall 的反应
+二、运行这个 FIS Experiment 需要的 IAM 权限（关键）
+1️⃣ FIS Service Role（最重要）
+这是你在 FIS Experiment Template 里指定的 role
+👉 不是你自己的人类用户
+最小可用权限（核心）
+复制代码
+Json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "fis:StartExperiment",
+        "fis:StopExperiment",
+        "fis:GetExperiment",
+        "fis:ListExperiments"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ebs:PauseVolumeIO",
+        "ebs:ResumeVolumeIO"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+📌 这一段是很多人卡住的点
+👉 没有 ebs:PauseVolumeIO，实验一定失败
+👉 报错通常是 AccessDeniedException
+三、为什么不是 ec2:* ？
+⚠️ 这是重点理解点（你之前问得非常专业）
+EBS IO fault 是 EBS Control Plane
+不是 EC2 API
+所以权限在：
+❌ ec2:*
+✅ ebs:*
+👉 很多人只给了 EC2 权限，FIS 会直接失败
+四、Trust Policy（也非常关键）
+FIS role 的 AssumeRole policy 必须是这样：
+复制代码
+Json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "fis.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+👉 少了这段，Experiment 根本起不来
+五、如果你的 Volume 是加密的（KMS）
+⚠️ 很多生产环境都会踩这个雷
+还需要 KMS 权限（否则 Pause IO 会失败）：
+复制代码
+Json
+{
+  "Effect": "Allow",
+  "Action": [
+    "kms:DescribeKey",
+    "kms:GenerateDataKey"
+  ],
+  "Resource": "<your-kms-key-arn>"
+}
+六、EKS + EBS CSI + FIS 的真实影响（结合你之前的问题）
+当你对 Node 上的 EBS volume 执行 Pause IO：
+层
+真实表现
+Linux
+IO hang，不报错
+Pod
+卡在 read/write
+Kubelet
+Node 可能 NotReady
+Scheduler
+Pod 不会立刻迁移
+ASG
+不一定替换实例
+👉 这也是为什么 PauseVolumeIO 比 terminate instance 更狠、更真实
+七、常见失败报错 & 对应原因
+报错
+原因
+AccessDenied ebs:PauseVolumeIO
+IAM 权限没给
+Insufficient permissions
+Role 没被 FIS assume
+Volume not found
+AZ / Volume 选错
+Experiment stuck running
+没 Resume IO
+八、你现在这个场景，我的判断（结合你前面问的）
+你是在做：
+AZ 故障 / 存储故障演练
+EKS / ASG 稳定性验证
+用 FIS 做 比 terminate instance 更真实的测试
+👉 那你这个方向是完全正确的，已经是 SRE / Production Readiness 级别玩法。
+如果你愿意，下一步我可以帮你：
+🔹 写一个 最小权限 FIS Role（按 volume tag 限制）
+🔹 设计 AZ 故障 + EBS IO 双重演练方案
+🔹 对比 PauseVolumeIO vs DetachVolume vs Terminate
+你现在是 EC2 原生 还是 EKS Node + PVC？
