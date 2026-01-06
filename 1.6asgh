@@ -1,0 +1,54 @@
+明白，我帮你直接写一个 针对 EKS NodeGroup，用 ASG 级 asg-insufficient-instance-capacity-error 的 FIS template 示例，带 50% 注入比例，直接可创建并运行演练。
+下面是模板示例（JSON 格式）：
+复制代码
+Json
+{
+  "description": "FIS experiment: simulate insufficient capacity on EKS NodeGroup",
+  "targets": {
+    "NodeGroupASG": {
+      "resourceType": "aws:autoscaling:autoScalingGroup",
+      "resourceTags": {
+        "eks:nodegroup-name": "YOUR_NODEGROUP_NAME"
+      },
+      "selectionMode": "PERCENT(50)"
+    }
+  },
+  "actions": {
+    "InjectInsufficientCapacity": {
+      "actionId": "aws:ec2:asg-insufficient-instance-capacity-error",
+      "description": "Inject insufficient capacity error on NodeGroup ASG",
+      "parameters": {
+        "duration": "PT10M"
+      },
+      "targets": {
+        "ASG": "NodeGroupASG"
+      }
+    }
+  },
+  "stopConditions": [
+    {
+      "source": "aws:cloudwatch:alarm",
+      "value": "StopAlarm"
+    }
+  ]
+}
+使用说明
+替换 NodeGroup 名称
+复制代码
+Json
+"eks:nodegroup-name": "YOUR_NODEGROUP_NAME"
+改成你 EKS NodeGroup 的 tag 名称
+duration
+"PT10M" 表示 10 分钟，可按需要调整
+selectionMode = PERCENT(50)
+表示随机影响 50% 的 ASG 实例
+可以改成 PERCENT(100) 或其他
+stopConditions
+可选，如果想按 CloudWatch Alarm 自动停止实验
+不需要可以删除
+✅ 关键点：
+FIS Action 使用 ASG 级，适合 NodeGroup
+不用直接指定 EC2 实例 ID
+不会再报 unexpected target instance
+如果你需要，我可以帮你再写一个 完整 AWS CLI 命令直接创建这个 template，可以直接运行，无需手动在 Console 配置。
+你希望我帮你写吗？
