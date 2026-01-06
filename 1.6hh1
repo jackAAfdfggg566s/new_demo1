@@ -1,0 +1,49 @@
+明白了，你现在问的是：
+单 NodeGroup 跨多个 AZ 的情况下，做 FIS 注入容量不足测试还有没有意义？
+我来分析清楚。
+一、单 NodeGroup跨 AZ的特点
+ASG 管理一个 NodeGroup，跨多个 AZ
+Node 在不同 AZ 上
+Auto Scaling 统一管理整个 NodeGroup
+FIS target = NodeGroup
+asg-insufficient-instance-capacity-error 会随机选择 NodeGroup 内实例注入容量不足
+不能精确控制单 AZ
+可能影响多个 AZ 的节点
+二、做 FIS 测试的价值分析
+价值点
+说明
+限制
+验证 Pod 高可用性
+可以测试 Pod 被调度到其他可用 Node
+受限：FIS 注入随机，多 AZ 都可能受影响，无法单 AZ 精确模拟
+验证 ASG 响应
+ASG 会尝试启动新的实例
+只能看到整体 NodeGroup 响应，无法单 AZ 对比
+发现瓶颈
+可以发现容量不足对 Pod 调度的影响
+不保证某 AZ 完全挂掉的场景
+Chaos Engineering 演练
+可以安全地模拟部分节点失效
+无法严格模拟单 AZ failover 场景
+三、优缺点总结（单 NodeGroup + 跨 AZ）
+优点
+配置简单，只需要一个 NodeGroup
+Pod 可以跨 AZ 调度，自然均衡
+可以安全地随机模拟部分节点挂掉
+缺点
+无法精确模拟单 AZ 完全失效
+percentage 注入随机 → 可能影响多个 AZ
+对应用恢复能力的评估 不够精准
+四、结论
+单 NodeGroup + FIS 仍然有意义：
+可以做 部分节点失效 演练
+可以发现 Pod 调度和 ASG 自动恢复问题
+但是如果你的目标是测试单 AZ 完全 failover 的影响：
+单 NodeGroup 无法保证 AZ 只影响 2a
+多 NodeGroup（每 AZ 一个）更适合
+💡 总结一句话：
+单 NodeGroup 做 FIS 可以用来验证 整体集群和应用对节点失效的恢复能力，但不能精确模拟 单 AZ 故障场景。
+如果你需要，我可以帮你画一张 单 NodeGroup + FIS 随机注入容量不足的流程图，
+展示 Pod 迁移、ASG 响应
+让你直观看到为什么 不能严格模拟单 AZ failover。
+你希望我画吗？
