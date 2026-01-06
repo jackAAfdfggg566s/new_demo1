@@ -1,0 +1,62 @@
+明白了，你问的是 多个 AZ 的 NodeGroup 在真实 AZ 故障下的风险，这是一个 EKS + EC2 高可用性的问题，我给你详细分析。
+一、前提场景
+你有 一个 EKS Cluster，NodeGroup 跨 多个 AZ
+每个 AZ 有若干 Node（EC2 实例）
+没有 ASG 或 FIS 干预，只是 EKS 自身管理 NodeGroup
+二、真实 AZ Failover 会发生什么
+AZ 故障（例如 2a 整个可用性区宕机）
+NodeGroup 中的 Node 在该 AZ 全挂掉
+Kubernetes 会感知这些 Node 不可用
+Pod 调度：
+Pod 在失效 Node 上会被标记为 Unknown/NotReady
+EKS 会尝试重新调度到 其他 AZ 的 Node
+依赖 ASG 的 NodeGroup
+EKS NodeGroup 通常绑定一个 ASG
+ASG 会尝试 在其他 AZ 启动新的实例
+如果 NodeGroup 配置跨 AZ：
+ASG 可以 自动补充到剩余 AZ
+Pod 可以重新调度到健康 Node
+如果 NodeGroup 跨 AZ，但是没有足够容量或单 AZ Node 数量少
+可能出现 Pod 无法调度
+应用性能下降，或者部分服务短时间不可用
+三、潜在隐患
+隐患
+说明
+Pod 调度失败
+原 AZ Node 全挂掉，如果其他 AZ Node 不够，K8s Pod 调度失败
+数据丢失风险
+如果应用依赖本地存储（emptyDir、local PV），节点挂掉数据丢失
+短时间不可用
+Pod 需要重新调度 + 启动，可能有几秒到几分钟不可用
+ASG 扩容延迟
+AZ failover 后，ASG 启动新实例需要几分钟，Pod 可能等待
+AZ 依赖服务不可用
+Pod 依赖 AZ 内的外部服务（如 RDS Multi-AZ 不够健壮）
+✅ 如果应用都是 Stateless + 使用 EBS/EFS/RDS Multi-AZ + 多 AZ NodeGroup，风险可以降到最小
+四、风险缓解策略
+跨 AZ 部署 Pod
+Deployment / StatefulSet 指定 topologySpreadConstraints
+Pod 均匀分布在不同 AZ
+保证 NodeGroup 足够容量
+每个 AZ 至少有 1-2 个 Node
+EKS + ASG 可以自动补充故障 Node
+存储选择 Multi-AZ
+EBS 或 EFS 需要 Multi-AZ 或挂载到其他 AZ
+避免依赖单 AZ 本地存储
+健康检查 + Auto Healing
+ASG 健康检查 + Kubernetes Node Controller
+Pod 快速感知不可用 Node 并重新调度
+应用高可用设计
+Stateless 服务 + Multi-AZ replica
+避免单点 AZ 依赖
+五、总结
+NodeGroup 跨 AZ 是高可用设计的前提
+AZ 故障时，只要：
+其他 AZ 有 Node
+ASG 可以补充 Node
+应用能跨 AZ 调度
+就不会有重大问题
+⚠️ 隐患主要在 Pod 调度失败 + 本地存储依赖 + 临时不可用
+解决方法是 Multi-AZ Pod + Auto Scaling + Multi-AZ 存储
+如果你愿意，我可以帮你画一张 EKS NodeGroup 跨多个 AZ failover 的流程图，让你直观看到 Pod 迁移和 ASG 补充逻辑，这样你可以清楚评估风险。
+你希望我画吗？
