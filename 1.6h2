@@ -1,0 +1,96 @@
+好的，这个问题很经典，直接关系到 EKS 高可用设计。我给你详细分析 两种架构，优缺点对比，并给出最佳实践建议。
+一、方案概览
+方案
+描述
+方案 1
+一个 NodeGroup，跨 3 个 AZ
+方案 2
+每个 AZ 一个 NodeGroup，总共 3 个 NodeGroup
+二、方案 1：单 NodeGroup跨三个 AZ
+架构示意
+复制代码
+
+NodeGroup-A
+ ├─ AZ 2a: 3 Node
+ ├─ AZ 2b: 3 Node
+ └─ AZ 2c: 3 Node
+优点
+管理简单
+只有一个 NodeGroup，ASG / 标签 / FIS target 都只需配置一次
+Pod 自动跨 AZ 调度
+Kubernetes Scheduler 会把 Pod 分布在不同 AZ
+Auto Scaling 简单
+一个 ASG 调整整个 NodeGroup 容量
+成本管理方便
+不需要为每个 AZ 单独调整规模
+缺点
+AZ 故障时可能影响全部 Pod
+如果单 AZ Node 挂掉，其他 AZ NodeGroup 规模调整可能不足，需要 ASG 补充
+NodeGroup 扩缩容限制
+ASG 是单一组，扩缩容策略是统一的，无法单独针对某个 AZ 调整
+FIS / Chaos Testing
+使用 asg-insufficient-instance-capacity-error 时无法精确控制单 AZ，可能影响多个 AZ 的实例
+三、方案 2：每个 AZ 一个 NodeGroup
+架构示意
+复制代码
+
+NodeGroup-2a → 3 Node
+NodeGroup-2b → 3 Node
+NodeGroup-2c → 3 Node
+优点
+单 AZ 控制
+每个 NodeGroup 可独立设置容量、标签、FIS target
+可以单独演练某个 AZ failover
+更灵活的 Auto Scaling
+每个 AZ NodeGroup 扩缩容独立
+可以针对不同 AZ 的负载调节
+更安全的 Chaos Testing
+可以模拟单 AZ 完全不可用，而不影响其他 AZ
+缺点
+管理复杂
+三个 NodeGroup，标签、ASG 策略、升级策略都要重复配置
+Pod 调度可能偏向某 AZ
+如果 Scheduler 没有充分均衡，某个 AZ NodeGroup 下 Pod 可能过多或过少
+成本稍高
+可能需要每个 NodeGroup 都设置最小节点，避免 AZ 空
+四、对比表
+特性
+方案 1：单 NodeGroup
+方案 2：多 NodeGroup
+管理难度
+简单
+复杂
+Auto Scaling 灵活性
+单一策略
+单 AZ 独立策略
+FIS / Chaos Testing 可控性
+低（难精确针对 AZ）
+高（可单 AZ 模拟 failover）
+AZ 故障风险
+中（单 AZ 挂掉，可能影响整体调度）
+低（其他 AZ NodeGroup 不受影响）
+成本控制
+方便
+较复杂
+升级/维护
+一次操作
+三次操作
+五、最佳实践建议
+生产高可用 EKS 集群
+推荐 多 NodeGroup，每个 AZ 一个
+原因：
+精确控制每个 AZ
+Chaos Testing / FIS 更安全
+Auto Scaling 灵活
+适合大规模、关键业务
+小型或开发集群
+可以用 单 NodeGroup跨 AZ
+管理简单，成本低，适合测试或低负载
+FIS 模拟 AZ Failover
+多 NodeGroup 更适合
+可以对单个 NodeGroup 注入 asg-insufficient-instance-capacity-error，只影响单 AZ，不波及其他 AZ
+💡 总结一句话：
+高可用 + Chaos / FIS 可控 → 多 NodeGroup（单 AZ）
+简单管理 → 单 NodeGroup跨 AZ
+如果你需要，我可以帮你画一张 两种方案架构对比图，可视化展示 Node 分布、Pod 调度和 AZ failover 风险，让你一眼就看出差别。
+你希望我画吗？
