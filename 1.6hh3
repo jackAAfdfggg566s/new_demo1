@@ -1,0 +1,45 @@
+Sure! Here's the English version of the analysis for a single NodeGroup across multiple AZs with FIS testing:
+1. Characteristics of a Single NodeGroup Across AZs
+ASG manages one NodeGroup across multiple AZs
+Nodes exist in different AZs
+Auto Scaling applies to the entire NodeGroup as a single unit
+FIS target = NodeGroup
+asg-insufficient-instance-capacity-error randomly selects instances in the NodeGroup to inject insufficient capacity
+Cannot precisely target a single AZ
+Multiple AZs may be affected at the same time
+2. Value of Running FIS Tests
+Value
+Explanation
+Limitation
+Validate Pod HA
+Can test if Pods are rescheduled to other healthy nodes
+Limitation: FIS randomly affects nodes, cannot guarantee single AZ failover
+Test ASG response
+ASG tries to launch replacement instances
+Only shows NodeGroup-wide response, cannot compare AZ-specific recovery
+Find bottlenecks
+Can observe capacity impact on Pod scheduling
+Does not guarantee a complete single-AZ outage scenario
+Chaos Engineering practice
+Safely simulates partial node failures
+Cannot strictly simulate single AZ failover
+3. Pros and Cons (Single NodeGroup + Multi-AZ)
+Pros
+Simple setup: only one NodeGroup to manage
+Pods naturally distribute across AZs for load balancing
+Can safely simulate partial node failure with FIS
+Cons
+Cannot precisely simulate a single AZ complete outage
+Random percentage injection may affect multiple AZs simultaneously
+Assessment of application recovery is less precise
+4. Conclusion
+FIS on a single NodeGroup is still useful:
+Good for testing partial node failures
+Can detect issues with Pod scheduling and ASG auto-recovery
+However, if your goal is to test a single AZ failover:
+A single NodeGroup cannot guarantee only one AZ is affected
+Multiple NodeGroups (one per AZ) are recommended for precise simulation
+💡 Summary:
+Using FIS on a single NodeGroup is useful for testing overall cluster and application resilience to node failures, but it cannot precisely simulate a single AZ outage scenario.
+If you want, I can also draw a diagram showing single NodeGroup + FIS random capacity injection to visually explain Pod migration and ASG response, and why it cannot guarantee a single AZ failover.
+Do you want me to create that diagram?
