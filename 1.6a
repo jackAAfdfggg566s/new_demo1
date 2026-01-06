@@ -1,0 +1,76 @@
+完全有可能，你报错的问题就是 filters 里写了 Placement.AvailabilityZone，但 FIS 找不到这个字段。我给你完整分析一下。
+一、Placement.AvailabilityZone 的来源
+这是 EC2 describe-instances API 返回的字段
+示例：
+复制代码
+Json
+{
+  "Reservations": [
+    {
+      "Instances": [
+        {
+          "InstanceId": "i-0abcd1234efgh5678",
+          "InstanceType": "m5.large",
+          "Placement": {
+            "AvailabilityZone": "ap-southeast-2a",
+            "Tenancy": "default"
+          },
+          "State": {
+            "Name": "running"
+          }
+        }
+      ]
+    }
+  ]
+}
+FIS filters 的 path 必须和这个 JSON path 一致
+注意：
+Placement 是对象
+AvailabilityZone 是它的子字段
+写法：
+复制代码
+Json
+"path": "Placement.AvailabilityZone"
+二、怎么确认字段存在
+1️⃣ CLI 验证
+复制代码
+Bash
+aws ec2 describe-instances \
+    --instance-ids i-xxxxxxxxxxxx \
+    --query "Reservations[*].Instances[*].[InstanceId,Placement.AvailabilityZone,InstanceType,State.Name]"
+如果返回有值 → 字段存在
+如果报错 → 写法不对
+✅ 注意：Placement.AvailabilityZone 是大小写敏感的
+2️⃣ 检查 FIS 支持字段
+FIS 官方文档写明：
+filters.path 可以引用 EC2 DescribeInstances 返回的任何顶层或嵌套字段
+小写/大小写必须和 JSON 匹配
+Placement.AvailabilityZone 是正确的字段名
+三、常见踩坑
+字段写错
+写成 "placement.availabilityZone" → ❌
+必须 "Placement.AvailabilityZone"
+实例不是 running
+filters 里加 "InstanceState.Name":"running"，如果实例是 stopped → 选不到 → 报错
+AZ 拼写错误
+AWS 返回的是 "ap-southeast-2a"
+写 "ap-southeast-2-A" → ❌
+使用 EC2 不是你的账户或区域
+FIS 会找不到实例 → 报错
+四、测试可行 filters
+如果你想测试你 3 台实例能否被 FIS 选中：
+复制代码
+Bash
+aws ec2 describe-instances \
+  --filters "Name=availability-zone,Values=ap-southeast-2a" "Name=instance-state-name,Values=running" \
+  --query "Reservations[*].Instances[*].[InstanceId,InstanceType,Placement.AvailabilityZone]"
+返回实例列表 → 说明 filters 可用
+FIS 就能选中
+💡 总结
+你报错不一定是 tag 问题，更可能是：
+Placement.AvailabilityZone 写错（大小写敏感）
+filters 选不到实例（AZ 或 state 不对）
+如果你愿意，我可以帮你写一个 绝对可选中现有 3 台 EC2、无 tag、AZ + instanceType + state 的 FIS template，
+50% 注入 capacity error
+创建 template 不会报错
+你希望我直接帮你写吗？
