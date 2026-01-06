@@ -1,0 +1,54 @@
+明白了，你希望在 EKS NodeGroup / ASG 的 FIS 模板里，除了通过 NodeGroup tag 指定，还要 只影响特定 AZ（例如 2a）。
+这里需要注意：
+一、ASG + AZ 的行为
+NodeGroup 对应的 ASG 本身可以跨多个 AZ
+asg-insufficient-instance-capacity-error 作用在 ASG launch 失败，FIS 并不直接对单个实例注入
+FIS 不直接支持在 target 里 filter AZ
+也就是说 targets.filters.Placement.AvailabilityZone 对 ASG target 无效
+FIS 会随机选择 ASG 中的实例，但你可以用 parameters.overrideAZ（部分 action 支持）或手动拆成单 AZ 的 ASG
+二、可行方案
+方案 1：单 AZ NodeGroup
+如果你的 NodeGroup 已经只在 ap-southeast-2a
+使用之前的 template，自然只会影响 2a 实例
+方案 2：拆分 NodeGroup（可选）
+如果 NodeGroup 跨多个 AZ
+创建 只包含 2a 的 NodeGroup / ASG
+在 FIS template target 上用 tag 指定这个单 AZ NodeGroup
+这样就只影响 2a
+三、JSON 示例（单 AZ NodeGroup）
+复制代码
+Json
+{
+  "description": "FIS experiment: simulate insufficient capacity on EKS NodeGroup in AZ 2a",
+  "targets": {
+    "NodeGroupASG": {
+      "resourceType": "aws:autoscaling:autoScalingGroup",
+      "resourceTags": {
+        "eks:nodegroup-name": "YOUR_NODEGROUP_NAME" 
+      },
+      "selectionMode": "PERCENT(50)"
+    }
+  },
+  "actions": {
+    "InjectInsufficientCapacity": {
+      "actionId": "aws:ec2:asg-insufficient-instance-capacity-error",
+      "parameters": {
+        "duration": "PT10M"
+      },
+      "targets": {
+        "ASG": "NodeGroupASG"
+      }
+    }
+  }
+}
+🔑 重点：如果 NodeGroup 跨多个 AZ，FIS 会随机选择 ASG 内实例，不能直接在 template 里 filter AZ
+四、结论
+asg-insufficient-instance-capacity-error 无法在 FIS template 里直接按 AZ filter
+控制 AZ 的方法：
+NodeGroup/ASG 本身只部署在目标 AZ（推荐）
+拆分 NodeGroup，按 AZ 创建单独 ASG
+如果你需要，我可以帮你写一个 可直接运行的 FIS template + CLI 命令，
+针对你的 NodeGroup
+确保只影响 AZ 2a（前提是 NodeGroup 只在 2a）
+50% 注入容量不足
+你希望我帮你直接写吗？
