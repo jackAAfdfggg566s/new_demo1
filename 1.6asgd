@@ -1,0 +1,90 @@
+明白了，这个错误是 FIS 报的非常典型的“target 和 action 对不上”问题。我给你详细拆开原因和解决办法。
+一、报错分析
+错误信息：
+复制代码
+
+unexpected target instance found in action injectInsufficientCapacity
+翻译就是：
+“在你配置的 action injectInsufficientCapacity 时，FIS 发现了不符合要求的 target”
+原因：
+API action aws:ec2:api-insufficient-instance-capacity-error 有严格 target 类型要求
+它不能直接对单个 EC2 instance 注入。
+它只允许 target 是 instance type + AZ 维度 或 ASG。
+你的 template 里可能：
+把 target 设置成 EC2 instance ID
+或者 selectionMode / filters 用法不对
+所以 FIS 报错 “unexpected target instance”
+二、官方规则（FIS API Action 约束）
+Action
+可接受的 Target 类型
+aws:ec2:api-insufficient-instance-capacity-error
+aws:ec2:instance 但必须按 AZ + instanceType 筛选，不能直接用 instance ID
+aws:ec2:asg-insufficient-instance-capacity-error
+aws:autoscaling:autoScalingGroup
+🔑 核心点
+你不能直接指定 "Targets": {"Instances": ["i-xxxx"]}
+必须通过 filters（AZ） + instanceType + percentage 来间接选择
+三、正确的配置方式（JSON 示例）
+假设你的目标 AZ 是 ap-southeast-2a，你要覆盖 m5.large，50% 的 target：
+复制代码
+Json
+{
+  "targets": {
+    "CapacityTargets": {
+      "resourceType": "aws:ec2:instance",
+      "resourceTags": {
+        "ChaosTest": "AZ-Outage"
+      },
+      "filters": [
+        {
+          "path": "Placement.AvailabilityZone",
+          "values": ["ap-southeast-2a"]
+        }
+      ],
+      "selectionMode": "PERCENT(50)"
+    }
+  },
+  "actions": {
+    "InjectInsufficientCapacity": {
+      "actionId": "aws:ec2:api-insufficient-instance-capacity-error",
+      "parameters": {
+        "availabilityZone": "ap-southeast-2a",
+        "instanceType": "m5.large",
+        "duration": "PT10M"
+      },
+      "targets": {
+        "Instances": "CapacityTargets"
+      }
+    }
+  }
+}
+✅ 关键点：
+targets.CapacityTargets.resourceType = aws:ec2:instance
+不能直接填实例 ID
+用 filters + selectionMode 控制范围
+action 参数里必须指定 instanceType 和 availabilityZone
+四、常见踩坑点
+直接填实例 ID
+复制代码
+Json
+"Targets": {
+  "Instances": ["i-1234567890abcdef0"]
+}
+→ ❌  FIS 不允许
+AZ 不一致
+filters 里是 ap-southeast-2a，parameters里又是 ap-southeast-2b
+→ ❌  会报同样错误
+忘记 instanceType
+action 不带 instanceType
+→ ❌  必须填
+五、解决方案总结
+不要指定实例 ID
+用 AZ filter + instanceType
+加 selectionMode 或 percentage，否则 target 为空
+保证 action 参数和 target AZ 一致
+如果你愿意，我可以帮你直接写一份可运行的 FIS template，
+覆盖你现有三台 EC2
+可选 50% 注入 capacity error
+不用 ASG / 自动扩缩
+这样你就不会再遇到 “unexpected target instance” 错了。
+你希望我帮你直接写吗？
