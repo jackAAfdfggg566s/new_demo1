@@ -1,0 +1,99 @@
+好，这里我只单独给你一份「ASG 专用的 FIS 执行权限」，不掺 EC2、不掺 EKS，只覆盖你用到的这个 action：
+aws:autoscaling:asg-insufficient-instance-capacity-error
+一、这份权限“只做一件事”
+👉 允许 FIS 在指定 ASG 上注入 Insufficient Instance Capacity 错误
+它不会：
+终止实例
+修改 Launch Template
+直接操作 EKS
+二、ASG 专用 IAM Policy（可直接用）
+✅ FIS Execution Role – ASG 权限
+复制代码
+Json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowFISAsgInsufficientCapacity",
+      "Effect": "Allow",
+      "Action": [
+        "autoscaling:DescribeAutoScalingGroups",
+        "autoscaling:DescribeAutoScalingInstances",
+        "autoscaling:SetInstanceProtection",
+        "autoscaling:UpdateAutoScalingGroup"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+🔹 这是 官方行为路径最小集
+🔹 少任何一个，FIS 都可能直接报错
+三、每一条权限“为什么必须要”
+1️⃣ DescribeAutoScalingGroups
+FIS 要确认：
+ASG 是否存在
+Desired / Min / Max
+AZ 分布
+2️⃣ DescribeAutoScalingInstances
+FIS 要：
+找出当前 ASG 里有哪些实例
+判断注入影响比例（percentage）
+3️⃣ SetInstanceProtection
+FIS 在注入期间会：
+临时修改实例保护状态
+防止 ASG 立即自我修复破坏实验
+⚠️ 这个权限非常容易被漏掉
+4️⃣ UpdateAutoScalingGroup
+FIS 实际注入错误的方式是：
+修改 ASG 的内部状态（不是文档级参数）
+没这条 = injectInsufficientCapacity 直接失败
+四、这个 Role 还必须有的（但不在 policy 里）
+🔐 Trust Policy（必需）
+复制代码
+Json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "fis.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+五、启动实验的人还需要一条（别忘）
+这条 不是 ASG permission，但 90% 的报错在这里：
+复制代码
+Json
+{
+  "Effect": "Allow",
+  "Action": "iam:PassRole",
+  "Resource": "arn:aws:iam::<account-id>:role/FISExecutionRole"
+}
+六、你现在这个 ASG 权限能做什么 / 不能做什么
+✅ 能做
+在指定 ASG 注入 capacity error
+配合 AZ 参数限制扩容失败区域
+用于 EKS NodeGroup ASG
+❌ 不能做
+杀 EC2
+模拟 Node NotReady
+模拟真实 AZ blackout
+👉 正好符合你“权限最小化”的目标
+七、强烈建议（实战经验）
+如果你是生产账号：
+建议 Execution Role 专门拆成两个
+FIS-ASG-ExecutionRole
+FIS-EC2-ExecutionRole
+模板里按实验选不同 role
+这样：
+权限清晰
+审计好过
+风险可控
+如果你愿意，我下一步可以帮你：
+1️⃣ 把这份 policy 精确收敛到某一个 NodeGroup 的 ASG ARN
+2️⃣ 帮你检查：你现在报错是不是还缺 SetInstanceProtection
+3️⃣ 给你一套 FIS 生产演练的 IAM 最佳实践结构图
+你选一个，我继续。
