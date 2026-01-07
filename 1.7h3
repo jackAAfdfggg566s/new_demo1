@@ -1,0 +1,158 @@
+这是个典型、而且你这个阶段一定会遇到的问题 👍
+核心矛盾你已经点出来了：
+FIS template 里的 target（instanceIds）是“静态”的，但 AZ 下的 node / EC2 数量是“动态变化”的
+下面我直接给你可落地的标准解法，以及为什么要这么做。
+一、结论先行（最重要的）
+👉 FIS Template 本身不支持“动态发现实例”
+👉 正确做法是：
+用自动化脚本，在执行前动态生成 / 更新 FIS experiment template JSON
+也就是说：
+复制代码
+
+每次演练前
+↓
+脚本实时发现 AZ 下所有 EKS node（EC2）
+↓
+生成 / 更新 FIS template
+↓
+start-experiment
+二、整体设计（推荐架构）
+复制代码
+Text
+AZ
+ ↓
+kubectl → 找 Node
+ ↓
+Node → providerID → EC2 InstanceId
+ ↓
+生成 FIS template JSON（instanceIds）
+ ↓
+aws fis create-experiment-template
+ or
+aws fis update-experiment-template
+ ↓
+aws fis start-experiment
+三、关键点 1：为什么不能直接用 ASG / tag？
+你可能想过这些方案：
+❌ 直接 terminate ASG
+会影响多个 AZ
+不精确
+❌ FIS target 用 tag
+aws:ec2:instance 不支持 AZ 条件
+只能 tag / resource-id
+✅ 唯一精确的方法
+脚本算出 instanceIds
+四、核心脚本示例（AZ → EC2 instanceIds）
+下面是一个真实可用的 Bash 思路（你可以放在 CI / Lambda 里）
+1️⃣ 基于 AZ 找 Node → EC2
+复制代码
+Bash
+CLUSTER_NAME=my-eks
+AZ=ap-southeast-2a
+
+INSTANCE_IDS=$(kubectl get nodes \
+  -l topology.kubernetes.io/zone=${AZ} \
+  -o jsonpath='{range .items[*]}{.spec.providerID}{"\n"}{end}' \
+  | awk -F/ '{print $NF}')
+此时：
+复制代码
+Text
+i-01xxxx
+i-02xxxx
+i-03xxxx
+2️⃣ 动态生成 FIS target JSON
+复制代码
+Bash
+cat > targets.json <<EOF
+{
+  "Targets": {
+    "EksNodesInAz": {
+      "ResourceType": "aws:ec2:instance",
+      "ResourceArns": [],
+      "ResourceTags": {},
+      "Filters": [],
+      "SelectionMode": "ALL",
+      "ResourceIds": [
+$(echo "$INSTANCE_IDS" | sed 's/.*/"&",/' | sed '$ s/,$//')
+      ]
+    }
+  }
+}
+EOF
+👉 这里的关键点
+SelectionMode: ALL
+ResourceIds 是实时生成的
+五、完整 FIS Template（Terminate EC2）
+下面是一个最小但完整的 FIS experiment template 结构（你每次脚本生成）
+复制代码
+Json
+{
+  "description": "Terminate all EKS nodes in ap-southeast-2a",
+  "roleArn": "arn:aws:iam::123456789012:role/FISRole",
+  "targets": {
+    "EksNodesInAz": {
+      "resourceType": "aws:ec2:instance",
+      "resourceIds": [
+        "i-01xxxx",
+        "i-02xxxx"
+      ],
+      "selectionMode": "ALL"
+    }
+  },
+  "actions": {
+    "TerminateNodes": {
+      "actionId": "aws:ec2:terminate-instances",
+      "parameters": {},
+      "targets": {
+        "Instances": "EksNodesInAz"
+      }
+    }
+  },
+  "stopConditions": [
+    {
+      "source": "none"
+    }
+  ]
+}
+六、Template 是 create 还是 update？
+推荐做法（生产常用）
+场景
+建议
+AZ 数量固定
+1 个 template / AZ
+node 数量变化
+每次 update template
+并发演练
+template 名固定，experiment 不同
+复制代码
+Bash
+aws fis update-experiment-template \
+  --id <template-id> \
+  --cli-input-json file://template.json
+七、进阶优化（你一定会用上）
+1️⃣ 防止全灭（比如只杀 70%）
+复制代码
+Json
+"selectionMode": "PERCENT(70)"
+⚠️ 仍然是 基于 ResourceIds 的子集
+2️⃣ 只 kill worker，不动 system node
+复制代码
+Bash
+kubectl get nodes \
+  -l topology.kubernetes.io/zone=${AZ} \
+  -l '!node-role.kubernetes.io/control-plane'
+3️⃣ 干跑（Dry run）校验
+复制代码
+Bash
+aws fis start-experiment \
+  --experiment-template-id xxx \
+  --dry-run
+八、你这个问题的“标准答案一句话版”
+FIS 不能动态感知 AZ 下的 EC2 数量，必须通过脚本在执行前实时发现 node / EC2，并动态生成或更新 FIS template JSON。
+如果你愿意，下一步我可以直接帮你做一个 完整可复用脚本：
+az 参数
+自动过滤 system node
+自动 update template
+自动 start experiment
+带安全阈值（最多 kill N 个）
+这个已经是企业级 AZ 故障演练模板了。
