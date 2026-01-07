@@ -1,0 +1,124 @@
+懂了 👍
+你之前的思路是 “准备一个带占位符的 FIS template JSON，然后用 sed 把占位符替换成实时算出来的 instanceIds”。
+这个思路是完全正确的，而且在 Bash 场景下是最常见、最稳的做法。
+下面我给你一个规范、不容易踩坑的实现方式，顺便指出你之前 sed 容易出问题的点，以及更稳的替代方案。
+一、推荐的整体模式（你这个场景的最佳实践）
+复制代码
+Text
+fis-template.tpl.json   （带占位符）
+        ↓
+脚本发现 AZ 下所有 node → EC2 IDs
+        ↓
+sed / awk / jq 替换占位符
+        ↓
+生成 fis-template.json
+        ↓
+aws fis update / create / start
+二、模板 JSON（带 replace 占位符）
+fis-template.tpl.json
+复制代码
+Json
+{
+  "description": "Terminate all EKS nodes in __AZ__",
+  "roleArn": "arn:aws:iam::123456789012:role/FISRole",
+  "targets": {
+    "EksNodesInAz": {
+      "resourceType": "aws:ec2:instance",
+      "resourceIds": [
+        __INSTANCE_IDS__
+      ],
+      "selectionMode": "ALL"
+    }
+  },
+  "actions": {
+    "TerminateNodes": {
+      "actionId": "aws:ec2:terminate-instances",
+      "targets": {
+        "Instances": "EksNodesInAz"
+      }
+    }
+  },
+  "stopConditions": [
+    { "source": "none" }
+  ]
+}
+关键点：
+__INSTANCE_IDS__ → 整个数组内容
+不要在模板里写 ,，统一由脚本生成
+三、脚本：AZ → Node → InstanceId
+复制代码
+Bash
+AZ=ap-southeast-2a
+
+INSTANCE_IDS=$(kubectl get nodes \
+  -l topology.kubernetes.io/zone=${AZ} \
+  -o jsonpath='{range .items[*]}{.spec.providerID}{"\n"}{end}' \
+  | awk -F/ '{print "\""$NF"\""}' \
+  | paste -sd, -)
+生成结果：
+复制代码
+Text
+"i-01xxx","i-02xxx","i-03xxx"
+四、用 sed 替换（你原来的逻辑，正确但要注意）
+复制代码
+Bash
+sed \
+  -e "s|__AZ__|${AZ}|g" \
+  -e "s|__INSTANCE_IDS__|${INSTANCE_IDS}|g" \
+  fis-template.tpl.json > fis-template.json
+⚠️ 这里的坑你肯定踩过：
+问题
+原因
+解决
+JSON 变成非法
+多 / 少了逗号
+不在模板中写 ,
+sed 替换失败
+/ 冲突
+用 `
+空 AZ
+没 node
+需要提前校验
+五、必须加的安全校验（强烈建议）
+1️⃣ 防止 instanceIds 为空
+复制代码
+Bash
+if [[ -z "$INSTANCE_IDS" ]]; then
+  echo "ERROR: No instances found in ${AZ}"
+  exit 1
+fi
+2️⃣ 打印确认（防误杀）
+复制代码
+Bash
+echo "Will terminate instances in ${AZ}:"
+echo "$INSTANCE_IDS" | tr ',' '\n'
+六、进阶：只杀部分（比例 / 数量）
+方案 A：FIS 控制比例
+复制代码
+Json
+"selectionMode": "PERCENT(70)"
+方案 B：脚本控制数量（更安全）
+复制代码
+Bash
+INSTANCE_IDS=$(echo "$INSTANCE_IDS" | tr ',' '\n' | head -n 2 | paste -sd, -)
+七、为什么我不建议你“直接 sed 大段 JSON”
+你现在用的是可接受但偏脆弱的方案。
+如果你以后要：
+多 target
+多 action
+不同 AZ 共用模板
+更稳的升级方案是 jq：
+复制代码
+Bash
+jq \
+  --arg az "$AZ" \
+  --arg ids "$INSTANCE_IDS" \
+  '.description = "Terminate all EKS nodes in \($az)" |
+   .targets.EksNodesInAz.resourceIds = [$ids]' \
+  fis-template.tpl.json
+（你现在不用急着换，sed 已经够用了）
+八、你这个方案的“官方级总结”
+FIS 不支持动态 target，正确方式是：
+用占位符模板 + 脚本（kubectl）实时计算 instanceIds + sed/jq 替换生成 JSON。
+你这个方向是 完全对的，只是差几个防误杀和健壮性的小点。
+如果你愿意，下一步我可以帮你把这个脚本整理成一个 一条命令跑完整 AZ 故障演练 的版本（带 dry-run + 确认提示）。
