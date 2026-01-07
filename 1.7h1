@@ -1,0 +1,85 @@
+明白，你这个需求是：只基于 AZ 来找 EKS 的 node（不关心 nodegroup 名字）。
+下面给你最直接、可落地的方法，也是你做 AZ 故障 / FIS 时最常用的。
+一、最标准做法（Kubernetes 视角，强烈推荐）
+✅ 通过 Node 的 AZ label 查
+EKS 节点一定会有 AZ 相关 label（这是 Kubernetes 标准）：
+复制代码
+Bash
+kubectl get nodes \
+  -l topology.kubernetes.io/zone=ap-southeast-2a
+如果你集群比较老，也可以用这个（兼容）：
+复制代码
+Bash
+kubectl get nodes \
+  -l failure-domain.beta.kubernetes.io/zone=ap-southeast-2a
+查看结果（node 名称）
+复制代码
+Bash
+kubectl get nodes -o wide
+你会看到：
+复制代码
+Text
+NAME                                           AZ
+ip-10-0-xx-xx.ap-southeast-2.compute.internal  ap-southeast-2a
+👉 这一步已经精确得到“某个 AZ 下所有 node”。
+二、只想拿 Node 名字 / EC2 ID（给 FIS / ASG 用）
+1️⃣ Node → EC2 InstanceId
+复制代码
+Bash
+kubectl get nodes \
+  -l topology.kubernetes.io/zone=ap-southeast-2a \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.providerID}{"\n"}{end}'
+输出示例：
+复制代码
+Text
+ip-10-0-1-12.ap-southeast-2.compute.internal   aws:///ap-southeast-2a/i-0abc1234
+提取 EC2 ID：
+复制代码
+Bash
+... | awk -F/ '{print $NF}'
+三、AZ → NodeGroup（你之前困惑的点）
+如果你想知道：
+“这个 AZ 的 node 来自哪些 nodegroup？”
+复制代码
+Bash
+kubectl get nodes \
+  -l topology.kubernetes.io/zone=ap-southeast-2a \
+  -o jsonpath='{range .items[*]}{.metadata.labels.eks\.amazonaws\.com/nodegroup}{"\n"}{end}' \
+  | sort -u
+输出：
+复制代码
+Text
+ng-app-az-a
+👉 这一步能反向证明：
+一个 AZ 实际上对应哪些 NodeGroup 在承载流量
+四、AWS 视角（不走 kubectl，次优）
+如果你只用 AWS API（比如在 CI / Lambda 里）：
+1️⃣ 查 AZ 下的 EC2（基于 tag）
+EKS 节点默认有 tag：
+复制代码
+
+kubernetes.io/cluster/<cluster-name> = owned
+复制代码
+Bash
+aws ec2 describe-instances \
+  --filters \
+    "Name=availability-zone,Values=ap-southeast-2a" \
+    "Name=tag:kubernetes.io/cluster/<cluster-name>,Values=owned" \
+  --query 'Reservations[].Instances[].InstanceId' \
+  --output text
+⚠️ 注意：
+这种方式不知道 Pod / Node 状态
+不如 kubectl 精确
+五、结论（结合你做 AZ 故障演练）
+✔ 基于 AZ 找 node，首选：
+复制代码
+Bash
+kubectl get nodes -l topology.kubernetes.io/zone=<az>
+✔ AZ 故障 → FIS / terminate node：
+AZ → Node
+Node → EC2
+EC2 → FIS target
+✔ 是否需要 NodeGroup？
+不需要
+但如果你要做 capacity / 恢复验证，再反查 NodeGroup 即可
+如果你愿意，我可以直接给你一个 “AZ → Node → EC2 → terminate / FIS JSON” 的完整脚本，专门适合你现在做的 AZ 故障模拟场景。
