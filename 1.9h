@@ -1,0 +1,98 @@
+对，FIS 的一个 target 里 resourceArns 最多只能 5 个，你现在拿到 6 个 EC2 instance ARN，这是一个很常见的坑 👍
+处理方式有几种，按“自动化友好程度”从推荐到不推荐给你说清楚。
+✅ 最推荐方案：不用写 ARN，改用 filter + selectionMode
+核心思路：
+👉 不要把 6 个 ARN 写进 template
+👉 让 FIS 自己根据条件选实例
+示例（强烈推荐）
+复制代码
+Json
+"targets": {
+  "EksNodesInAz2a": {
+    "resourceType": "aws:ec2:instance",
+    "selectionMode": "ALL",
+    "filters": [
+      {
+        "path": "Placement.AvailabilityZone",
+        "values": ["ap-southeast-2a"]
+      },
+      {
+        "path": "State.Name",
+        "values": ["running"]
+      },
+      {
+        "path": "tag:eks:nodegroup-name",
+        "values": ["nodegroup-2a"]
+      }
+    ]
+  }
+}
+优点
+✅ 不受 5 个 ARN 限制
+✅ 实例数量 动态变化也没问题
+✅ 非常适合你现在的「某 AZ 下全部 EKS node」
+你前面做 AZ 故障模拟 / terminate node，这个是官方推荐方式。
+✅ 方案二：拆成 2 个 target（不太推荐，但能用）
+比如：
+复制代码
+Json
+"targets": {
+  "TargetA": {
+    "resourceType": "aws:ec2:instance",
+    "resourceArns": [
+      "arn:...i-1",
+      "arn:...i-2",
+      "arn:...i-3",
+      "arn:...i-4",
+      "arn:...i-5"
+    ],
+    "selectionMode": "ALL"
+  },
+  "TargetB": {
+    "resourceType": "aws:ec2:instance",
+    "resourceArns": [
+      "arn:...i-6"
+    ],
+    "selectionMode": "ALL"
+  }
+}
+Action 里写两次 terminate。
+缺点
+❌ JSON 复杂
+❌ 实例变化就要重生成 template
+❌ 不适合你现在“自动化脚本生成”的目标
+⚠️ 方案三：selectionMode = COUNT / PERCENTAGE（仅特定场景）
+复制代码
+Json
+"selectionMode": "COUNT(5)"
+或
+复制代码
+Json
+"selectionMode": "PERCENT(50)"
+适合
+chaos 实验
+不要求全部 node 被打掉
+不适合
+你现在这个 AZ 故障 = 全部 node 消失 的模拟
+❌ 不推荐：脚本里硬切 ARN
+比如：
+前 5 个一个 template
+第 6 个再跑一次
+这会让：
+实验不可复现
+pipeline 逻辑复杂
+容易漏
+🧠 给你一个最终结论（结合你之前的目标）
+你现在这个场景：
+👉 某 AZ（2a）下的 EKS node 全部 terminate，用来验证 AZ 故障
+正确姿势就是：
+❌ 不用 ARN
+✅ 用 filters
+✅ selectionMode: ALL
+✅ 条件：AZ + nodegroup tag + running
+这是 AWS FIS + EKS 官方推荐模型。
+如果你愿意，下一步我可以帮你：
+✅ 把你现有脚本（aws cli + sed）改成 filter 版本
+✅ 给你一个 完整可直接用的 FIS template JSON
+✅ 或帮你做 “一个 template 覆盖所有 AZ，只是参数不同” 的设计
+你现在是 单 AZ 一个 template，还是想 一个 template 复用不同 AZ？
