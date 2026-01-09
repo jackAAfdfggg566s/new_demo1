@@ -1,0 +1,86 @@
+可以的，而且这是 标准 / 稳定 / 官方推荐 的方式 👍
+核心点一句话：
+EKS 的 EC2 node 上一定有 eks:nodegroup-name 这个 tag
+✅ 方法一（最直接，强烈推荐）：
+从 Node → EC2 Instance → Tag
+1️⃣ 先从 k8s node 拿到 EC2 instance id
+复制代码
+Bash
+kubectl get node <node-name> -o jsonpath='{.spec.providerID}'
+输出类似：
+复制代码
+
+aws:///ap-southeast-2a/i-0abc123def456
+提取 instance id：
+复制代码
+Bash
+INSTANCE_ID=$(kubectl get node <node-name> -o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+2️⃣ 用 AWS CLI 查 EC2 tag（得到 nodegroup name）
+复制代码
+Bash
+aws ec2 describe-instances \
+  --instance-ids $INSTANCE_ID \
+  --query 'Reservations[].Instances[].Tags[?Key==`eks:nodegroup-name`].Value' \
+  --output text
+输出示例：
+复制代码
+
+nodegroup-2a
+✅ 这就是 node 对应的 EKS managed nodegroup
+✅ 方法二：一条命令直接查（适合脚本）
+复制代码
+Bash
+kubectl get node <node-name> -o jsonpath='{.spec.providerID}' \
+| awk -F/ '{print $NF}' \
+| xargs aws ec2 describe-instances \
+  --query 'Reservations[].Instances[].Tags[?Key==`eks:nodegroup-name`].Value' \
+  --output text
+🔁 批量：从一堆 node 拿 nodegroup
+复制代码
+Bash
+for n in $(kubectl get node -o name); do
+  iid=$(kubectl get $n -o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+  ng=$(aws ec2 describe-instances \
+        --instance-ids $iid \
+        --query 'Reservations[].Instances[].Tags[?Key==`eks:nodegroup-name`].Value' \
+        --output text)
+  echo "$n -> $ng"
+done
+⚠️ 特别注意的坑（很重要）
+1️⃣ 只对 Managed Node Group 有
+eks:nodegroup-name
+eks:cluster-name
+如果是：
+self-managed nodegroup
+karpenter
+手工 ASG
+❌ 这个 tag 不存在
+2️⃣ 自建 / self-managed 怎么办？
+通常会有：
+kubernetes.io/cluster/<cluster-name>
+Name / ASG tag
+需要你自己定义规则
+🧠 和你当前 FIS 场景的最佳结合方式
+你现在做的是：
+FIS → terminate 某 AZ 下某 nodegroup 的所有 node
+那就直接用：
+复制代码
+Json
+filters:
+- Placement.AvailabilityZone
+- tag:eks:nodegroup-name
+- State.Name
+完全不需要先算 node → instance → ARN
+✅ 一句话总结
+目标
+推荐方式
+单 node 查 nodegroup
+eks:nodegroup-name tag
+批量 node
+循环 + describe-instances
+FIS / 自动化
+直接用 tag filter（别用 ARN）
+如果你愿意，我可以帮你：
+🔧 把你现在 “node → ARN → FIS” 的脚本重构掉
+📄 给你一个 通用 FIS 模板 + AZ / nodegroup 参数化版本
+你现在 node 是 managed nodegroup 还是 self-managed / karpenter？
