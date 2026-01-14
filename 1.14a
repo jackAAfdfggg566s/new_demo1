@@ -1,0 +1,93 @@
+下面给你一个可直接用的 sh 函数，逻辑是：
+遍历 EKS 中指定的 3 个 Pod
+通过 Pod → Node → AZ
+只要 AZ 属于 az1 或 az2
+就把 对应的 subnet（通过 node 的 providerID / 标签）存进数组
+最后返回这个数组（echo 输出，便于 pipeline / 调用方接收）
+适合：GitLab CI / bash / sh
+依赖：kubectl、jq
+一、核心思路（你现在的需求）
+复制代码
+Text
+pod
+ → nodeName
+   → topology.kubernetes.io/zone (AZ ID / name)
+   → node.spec.providerID (instance-id)
+     → 查 subnet
+二、示例：sh 函数（AZ = az1 / az2）
+⚠️ 注意
+这里假设 AZ ID 是 apse2-az1 / apse2-az2
+如果你用的是 ap-southeast-2a 这种名字，我可以给你改一版
+复制代码
+Sh
+get_subnets_from_pods() {
+  NAMESPACE="$1"
+  PODS="$2"   # 空格分隔的 pod 名
+
+  RESULT_SUBNETS=""
+
+  for POD in $PODS; do
+    # 1. pod -> node
+    NODE=$(kubectl get pod "$POD" -n "$NAMESPACE" -o jsonpath='{.spec.nodeName}')
+
+    [ -z "$NODE" ] && continue
+
+    # 2. node -> az id
+    AZ=$(kubectl get node "$NODE" -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}')
+
+    case "$AZ" in
+      apse2-az1|apse2-az2)
+        ;;
+      *)
+        continue
+        ;;
+    esac
+
+    # 3. node -> instance id
+    PROVIDER_ID=$(kubectl get node "$NODE" -o jsonpath='{.spec.providerID}')
+    INSTANCE_ID=$(echo "$PROVIDER_ID" | awk -F/ '{print $NF}')
+
+    # 4. instance -> subnet
+    SUBNET_ID=$(aws ec2 describe-instances \
+      --instance-ids "$INSTANCE_ID" \
+      --query 'Reservations[0].Instances[0].SubnetId' \
+      --output text)
+
+    # 5. 保存到数组（去重）
+    case " $RESULT_SUBNETS " in
+      *" $SUBNET_ID "*) ;;
+      *) RESULT_SUBNETS="$RESULT_SUBNETS $SUBNET_ID" ;;
+    esac
+    ;;
+  done
+
+  echo "$RESULT_SUBNETS"
+}
+三、调用方式示例
+复制代码
+Sh
+PODS="pod-a pod-b pod-c"
+
+SUBNETS=$(get_subnets_from_pods default "$PODS")
+
+echo "Matched subnets: $SUBNETS"
+输出类似：
+复制代码
+Text
+subnet-0a123 subnet-0b456
+👉 非常适合直接塞进 FIS / JSON / for loop
+四、如果你 不想调 AWS API（更快）
+👉 EKS node 上通常有 subnet 标签
+复制代码
+Sh
+SUBNET=$(kubectl get node "$NODE" -o jsonpath='{.metadata.labels.eks\.amazonaws\.com/subnet-id}')
+我可以给你改成 纯 kubectl 版（无 aws cli）
+五、你可能接下来会问的（我先说）
+✅ AZ 是 name 还是 zone-id（2a vs az1）
+✅ subnet 要不要 去重
+✅ 返回格式：
+空格分隔
+JSON array
+直接写文件（GitLab artifact）
+✅ pod 数量是 固定 3 个 还是动态
+👉 你告诉我 AZ 的实际值格式 + subnet 想怎么返回，我可以直接给你一版 最终生产可用脚本。
