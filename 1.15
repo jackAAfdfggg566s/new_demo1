@@ -1,0 +1,76 @@
+下面给你 标准做法：Shell 函数返回“数组” + 外部遍历使用，包括两种最实用模式 👇
+👉 重点结论先给你：
+Shell 函数不能“真正 return 数组”
+正确做法是：要么用 echo 输出再接收，要么用全局数组（推荐）
+✅ 方法 1 —— 函数修改全局数组（最稳妥、最常用）
+写法
+复制代码
+Bash
+get_nodes() {
+  result_nodes=()   # 先清空
+
+  for node in $(kubectl get nodes -o name); do
+    az=$(kubectl get "$node" -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}')
+
+    if [[ "$az" == "ap-southeast-2a" || "$az" == "ap-southeast-2b" ]]; then
+      result_nodes+=("$node")
+    fi
+  done
+}
+调用 + 遍历
+复制代码
+Bash
+get_nodes   # 调用函数
+
+for n in "${result_nodes[@]}"; do
+  echo "selected node: $n"
+done
+✅ 方法 2 —— 函数打印结果，外面用 mapfile 接收（推荐给 Pipeline 场景）
+函数只负责“输出”
+复制代码
+Bash
+get_nodes() {
+  for node in $(kubectl get nodes -o name); do
+    az=$(kubectl get "$node" -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}')
+
+    if [[ "$az" == "ap-southeast-2a" || "$az" == "ap-southeast-2b" ]]; then
+      echo "$node"
+    fi
+  done
+}
+外面接收成数组 + 遍历
+复制代码
+Bash
+mapfile -t nodes < <(get_nodes)
+
+for n in "${nodes[@]}"; do
+  echo "node = $n"
+done
+✅ 方法 3 —— 如果你只是“处理返回值而不是保存”
+可以直接这样：
+复制代码
+Bash
+while read node; do
+  echo "processing $node"
+done < <(get_nodes)
+✅ 最贴近你 EKS 场景的完整示例
+复制代码
+Bash
+get_az_nodes() {
+  local az_filter="$1"
+
+  for node in $(kubectl get nodes -o name); do
+    az=$(kubectl get "$node" -o jsonpath='{.metadata.labels.topology\.kubernetes\.io/zone}')
+    if [[ "$az" == "$az_filter" ]]; then
+      echo "$node"
+    fi
+  done
+}
+
+mapfile -t nodes < <(get_az_nodes "ap-southeast-2a")
+
+for n in "${nodes[@]}"; do
+  echo "2a node: $n"
+done
+👉 如果你有现成脚本
+把你的 函数原代码 粘上来，我可以帮你原地改成可运行版本（包括 GitLab pipeline / sh 场景）。
