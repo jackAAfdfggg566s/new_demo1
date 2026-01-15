@@ -1,0 +1,158 @@
+可以，而且这是一个很常见的场景。关键问题不是 FIS，而是：
+👉 你要“并行跑两个实验 + 分别看结果 + 还能判断成功/失败”。
+下面我给你可直接用的几种标准写法（从简单到生产级），你挑一种放到 GitLab CI 里就行。
+✅ 方案 1：最简单 — 并行启动 + 实时打印
+如果你只是想同时启动、都能看到输出：
+复制代码
+Bash
+#!/bin/bash
+
+echo "Starting Experiment A..."
+aws fis start-experiment \
+  --experiment-template-id EXT-A-123 \
+  > >(tee /tmp/fis_a.log) &
+
+echo "Starting Experiment B..."
+aws fis start-experiment \
+  --experiment-template-id EXT-B-456 \
+  > >(tee /tmp/fis_b.log) &
+
+wait
+
+echo "Both experiments finished triggering"
+👉 GitLab 里你会看到：
+复制代码
+
+Starting Experiment A...
+Starting Experiment B...
+{
+  "experiment": {...A...}
+}
+{
+  "experiment": {...B...}
+}
+Both experiments finished triggering
+同时还会在本地留下：
+/tmp/fis_a.log
+/tmp/fis_b.log
+✅ 方案 2：更清晰 — 分别存 ID + 打印 + 轮询状态
+更推荐这种（自动化友好）：
+复制代码
+Bash
+#!/bin/bash
+
+echo "Launching FIS experiments..."
+
+EXP_A_ID=$(aws fis start-experiment \
+  --experiment-template-id EXT-A-123 \
+  --query "experiment.id" \
+  --output text)
+
+EXP_B_ID=$(aws fis start-experiment \
+  --experiment-template-id EXT-B-456 \
+  --query "experiment.id" \
+  --output text)
+
+echo "Experiment A ID: $EXP_A_ID"
+echo "Experiment B ID: $EXP_B_ID"
+然后你可以轮询状态：
+复制代码
+Bash
+while true; do
+  STATUS_A=$(aws fis get-experiment --id "$EXP_A_ID" \
+    --query "experiment.state.status" --output text)
+
+  STATUS_B=$(aws fis get-experiment --id "$EXP_B_ID" \
+    --query "experiment.state.status" --output text)
+
+  echo "A: $STATUS_A | B: $STATUS_B"
+
+  if [[ "$STATUS_A" == "completed" && "$STATUS_B" == "completed" ]]; then
+    echo "Both experiments completed"
+    break
+  fi
+
+  sleep 10
+done
+GitLab 会持续打印类似：
+复制代码
+
+A: running | B: running
+A: running | B: running
+A: completed | B: completed
+Both experiments completed
+✅ 方案 3：真正并行 + 分别日志 + 失败自动退出（CI 推荐）
+复制代码
+Bash
+#!/bin/bash
+set -euo pipefail
+
+run_fis() {
+  local tpl=$1
+  local name=$2
+
+  echo "[$name] starting..."
+
+  local exp_id
+  exp_id=$(aws fis start-experiment \
+    --experiment-template-id "$tpl" \
+    --query "experiment.id" \
+    --output text)
+
+  echo "[$name] experiment id = $exp_id" | tee "/tmp/${name}.id"
+
+  # 等到结束
+  while true; do
+    status=$(aws fis get-experiment --id "$exp_id" \
+      --query "experiment.state.status" --output text)
+
+    echo "[$name] status = $status"
+
+    if [[ "$status" == "completed" ]]; then
+      return 0
+    fi
+
+    if [[ "$status" == "failed" || "$status" == "stopped" ]]; then
+      echo "[$name] FAILED!"
+      return 1
+    fi
+
+    sleep 10
+  done
+}
+
+run_fis "EXT-A-123" "eks-egress" &
+run_fis "EXT-B-456" "rds-ingress" &
+
+wait
+👉 GitLab 输出示例：
+复制代码
+
+[eks-egress] starting...
+[rds-ingress] starting...
+[eks-egress] experiment id = i-abc123
+[rds-ingress] experiment id = i-def456
+[eks-egress] status = running
+[rds-ingress] status = running
+...
+[eks-egress] status = completed
+[rds-ingress] status = completed
+✅ 最接近你场景的建议（EKS + RDS）
+如果你是在做：
+实验 A = 断 EKS → RDS (Egress)
+实验 B = 断 RDS ← EKS (Ingress)
+你可以这样命名，更清楚：
+复制代码
+Bash
+run_fis "EXT-EKS-EGRESS" "eks-egress" &
+run_fis "EXT-RDS-INGRESS" "rds-ingress" &
+如果你愿意，我可以帮你写完整可粘贴版 GitLab CI
+你只需要告诉我：
+你两个 FIS Template ID 是什么？
+例如：
+EXT-eks-xxxx
+EXT-rds-xxxx
+你希望：
+只启动？
+还是启动 + 等完成 + CI 成功/失败判断？
+我可以给你完整 `.gitlab-ci.yml + sh 脚本，直接能跑。
