@@ -1,0 +1,112 @@
+你现在的问题核心是：
+“按字段批量改，但凡这一段配置属于 performance，就整段跳过不替换。”
+我给你可直接用的、可复现的做法，同时兼顾 sed（逐行） 和 jq（按 JSON 结构，强烈推荐） 两种思路，你挑你能落地的那一种。
+✅ 方案 A：用 sed —— 逐行排除（不用看懂 JSON）
+1️⃣ 最实用的一行写法（推荐）
+假设：
+你要改：applicationLogGroup
+不改：含 performance 的行或区块
+可以这样：
+复制代码
+Bash
+sed -i '/performance/! {/applicationLogGroup/s|old-loggroup|new-loggroup|}' file.json
+我拆开解释一下（很关键）：
+👉 这段是什么意思？
+片段
+含义
+/performance/!
+凡是包含 performance 的行 → 全部跳过
+{ ... }
+只对“不含 performance 的行”执行花括号里的操作
+`/applicationLogGroup/s
+old
+用人话说：
+只要这一行带 performance，就什么都不做；
+只有在 不含 performance 的行里，才去改 applicationLogGroup。
+2️⃣ 如果你的结构是“区块式 JSON”也安全
+即便你有这种结构：
+复制代码
+Json
+{
+  "type": "performance",
+  "applicationLogGroup": "xxxxx"
+}
+上面的 sed 依然不会改，因为这一行包含 performance，整行被排除。
+3️⃣ 带变量的版本（适合 GitLab / CI）
+复制代码
+Bash
+OLD="/aws/eks/app-abc"
+NEW="/aws/eks/app-${ENV}"
+
+sed -i "/performance/! {/applicationLogGroup/s|${OLD}|${NEW}|}" file.json
+✅ 方案 B：用 jq —— 按 JSON 结构改（更规范，强烈建议）
+如果你的 JSON 逻辑类似这样（抽象版）：
+复制代码
+Json
+{
+  "logs": [
+    {
+      "type": "application",
+      "logGroup": "/aws/eks/app-abc"
+    },
+    {
+      "type": "performance",
+      "logGroup": "/aws/eks/perf-xyz"
+    }
+  ]
+}
+你可以精确表达“只改 application，不碰 performance”：
+复制代码
+Bash
+jq '
+  .logs[] 
+  | select(.type != "performance")
+  | .logGroup = "/aws/eks/new-app-loggroup"
+' input.json > output.json
+👉 效果：
+✅ application 被改
+✅ performance 原封不动
+✅ 不依赖行文本匹配，更安全
+如果你想“原地改文件”：
+复制代码
+Bash
+jq '
+  .logs[] 
+  | select(.type != "performance")
+  | .logGroup = "/aws/eks/new-app-loggroup"
+' file.json > tmp.json && mv tmp.json file.json
+✅ 方案 C：最接近你“直觉”的 sed 写法
+如果你只是想：
+“含 performance 的整段都别碰”
+你也可以用地址范围排除（区块级）：
+复制代码
+Bash
+sed -i '/"type": "performance"/, /}/ {
+   /applicationLogGroup/! s|old|new|
+}' file.json
+意思是：
+从 "type": "performance" 开始
+一直到最近的 } 结束
+整个区块都跳过替换
+✅ 如果你贴“关键结构”我能给你一行最优解
+你现在贴的那一大段主要是噪声，看不出真实 JSON 结构。
+你只需要贴最小可复现片段，比如：
+复制代码
+Json
+{
+  "xxx": [
+    {
+      "type": "application",
+      "applicationLogGroup": "AAA"
+    },
+    {
+      "type": "performance",
+      "applicationLogGroup": "BBB"
+    }
+  ]
+}
+我就可以帮你：
+给你精准 jq 一行
+或最干净 sed 一行
+你可以回复：
+👉 “我贴一个真实脱敏结构，你按那个给我命令。”
