@@ -1,0 +1,90 @@
+好，这个问题问得其实非常关键，我直接按“能落地做实验 + 你会看到什么现象”来回答你：如果你断 Kafka 的 ingress，会发生什么、什么时候有用、以及怎么在 FIS 里正确用。
+✅ 一句话结论（先给你最重要的）
+👉 如果你断 Kafka 的 ingress：
+Kafka 还活着
+但所有客户端（包括 EKS-A）都连不上 Kafka
+Kafka 看不到 A 的心跳
+这相当于：“Kafka 对外整体不可达”
+这不是单个应用故障，而是Kafka 作为服务的网络故障。
+二、你原来的目标 vs Kafka ingress
+你之前的目标是：
+让 Kafka “看不到 EKS-A 的心跳”，但 Kafka 本身还能服务别人。
+如果你改成 Kafka ingress，效果是：
+复制代码
+
+A ----X----> Kafka   ❌
+B ----X----> Kafka   ❌
+C ----X----> Kafka   ❌
+👉 结果：Kafka 对所有客户端都不可用。
+这有三个后果：
+Kafka 侧日志
+不会看到 A 的心跳丢失
+因为连接根本建不起来
+你更像是在测试：
+“Kafka 挂了” 而不是 “A 挂了”
+EKS-A 侧表现
+Kafka client 会报：
+TimeoutException
+NoAvailableBrokers
+Connection refused
+但无法区分是 A 问题还是 Kafka 问题
+影响范围
+影响整个集群的 Kafka 使用者
+不适合做“单应用韧性测试”
+三、那 Kafka ingress 什么时候有用？
+👉 当你的实验目标是：测试“Kafka 自身的可用性/降级能力”时，Kafka ingress 才是对的。
+例如你想验证：
+Kafka 挂了 60 秒时：
+生产者是否会自动重连
+消费者是否会 rebalance
+应用是否能优雅降级
+是否会雪崩
+这时你可以故意把 Kafka 入口打断。
+四、如果你“非要”用 FIS 断 Kafka ingress，怎么配
+🎯 目标：断 Kafka 对外访问
+Target（关键）
+👉 Kafka 所在的 NodeGroup
+Action
+复制代码
+Json
+{
+  "actionId": "aws:ec2:network-disrupt-connectivity",
+  "parameters": {
+    "scope": "ingress",
+    "duration": "PT60S"
+  }
+}
+这等价于：
+“任何人都连不上 Kafka 60 秒”
+五、对比三种方式（帮你选对方向）
+你想模拟什么
+应该断什么
+推荐度
+A 看不到 Kafka
+✅ A 的 egress
+⭐⭐⭐⭐⭐
+Kafka 自己“对外挂掉”
+✅ Kafka ingress
+⭐⭐⭐
+Kafka 能收到请求但回不了
+Kafka egress
+⭐⭐
+整个集群网络混乱
+A ingress + egress
+⭐⭐
+六、回到你的场景：哪个才是最佳？
+如果你的目标是：
+“Kafka 看不到 EKS-A 的心跳，但 Kafka 本身是健康的”
+👉 最佳做法 = 只断 A 的 egress（不是 Kafka ingress）
+这样：
+Kafka：仍然正常
+其他应用：不受影响
+你只验证：A 的韧性
+七、如果你愿意，我可以给你两个模板（可直接用）
+告诉我一句就行：
+1️⃣ Kafka 跑在哪个 NodeGroup 名字？
+2️⃣ A 跑在哪个 NodeGroup 名字？
+我可以给你：
+模板 A：断 A egress（你原本最需要的）
+模板 B：断 Kafka ingress（对照实验）
+两个都能在 FIS Console 直接导入运行。
