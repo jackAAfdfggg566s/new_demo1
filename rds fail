@@ -1,0 +1,66 @@
+可以做到 RDS down 5 分钟，但不能靠单个 FIS Action“精确计时 300 秒” —— 你需要用组合方式来实现。下面给你 两种最实用、可落地的做法，你可以直接选一种。
+✅ 方案 A（最稳妥、推荐）——重启 + 等待
+👉 目标：RDS 基本不可用约 5 分钟
+做法（两步 FIS 或手动配合）：
+Step 1：重启主实例
+复制代码
+Text
+Action: aws:rds:reboot-db-instance  
+Target: 你的 Primary 实例
+👉 典型影响：
+Multi-AZ：会触发 failover
+不可用时间：约 1–2 分钟
+Step 2：再人为“拖长不可用时间”
+任选其一：
+选项 1：再重启一次 Reader
+复制代码
+Text
+Action: aws:rds:reboot-db-instance  
+Target: 任一 Reader
+→ 两次加起来通常接近 4–6 分钟 的整体影响窗口。
+选项 2：对原 Writer 做 180s 网络中断
+复制代码
+Text
+Action: aws:ec2:network-disrupt-connectivity  
+scope = ALL  
+duration = PT180S
+👉 最终效果：≈ 5 分钟的不稳定/不可用状态
+优点：
+可控、可复现
+符合大多数公司 Chaos 测试要求
+✅ 方案 B（更真实）——Failover + 网络隔离 5 分钟
+适合 Aurora 场景。
+Action 1：触发主备切换
+复制代码
+Text
+aws:rds:failover-db-cluster
+Action 2：让原 Writer“消失” 5 分钟
+复制代码
+Text
+aws:ec2:network-disrupt-connectivity  
+scope = ALL  
+duration = PT300S
+👉 你模拟的是：
+“主节点挂掉 → 读副本接管 → 原主在 5 分钟内无法恢复”
+这非常接近真实事故场景，也比单纯重启更有价值。
+什么时候不建议用的方法
+❌ 不要指望：
+复制代码
+Text
+aws:rds:failover-db-cluster  +  duration = 5分钟
+➡️ 不可能 —— failover 本身的时间由 AWS 控制（通常 10–60s），你不能强制拉长到 5 分钟，必须靠“重启或网络中断”来延长影响。
+快速帮你选
+你想要的效果
+选哪种
+简单、稳妥、可交付
+👉 方案 A
+最真实、最像生产事故
+👉 方案 B
+只想“RDS 完全黑屏 5 分钟”
+只能靠网络隔离 300s
+如果你愿意，我可以直接给你可导入的 FIS JSON
+告诉我：
+1️⃣ Aurora 还是普通 RDS？
+2️⃣ Cluster 名 / Instance 名？
+3️⃣ 你要：方案 A 还是方案 B？
+我帮你生成完整 FIS 模板，一键跑。
