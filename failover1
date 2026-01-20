@@ -1,0 +1,96 @@
+下面给你可直接导入 FIS Console 的示例模板（方法 3：对主实例所在 AZ 做全量网络隔离）。
+👉 你只需要替换三处占位符即可运行：
+<ACCOUNT_ID>
+<REGION>
+<PRIMARY_AZ_ID>（例如：apse2-az1）
+✅ FIS 模板（完整 JSON）
+复制代码
+Json
+{
+  "description": "Disrupt all network connectivity in primary AZ to trigger RDS Multi-AZ failover",
+  "targets": {
+    "PrimaryAZ": {
+      "resourceType": "aws:ec2:availability-zone",
+      "resourceArns": [
+        "arn:aws:ec2:<REGION>:<ACCOUNT_ID>:availability-zone/<PRIMARY_AZ_ID>"
+      ],
+      "selectionMode": "ALL"
+    }
+  },
+  "actions": {
+    "DisruptAZNetwork": {
+      "actionId": "aws:ec2:network-disrupt-connectivity",
+      "parameters": {
+        "scope": "ALL",
+        "duration": "PT120S"
+      },
+      "targets": {
+        "AvailabilityZones": "PrimaryAZ"
+      }
+    }
+  },
+  "stopConditions": [
+    {
+      "source": "aws:cloudwatch:alarm",
+      "value": "arn:aws:cloudwatch:<REGION>:<ACCOUNT_ID>:alarm/Your-Alarm-Name"
+    }
+  ],
+  "roleArn": "arn:aws:iam::<ACCOUNT_ID>:role/Your-FIS-Role",
+  "tags": {
+    "Name": "rds-az-failover-chaos-test"
+  }
+}
+👉 你需要替换的地方（必改）
+1️⃣ AZ（最关键）
+把这一行改成你 Primary 所在 AZ：
+复制代码
+Json
+"arn:aws:ec2:<REGION>:<ACCOUNT_ID>:availability-zone/<PRIMARY_AZ_ID>"
+例如：
+复制代码
+Json
+"arn:aws:ec2:ap-southeast-2:123456789012:availability-zone/apse2-az1"
+2️⃣ FIS Role（必需）
+把这一行换成你自己的 FIS 实验角色：
+复制代码
+Json
+"roleArn": "arn:aws:iam::<ACCOUNT_ID>:role/Your-FIS-Role"
+该角色必须包含（最小权限示例）：
+复制代码
+Json
+{
+  "Effect": "Allow",
+  "Action": [
+    "ec2:StartNetworkInsightsAccessScopeAnalysis",
+    "ec2:CreateTrafficMirrorFilter",
+    "ec2:CreateTrafficMirrorFilterRule",
+    "ec2:DeleteTrafficMirrorFilter",
+    "ec2:DeleteTrafficMirrorFilterRule"
+  ],
+  "Resource": "*"
+}
+以及：
+复制代码
+Json
+{
+  "Effect": "Allow",
+  "Action": "fis:InjectApiInternalError",
+  "Resource": "*"
+}
+3️⃣ CloudWatch Alarm（可选）
+如果你没有 stopCondition，可以把整个 stopConditions 删掉；
+或者改成你自己的告警 ARN。
+你运行后会看到什么（验证点）
+如果是 Multi-AZ RDS：
+30–120s 内大概率发生 failover
+新 Primary 会变到另一 AZ
+原 AZ 恢复后会变成 Standby
+你可以在 RDS 控制台看：
+Writer AZ 发生变化 ✅
+Failover time 通常 10–60s
+如果你告诉我，我可以帮你“定制版”
+告诉我：
+1️⃣ 你的 Region（例如 ap-southeast-2）
+2️⃣ Primary 当前 AZ（apse2-az1/az2/az3）
+3️⃣ Aurora 还是普通 RDS Multi-AZ
+我可以帮你把最终可直接粘贴的 JSON填好发给你。
