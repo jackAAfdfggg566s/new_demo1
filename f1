@@ -1,0 +1,97 @@
+你这个报错很合理——这不是你配置错，而是 FIS Console 里确实“看起来连不上 AZ”，因为 AZ 不能被直接当作可选目标资源来手动挑选。我给你可真正能连起来的正确做法 + 可运行模板。
+✅ 核心修正（最重要）
+👉 不要用：
+复制代码
+
+aws:ec2:availability-zone   ❌（在 FIS UI 里很难直接选）
+👉 改成：用 AZ 里的 子网(subnet) 作为 Target ✔️
+本质上效果一样：
+👉 “把某个 AZ 的网络打断 = 把该 AZ 的子网网络打断”。
+一、你需要先做一件事（30 秒就能搞定）
+找到 Primary 所在 AZ 的一个 Subnet
+在 AWS Console：
+进 RDS → 你的实例 → Connectivity
+记下：
+Primary 所在 AZ（比如 apse2-az1）
+再去：
+VPC → Subnets
+过滤：
+Availability Zone = apse2-az1
+复制 任意一个 Subnet ID，例如：
+复制代码
+
+subnet-0a123456789abcde
+👉 这个就是你 FIS 的 Target。
+二、可直接连起来的 FIS 模板（方法 3）
+下面这个一定能在 Console 选到 Target：
+复制代码
+Json
+{
+  "description": "Disrupt all network connectivity in primary AZ subnet to trigger RDS failover",
+  "targets": {
+    "PrimarySubnet": {
+      "resourceType": "aws:ec2:subnet",
+      "resourceArns": [
+        "arn:aws:ec2:<REGION>:<ACCOUNT_ID>:subnet/<YOUR_SUBNET_ID>"
+      ],
+      "selectionMode": "ALL"
+    }
+  },
+  "actions": {
+    "DisruptAZNetwork": {
+      "actionId": "aws:ec2:network-disrupt-connectivity",
+      "parameters": {
+        "scope": "ALL",
+        "duration": "PT120S"
+      },
+      "targets": {
+        "Subnets": "PrimarySubnet"
+      }
+    }
+  },
+  "roleArn": "arn:aws:iam::<ACCOUNT_ID>:role/Your-FIS-Role",
+  "tags": {
+    "Name": "rds-az-failover-chaos-test"
+  }
+}
+三、你需要替换的三处
+1️⃣ Region
+例如：
+复制代码
+
+ap-southeast-2
+2️⃣ Account ID
+你的 AWS 账号 ID。
+3️⃣ 关键：Subnet ID
+把：
+复制代码
+
+subnet/<YOUR_SUBNET_ID>
+改成你刚才在 VPC 里复制的，比如：
+复制代码
+
+arn:aws:ec2:ap-southeast-2:123456789012:subnet/subnet-0a123456789abcde
+四、运行后你会看到什么
+如果你是 RDS Multi-AZ：
+30–120 秒内大概率触发 failover
+Primary 会切到另一 AZ
+原 AZ 恢复后变 Standby
+你可以在 RDS 控制台确认：
+Writer AZ 变了 ✅
+Event log 里有 Failover initiated ✅
+五、如果你“还想更狠一点”
+你也可以一次选多个 subnet（同一 AZ）：
+复制代码
+Json
+"resourceArns": [
+  "arn:aws:ec2:ap-southeast-2:123456789012:subnet/subnet-aaaa",
+  "arn:aws:ec2:ap-southeast-2:123456789012:subnet/subnet-bbbb"
+]
+这样等价于：
+👉 更接近“整个 AZ 网络出问题”。
+六、我可以帮你填完整模板
+你只需要把下面三行发给我：
+1️⃣ Region（例如 ap-southeast-2）
+2️⃣ 你的 Account ID
+3️⃣ Primary 所在 AZ 的 一个 subnet ID
+我帮你把最终可直接粘贴的完整 JSON填好给你。
