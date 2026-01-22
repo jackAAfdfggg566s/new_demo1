@@ -1,0 +1,201 @@
+好，那我们就把 纯 sh 吃内存法 拆开讲清楚：
+👉 包括 原理解析 + 每条命令含义 + 如何验证 OOM + 如何判断是内存而不是磁盘问题
+一、核心命令（原始版）
+复制代码
+Bash
+sh -c "i=0; while true; do i=$((i+1)); dd if=/dev/zero bs=10M count=1 >> /tmp/mem; done"
+二、逐行拆解（机制级解释）
+1️⃣ sh -c " ... "
+表示让 shell 执行一整串命令字符串
+👉 常用于容器 command: 或 args: 里
+2️⃣ i=0; while true; do ...; done
+这是一个无限循环：
+复制代码
+Bash
+while true; do
+   ...
+done
+意思是：
+➡ 永远执行，不退出
+➡ 直到容器被 kill / OOM / 节点驱逐
+3️⃣ dd if=/dev/zero bs=10M count=1 >> /tmp/mem
+这是核心吃内存操作
+参数拆解：
+dd
+低级数据拷贝工具（Linux 原生命令）
+if=/dev/zero
+输入源 = /dev/zero
+含义：
+/dev/zero 是一个无限输出 0 的虚拟设备 不是文件，不占磁盘，不会读完
+👉 等价于：无限数据源
+bs=10M
+block size = 10MB
+一次读取 10MB 数据块
+count=1
+只读 1 个 block
+👉 即一次读 10MB
+>> /tmp/mem
+追加写入文件
+👉 每一轮循环：
+从 /dev/zero 读 10MB
+写入 /tmp/mem
+文件越来越大
+页缓存(page cache)不断增长
+内存被快速占满
+三、为什么这会导致 OOM（不是磁盘满）
+关键点是：Linux page cache 机制
+流程是：
+dd 读 /dev/zero
+数据进入内核 buffer
+写入 /tmp/mem
+数据先进入 内存页缓存（page cache）
+内存不断增长
+超过 cgroup memory limit
+内核触发：
+复制代码
+
+OOM Killer
+容器被杀死
+👉 即使磁盘还有空间，也会先 OOM，不是磁盘满
+四、极简版（更暴力）
+复制代码
+Bash
+sh -c "cat /dev/zero > /tmp/mem"
+解释：
+/dev/zero 无限输出
+> 写文件
+无限制写
+page cache 暴涨
+秒级 OOM
+👉 这是最快 OOM 版本
+五、K8s 场景完整示例 Pod（生产级结构）
+复制代码
+Yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom-test
+spec:
+  restartPolicy: Never
+  containers:
+  - name: oom
+    image: busybox
+    resources:
+      requests:
+        memory: "64Mi"
+      limits:
+        memory: "64Mi"
+    command:
+      - sh
+      - -c
+      - |
+        i=0
+        while true; do
+          i=$((i+1))
+          dd if=/dev/zero bs=5M count=1 >> /tmp/mem
+        done
+六、如何验证它是「真实 OOM」而不是别的异常
+✅ 1️⃣ 看 Pod 状态
+复制代码
+Bash
+kubectl get pod oom-test
+会看到：
+复制代码
+
+STATUS: CrashLoopBackOff
+或：
+复制代码
+
+STATUS: Error
+✅ 2️⃣ 看终止原因（关键）
+复制代码
+Bash
+kubectl describe pod oom-test
+你会看到：
+复制代码
+
+State:          Terminated
+Reason:         OOMKilled
+Exit Code:      137
+✅ 3️⃣ 精确字段验证（自动化友好）
+复制代码
+Bash
+kubectl get pod oom-test -o jsonpath='{.status.containerStatuses[0].lastState.terminated.reason}'
+输出：
+复制代码
+
+OOMKilled
+七、怎么确认是「内存」而不是「磁盘满」
+对比验证法：
+🧪 实验1（磁盘满）
+复制代码
+Bash
+fallocate -l 500M /tmp/bigfile
+👉 会报：
+复制代码
+
+No space left on device
+🧪 实验2（内存 OOM）
+复制代码
+Bash
+cat /dev/zero > /tmp/mem
+👉 直接：
+复制代码
+
+OOMKilled
+Exit Code 137
+区别：
+磁盘满 = 程序报错
+内存 OOM = 容器被内核杀死
+八、在 EKS 中真实发生的系统级事件
+你可以在 node 上看到：
+复制代码
+Bash
+dmesg | grep -i oom
+会有类似：
+复制代码
+
+Out of memory: Kill process 1234 (dd) score 987 or sacrifice child
+Killed process 1234 (dd)
+九、为什么这个方法非常适合做混沌工程
+维度
+说明
+真实性
+模拟真实内存泄露
+可控性
+可调 bs=1M / 5M / 50M
+可复现
+100% OOM
+无依赖
+busybox 即可
+自动化
+易于脚本 / FIS 编排
+云原生
+完美适配 cgroup limit
+十、一句话总结机制模型
+/dev/zero → 无限数据源
+dd → 持续写入
+/tmp → page cache
+page cache → 占内存
+cgroup limit → OOM Killer
+内核 → kill 容器
+Kubernetes → OOMKilled
+十一、生产级演练建议（非常重要）
+⚠️ 不要直接对真实业务 Pod 做
+推荐方式：
+clone 一个 Deployment
+降低 memory limit
+注入该命令
+独立 namespace
+FIS 控制时间窗口
+🧠 总结一句话
+这个 sh 方法本质是：用内核 page cache 撑爆 cgroup 内存限制，从内核层触发 OOMKill，是最真实的 OOM 模拟方式之一。
+如果你愿意继续往“工程化”走一步，我可以给你： ✅ OOM 实验 + FIS 编排结构图
+✅ 自动回滚流程
+✅ CloudWatch stop condition
+✅ 生产安全隔离方案
+✅ GitLab pipeline 集成模板
+直接说你现在用的是：
+Deployment / StatefulSet / Job？
+有无 HPA？
+是否多 AZ？
