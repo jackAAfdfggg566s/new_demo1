@@ -1,0 +1,95 @@
+明白，这个很常见 👍
+不装 stress-ng 也完全可以做 OOM 实验，而且在 EKS 里我反而更推荐不依赖额外工具的做法。
+下面给你 3 种“零依赖 / 极低依赖”的吃内存方案，按推荐顺序来。
+✅ 方案一（最推荐）：用 Python 原生吃内存（不用任何额外包）
+前提：镜像里有 python（很多基础镜像都有）
+命令
+复制代码
+Bash
+python - << 'EOF'
+a = []
+while True:
+    a.append(' ' * 1024 * 1024 * 10)  # 每次 10MB
+EOF
+特点
+✅ 100% 触发 OOM
+✅ 行为非常像“代码内存泄露”
+✅ 不需要安装任何工具
+❗ 容器里必须有 python
+✅ 方案二：纯 shell + /dev/zero（几乎所有镜像都行）
+最通用，busybox / alpine 都能跑
+复制代码
+Bash
+sh -c "i=0; while true; do i=$((i+1)); dd if=/dev/zero bs=10M count=1 >> /tmp/mem; done"
+或更狠一点：
+复制代码
+Bash
+sh -c "cat /dev/zero > /tmp/mem"
+特点
+✅ 不依赖语言
+✅ 非常容易 OOM
+⚠️ 会写文件（建议用 /tmp，避免污染）
+✅ 方案三：Node.js（如果是前端 / node 服务）
+复制代码
+Bash
+node -e "let a=[]; while(true){ a.push(Buffer.alloc(10*1024*1024)); }"
+📦 示例：一个“专门用来 OOM 的 Pod”
+你可以直接 apply（不需要 stress-ng）：
+复制代码
+Yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom-test
+spec:
+  restartPolicy: Never
+  containers:
+  - name: oom
+    image: python:3.10-slim
+    resources:
+      requests:
+        memory: "64Mi"
+      limits:
+        memory: "64Mi"
+    command:
+      - python
+      - -c
+      - |
+        a=[]
+        while True:
+            a.append(' ' * 1024 * 1024 * 5)
+跑几秒就会：
+复制代码
+
+OOMKilled
+Exit Code: 137
+🔍 怎么确认真的 OOM 了
+复制代码
+Bash
+kubectl describe pod oom-test
+你会看到：
+复制代码
+
+Reason: OOMKilled
+Exit Code: 137
+或者：
+复制代码
+Bash
+kubectl get pod oom-test -o jsonpath='{.status.containerStatuses[0].lastState.terminated.reason}'
+🔗 和 FIS 怎么配合（重点）
+你可以：
+FIS 控制实验窗口（5 分钟）
+FIS stop condition：
+CloudWatch → OOMKilled > 0
+FIS 前置步骤：
+apply OOM pod
+FIS 回滚步骤：
+delete OOM pod
+👉 OOM 的“制造”交给 K8s，FIS 负责“什么时候开始 / 什么时候停”
+🧠 结论一句话
+不装 stress-ng 完全没问题，用 Python / shell 就能 100% 复现 Pod OOM，而且更贴近真实事故。
+如果你要的是：
+FIS JSON 模板
+适配生产 Deployment（不是单 Pod）
+结合 HPA / PDB / 多 AZ 的完整演练
+告诉我你现在的镜像类型（alpine / distroless / java / node / python），我直接给你定制版本。
