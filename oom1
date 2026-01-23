@@ -1,0 +1,149 @@
+这个报错非常关键，而且它直接解释了你前面所有现象 👇
+我们把话说清楚一点：
+the node was low on resource ≠ Pod OOM
+这是 Node 级资源压力 → Pod 被驱逐（Evicted）
+所以你现在看到的结果，不是应用 OOM 缺陷，而是“节点资源治理问题”。
+一、先给你一句话结论（重点）
+这是 Node 资源不足触发的 Eviction，不是容器 OOMKilled。
+👉 Pod 不会自动恢复，是符合 Kubernetes 设计的，但
+👉 它暴露的是集群层面的韧性/容量缺陷。
+二、the node was low on resource 到底发生了什么？
+这是 kubelet 的 Eviction 机制 在工作：
+实际发生链路是：
+复制代码
+
+你的脚本疯狂吃内存
+→ Node 可用内存下降
+→ kubelet 触发 eviction threshold
+→ kubelet 主动驱逐 Pod
+→ Pod 状态 = Evicted / Error
+→ ❌ 没有 OOMKilled
+📌 关键区别
+OOMKilled：内核杀进程（cgroup）
+Evicted：kubelet 杀 Pod（Node 保护）
+三、你可以这样 100% 验证这是 Eviction（不是猜）
+1️⃣ describe pod（一定能看到）
+复制代码
+Bash
+kubectl describe pod <pod-name>
+你会看到类似：
+复制代码
+
+Reason:     Evicted
+Message:    The node was low on resource: memory.
+2️⃣ 看 Pod 的 QoS（非常关键）
+复制代码
+Bash
+kubectl get pod <pod-name> -o jsonpath='{.status.qosClass}'
+大概率是：
+复制代码
+
+BestEffort
+或：
+复制代码
+
+Burstable
+👉 这类 Pod 是 eviction 的第一批牺牲品
+四、为什么 Pod 不会“自己恢复”（这是设计，不是 bug）
+如果你现在是以下任一情况：
+场景
+是否自动恢复
+裸 Pod
+❌ 不会
+Job
+❌ 不会
+Deployment（但 node 还在压力中）
+❌ 可能起不来
+Node 持续内存紧张
+❌ 一直 Evicted
+📌 Eviction 的目标是：保护 Node，不是保证 Pod 可用
+五、这算不算“缺陷”？——专业判断方式
+❌ 不算应用缺陷
+因为：
+应用没 OOM
+应用没崩
+是 kubelet 在保护 Node
+⚠️ 但算 平台 / 容量 / 配置缺陷（这点很重要）
+以下任一成立，都可以记缺陷：
+单个 Pod 能吃垮整个 Node
+没有 PodDisruptionBudget
+没有 resource request / limit
+没有 node memory headroom
+没有 eviction-aware 设计
+👉 这是 SRE / 平台层面的缺陷
+六、为什么你“怎么也测不到 OOMKilled”（核心原因）
+你现在的实验顺序是：
+复制代码
+
+Node eviction threshold
+↓（先触发）
+Evicted
+↓
+OOMKilled（根本没机会发生）
+👉 Node eviction 永远优先于 Pod OOM
+七、如果你的目标是「测试 Pod OOM」，必须这样改
+✅ 关键原则
+OOM 必须发生在 cgroup 内，而不是把 Node 打爆
+你要同时做到 3 点：
+1️⃣ Pod 必须有明确 memory limit（而且要小）
+复制代码
+Yaml
+resources:
+  requests:
+    memory: "32Mi"
+  limits:
+    memory: "32Mi"
+2️⃣ 脚本只吃“进程内存”，不吃 page cache
+✅ 正确（你该用的）：
+复制代码
+Sh
+while true; do
+  x=$(head -c 5M /dev/zero)
+done
+❌ 错误（会打爆 Node）：
+复制代码
+Sh
+dd if=/dev/zero >> /tmp/file
+3️⃣ Pod QoS 最好是 Guaranteed
+复制代码
+Yaml
+requests.memory == limits.memory
+这样：
+kubelet 不会优先驱逐你
+更容易触发 OOMKilled
+八、你可以直接用的「正确 OOM Pod 模板」
+复制代码
+Yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom-test
+spec:
+  restartPolicy: Never
+  containers:
+  - name: oom
+    image: busybox
+    resources:
+      requests:
+        memory: "32Mi"
+      limits:
+        memory: "32Mi"
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          x=$(head -c 5M /dev/zero)
+        done
+👉 这个 不会触发 node eviction，而是 稳定 OOMKilled
+九、在混沌工程报告里你可以这样定性（很专业）
+你可以写：
+The experiment triggered node-level memory pressure, resulting in pod eviction rather than container OOM.
+This reveals a cluster-level capacity and eviction policy gap, rather than an application-level memory handling issue.
+十、一句话总结（记住这条）
+你现在遇到的不是“OOM 不恢复”，而是“Node 被打爆 → Pod 被驱逐”，这是两个完全不同层级的问题。
+如果你愿意，下一步我可以帮你做三件事之一（你选）👇
+1️⃣ 设计一个 “只 OOM Pod、不影响 Node” 的实验
+2️⃣ 设计一个 “Node 内存耗尽 + 驱逐顺序” 的平台级演练
+3️⃣ 帮你写一份 实验结论 / 缺陷定级模板
+你现在这个 Pod 的 qosClass 是什么？
