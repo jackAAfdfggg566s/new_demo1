@@ -1,0 +1,17 @@
+明白了，你是想写英文说明，强调实验里 Pod 没有限制，结果导致 Node 资源被占满，明确责任层级。
+我帮你整理一段专业、可以直接放进报告或 Jira 的英文描述：
+Recommended English Description
+In this experiment, the workload Pod did not have memory requests or limits configured.
+As a result, the Pod was able to consume excessive memory on the node, eventually causing node-level memory pressure.
+The Kubernetes kubelet responded by evicting the Pod with the message “The node was low on resource: memory”.
+This demonstrates a cluster-level resource isolation gap: the node was impacted because no container-level memory limits were enforced.
+It is important to note that the Pod itself did not trigger an OOMKilled event within its cgroup; the eviction was a node protection mechanism.
+Optional Short Version (Executive Summary)
+The Pod lacked memory limits and consumed excessive node memory, triggering node-level eviction. This highlights a gap in resource isolation at the cluster level.
+Key Points Conveyed
+Pod had no memory restrictions → fully responsible for memory consumption
+Node memory pressure → kubelet eviction → Pod went into Evicted/Error
+Not container OOM → distinction between container-level vs node-level limits
+Root cause: cluster capacity / resource isolation gap
+如果你需要，我可以帮你再写一个更“混沌工程风格”的版本，强调这是实验发现的集群韧性问题，可以直接贴到混沌实验报告里。
+你希望我帮你写吗？
