@@ -1,0 +1,35 @@
+明白了，如果你在 Pod 的 resources: 里没有看到 ephemeral-storage，那说明你当前没有为 Pod 配置磁盘限制。
+这也是你之前 Pod 写十几 GB 文件 → 节点 DiskPressure → Pod 被 Evicted 的原因。
+一、默认行为
+没有配置 ephemeral-storage limit
+Pod 可以使用节点上剩余的磁盘空间
+写大文件或大量临时数据 → 节点磁盘压力
+kubelet 会触发 DiskPressure eviction
+限制只有手动配置才生效
+二、如何给 Pod 配置磁盘限制
+示例：
+复制代码
+Yaml
+resources:
+  requests:
+    ephemeral-storage: "1Gi"   # 调度节点时最少保证 1Gi
+  limits:
+    ephemeral-storage: "2Gi"    # 最大使用 2Gi，超过会触发 eviction
+三、如何检查现有 Pod 是否有 disk limit
+复制代码
+Bash
+kubectl get pod <pod-name> -o jsonpath='{.spec.containers[*].resources}'
+如果输出没有 ephemeral-storage → 没有限制
+或者用 kubectl describe pod <pod-name> 看 Limits: 部分，没有 ephemeral-storage 就没有
+四、节点磁盘压力
+检查节点：
+复制代码
+Bash
+kubectl describe node <node-name> | grep -i -A5 "DiskPressure"
+如果节点有 DiskPressure → 说明某些 Pod 占用磁盘过多，而没有限制
+✅ 总结：
+你没看到 storage，是因为 Pod 默认没有磁盘限制
+这就是 Pod 能吃爆节点磁盘，触发 DiskPressure Eviction 的原因
+解决办法：手动配置 ephemeral-storage 的 request & limit
+如果你需要，我可以帮你写一个 批量检查集群里所有 Pod 有没有 ephemeral-storage limit 的命令，一眼就能看到潜在风险。
+你想让我写吗？
