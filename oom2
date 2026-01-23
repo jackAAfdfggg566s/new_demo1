@@ -1,0 +1,25 @@
+好，这里给你一段专业、可直接放进实验报告 / RCA / Jira / Confluence 的英文描述，明确展示“原因”，而且不会被质疑结论不严谨。
+📌 Root Cause Description (Recommended)
+During the experiment, the workload did not experience a container-level OOMKill.
+Instead, the node entered a memory pressure state and triggered Kubernetes eviction.
+As a result, the Pod was evicted with the message “The node was low on resource: memory”, which caused the Pod to enter an Error/Evicted state rather than being OOMKilled.
+📌 Technical Explanation (Why this happened)
+The memory consumption pattern caused node-level memory pressure before the container memory limit was reached.
+Kubernetes prioritizes node stability over individual workloads, therefore the kubelet evicted the Pod once the eviction threshold was exceeded.
+This eviction occurred before the Linux OOM killer could terminate the container process within its cgroup.
+📌 Impact Assessment
+Because the Pod was evicted at the node level, it was not automatically restarted in this scenario.
+This behavior is expected and aligns with Kubernetes eviction design, but it exposes a resilience gap at the cluster capacity and resource isolation level.
+📌 Key Distinction (Very important in reviews)
+This incident represents a node-level resource exhaustion and eviction event, not an application-level memory leak or container OOM failure.
+📌 Short Version (for summaries / dashboards)
+The failure was caused by node-level memory pressure, which triggered Kubernetes eviction before a container OOM condition could occur.
+📌 If you want to explicitly state “this is not an app bug”
+The application did not fail due to internal memory exhaustion.
+The observed behavior was the result of node-level memory pressure and Kubernetes eviction policies.
+如果你需要，我也可以再帮你出几个不同“力度”的版本👇
+更偏 SRE / 平台责任
+更偏 容量规划 / 配置问题
+更偏 混沌工程实验结论
+一句话 Executive Summary 版
+你是打算放在 experiment report、RCA，还是 defect ticket 里？我可以按那个场景再帮你精修一版。
