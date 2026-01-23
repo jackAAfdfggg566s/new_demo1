@@ -1,0 +1,89 @@
+这是个非常关键、也很容易混淆的点 👌
+你看到都是 Evicted，但Evicted ≠ 一定是 node 磁盘满。我们一步步**“实锤确认”**。
+一、先给你结论（判断标准）
+是否是 node 磁盘满，看的是 Node 事件和 Condition，而不是只看 Pod 状态。
+二、三步确认法（最靠谱）
+✅ 第 1 步：看 Pod 的 Evicted Message（初判）
+复制代码
+Bash
+kubectl describe pod <pod-name>
+重点看这几行：
+👉 Node 磁盘压力导致（node-level）
+复制代码
+Text
+Reason: Evicted
+Message: The node was low on resource: ephemeral-storage
+或：
+复制代码
+Text
+Message: The node had disk pressure
+📌 说明：
+Node 的磁盘已经紧张或满了
+Pod 是“被殃及池鱼”
+👉 Pod 超过自身 limit（pod-level）
+复制代码
+Text
+Message: Pod ephemeral storage usage exceeds the total limit of containers
+📌 说明：
+Node 没事
+Pod 自己超限，被定点清除
+✅ 第 2 步：看 Node Condition（实锤）
+这是最关键的一步：
+复制代码
+Bash
+kubectl describe node <node-name>
+找这一段：
+复制代码
+Text
+Conditions:
+  Type             Status
+  DiskPressure     True
+如果看到：
+复制代码
+Text
+DiskPressure: True
+✅ 铁证如山：Node 磁盘压力
+如果是：
+复制代码
+Text
+DiskPressure: False
+❌ 说明不是 node 磁盘问题
+✅ 第 3 步：看 Node 事件（最终确认）
+复制代码
+Bash
+kubectl get events \
+  --field-selector involvedObject.kind=Node,involvedObject.name=<node-name> \
+  --sort-by='.lastTimestamp'
+你可能会看到：
+复制代码
+Text
+NodeHasDiskPressure
+EvictionThresholdMet
+这些事件只会在 node 磁盘不足 时出现。
+三、快速对照表（你可以直接用）
+现象
+结论
+Pod Evicted + Message 提到 node was low on resource
+Node 级磁盘压力
+Pod Evicted + Message 提到 exceeds storage limit
+Pod 自己超限
+Node DiskPressure=True
+Node 磁盘真的满了
+Node DiskPressure=False
+Node 没满
+其他 Pod 也被驱逐
+Node 级问题
+只有一个 Pod 出问题
+更可能是 Pod limit
+四、你这个场景的“高概率判断”
+结合你前面的信息：
+❌ 没设置 ephemeral-storage limit
+📈 Pod 写了十几 GB 文件
+❗ 报错：the node was low on resource
+👉 99% 是 Node 磁盘压力，而不是 Pod 自己的 limit
+五、英文说明（你可以直接用）
+Although the pod status shows Evicted, the root cause was node-level disk pressure rather than a pod-level storage limit violation.
+This was confirmed by the node condition DiskPressure=True and node events indicating disk pressure.
+The eviction was triggered to protect node stability after excessive disk consumption by the workload.
+如果你愿意，我可以帮你写一个一条命令就能同时输出 Pod message + Node DiskPressure + Node events 的排查脚本，专门用来当“证据收集”。
+要不要？
