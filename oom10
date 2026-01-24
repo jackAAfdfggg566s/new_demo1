@@ -1,0 +1,126 @@
+这是个**非常高级、非常“平台工程/稳定性”**的问题了 👍
+你现在已经不是在问 怎么修一次事故，而是在问 “设计上怎么不出事故”。
+我直接给你一套可落地的高可用保障思路，从 Pod 起不来 这个点反推。
+一句话总原则（先记住）
+高可用不是“新 Pod 一定能起”，
+而是“新 Pod 起不来时，服务仍然可用、影响可控、能快速回退”。
+一、第一道保险：RollingUpdate 策略（最关键）
+❌ 默认策略的隐患
+复制代码
+Yaml
+maxSurge: 1
+maxUnavailable: 0
+风险是：
+新 Pod 起不来
+旧 Pod 不删
+rollout 卡死
+但至少服务还在
+这是保守但安全。
+✅ 推荐 HA 策略（生产常用）
+复制代码
+Yaml
+strategy:
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
+好处：
+不会多拉 Pod
+避免 node 突然超载
+即使新 Pod 起不来，也只是：
+少 1 个副本
+服务仍然可用（如果副本 ≥2）
+⚠️ 前提：副本数 ≥ 3
+二、第二道保险：Readiness Probe（生死线）
+只要 Pod 没 Ready，它在流量层是“不存在的”。
+必须做到：
+OOM / Crash 的 Pod
+永远不会接到流量
+示例：
+复制代码
+Yaml
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+👉 新 Pod 起不来 ≠ 影响用户
+三、第三道保险：PodDisruptionBudget（常被忽略）
+防止“同时死太多”。
+复制代码
+Yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: app-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: my-app
+效果：
+升级
+节点维护
+人为误删
+都不会把服务一次性干没
+四、第四道保险：容量兜底（request 设计）
+核心规则
+request 决定你“能不能站得住”，
+limit 决定你“能不能跑得野”。
+HA 推荐配法
+复制代码
+Yaml
+requests:
+  memory: 峰值 × 0.8
+limits:
+  memory: 峰值 × 1.2
+并且：
+request ≈ limit（减少被挤压）
+QoS = Burstable / Guaranteed 更稳定
+五、第五道保险：快速回滚机制（非常关键）
+当你发现：
+新 Pod 起不来
+rollout 卡住
+必须 30 秒内能做的事：
+复制代码
+Bash
+kubectl rollout undo deploy my-app
+建议：
+开启 revisionHistoryLimit
+CI/CD 自动监控 rollout 状态
+六、第六道保险：不要在 Deployment 里“试探 limit”
+你之前做的，其实是线上试探容量（很危险）。
+正确姿势
+单独 OOM 实验 Pod
+Job / chaos 实验
+再把“验证过的 limit”推到生产
+七、第七道保险：多 AZ + 拆 NodeGroup
+你之前聊过 EKS / AZ，这里正好用上：
+每 AZ 至少 1–2 个 Pod
+PDB + topologySpreadConstraints
+复制代码
+Yaml
+topologySpreadConstraints:
+- maxSkew: 1
+  topologyKey: topology.kubernetes.io/zone
+  whenUnsatisfiable: DoNotSchedule
+  labelSelector:
+    matchLabels:
+      app: my-app
+八、你这个场景的“最小 HA 组合”（直接可用）
+✅ 如果你只有 3 副本
+必须有：
+ReadinessProbe
+PDB(minAvailable=2)
+maxSurge=0 / maxUnavailable=1
+👉 新 Pod 起不来 = 只是降级，不是中断
+九、一句“工程师级总结”
+Kubernetes 的高可用不是防止失败，
+而是“失败被隔离、失败可恢复、失败不扩散”。
+你现在踩到的这个问题，
+正是 “声明式系统 + 资源边界” 的真实样子。
+如果你愿意，下一步我可以：
+帮你设计一套 “内存 limit 调整 SOP（不翻车版）”
+或把你现在这个场景，整理成一个 标准 OOM/HA 演练方案
+或直接给你画一条 从开发 → 压测 → 上线的安全链路
+你已经在做对的那类问题了。
