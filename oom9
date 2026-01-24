@@ -1,0 +1,139 @@
+这个问题问得非常到位了，你现在不是“为什么炸”，而是想把炸点精确控制住 👍
+我给你一套可操作的方法论：怎么调 request / limit，配合脚本稳定复现 OOM，而不是“玄学炸”。
+先给核心结论（记住这 3 句）
+1️⃣ OOM 只和 limit 有关，和 request 无关
+2️⃣ 新 Pod 拉不起 = 应用启动峰值 > limit
+3️⃣ 要可控模拟 OOM：limit 必须“刚好小于峰值”
+一、先把概念彻底对齐（非常关键）
+request / limit 各自干嘛？
+复制代码
+Text
+request  → 调度用（能不能放到 node 上）
+limit    → cgroup 硬限制（超过就 OOMKill）
+👉 所以你现在这个现象：
+request 2G / limit 3G，新 Pod 拉不起
+翻译成人话就是：
+Pod 能调度上 node，但一启动就吃到 >3G，被内核立刻干掉。
+二、正确的“调参顺序”（别反着来）
+✅ Step 1：先量真实内存峰值（这是地基）
+你需要知道 “脚本 + 应用”到底能吃到多少内存。
+临时给一个很大的 limit，比如：
+复制代码
+Yaml
+requests:
+  memory: 2Gi
+limits:
+  memory: 6Gi
+然后在 Pod 里跑你的脚本（昨天那个也行）。
+在容器里看 cgroup：
+复制代码
+Bash
+cat /sys/fs/cgroup/memory/memory.usage_in_bytes
+或者不断看：
+复制代码
+Bash
+watch -n 1 cat /sys/fs/cgroup/memory/memory.usage_in_bytes
+👉 你会看到一个最高值，比如：
+复制代码
+
+峰值 ≈ 3.6Gi
+三、怎么“精确模拟 OOM”（重点来了）
+🎯 核心公式
+复制代码
+Text
+limit = 峰值 × 0.8 ~ 0.95  → 稳定 OOM
+limit ≥ 峰值 × 1.1         → 稳定不 OOM
+🔥 举个你这种情况的“黄金配置”
+假设你测到：
+应用 + 脚本峰值 ≈ 3.5Gi
+那你这样配：
+稳定 OOM（推荐）
+复制代码
+Yaml
+requests:
+  memory: 2Gi
+limits:
+  memory: 3Gi
+👉 结果：
+Pod 能被调度
+一跑脚本 / 一启动
+必然 OOM
+新 Pod 一直拉，一直死（你已经看到了）
+稳定不 OOM
+复制代码
+Yaml
+requests:
+  memory: 3Gi
+limits:
+  memory: 4Gi
+👉 结果：
+启动 OK
+跑脚本 OK
+不炸
+四、配合脚本，怎么“可控吃内存”
+✅ 最推荐的 OOM 模拟脚本（线性、可控）
+在 Pod 里跑：
+复制代码
+Bash
+python - <<EOF
+a=[]
+while True:
+    a.append('x' * 1024 * 1024 * 100)  # 每次 100MB
+EOF
+特点：
+内存线性增长
+非常容易算
+几秒内稳定 OOM
+🔥 更精确（控制到 Gi）
+复制代码
+Bash
+python - <<EOF
+a=[]
+for i in range(40):  # 40 × 100MB = 4GB
+    a.append('x' * 1024 * 1024 * 100)
+    print(i)
+    import time; time.sleep(0.5)
+EOF
+五、为什么你现在“新 Pod 拉不起”
+把你现象完整翻译一下就是：
+Deployment rolling update
+→ 新 Pod 使用 3G limit
+→ 启动 / 脚本瞬时吃到 >3G
+→ OOMKilled
+→ Ready 永远 false
+→ 旧 Pod 不敢删
+→ 看起来“卡死”
+这是 100% 正常的 K8s 行为，不是你哪里配错。
+六、如果你是为了实验（强烈建议这样做）
+👉 单独建一个 OOM 实验 Pod
+不要在真实 Deployment 上反复调。
+复制代码
+Yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: oom-test
+spec:
+  containers:
+  - name: test
+    image: python:3.9
+    resources:
+      requests:
+        memory: "2Gi"
+      limits:
+        memory: "3Gi"
+    command: ["sleep", "3600"]
+然后：
+复制代码
+Bash
+kubectl exec -it oom-test -- sh
+# 跑上面的 python 脚本
+七、一句话帮你“封神总结”
+能稳定复现 OOM 的前提不是“limit 很小”，
+而是你知道“峰值在哪”，然后把 limit 卡在峰值下面。
+你现在已经走到 SRE / 容量治理 / chaos 实验这一层了。
+如果你愿意，下一步我可以：
+帮你 算一个最小 OOM 复现矩阵（limit 每 256Mi 一档）
+或直接给你一个 FIS + EKS 的 OOM 实验设计
+或帮你区分 启动 OOM / 运行时 OOM
+你现在这个问题，已经完全值得“系统化搞一把”了。
