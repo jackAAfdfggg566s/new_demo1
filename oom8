@@ -1,0 +1,114 @@
+这个现象非常典型，而且你这一步“把 memory limit 降低”正好触发了一整套 K8s 行为链。我按真实发生顺序给你拆一下，你一看就懂 👇
+一句话先给结论
+你把 memory limit 降低后，单 Pod 内存不够用了 → Pod OOMKilled → 不断重启；
+与此同时，Deployment 为了满足副本数，调度/拉起了第 4 个 Pod。
+这两个现象是同时成立、不矛盾的。
+1️⃣ 为什么会出现第 4 个 Pod？
+你原来是 3 replicas，但你看到 4 个 Pod，通常是因为：
+场景 A（最常见）：Rolling Update 过程
+你改了 Deployment（memory limit 属于 spec 变更）：
+复制代码
+Yaml
+strategy:
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+👉 K8s 会：
+先多拉 1 个新 Pod（第 4 个）
+等新 Pod Ready
+再干掉旧 Pod
+📌 你看到的第 4 个 Pod，本质是 surge pod
+如果新 Pod：
+因为 memory limit 太小 → OOMKilled
+一直起不来 → 不 Ready
+那就会变成：
+旧 Pod 不敢删
+新 Pod 一直重启
+表面看起来“卡在 4 个 Pod”
+2️⃣ 为什么其中一个 Pod 一直 OOM + 重启？
+这是核心原因：
+真实发生的是：
+应用启动瞬间的峰值内存
+＞ 你新设的 memory limit
+内核直接 OOMKill
+Pod 状态变成：CrashLoopBackOff / OOMKilled
+你可以用这个确认：
+复制代码
+Bash
+kubectl describe pod <pod-name>
+你会看到类似：
+复制代码
+
+Last State:     Terminated
+Reason:         OOMKilled
+Exit Code:      137
+3️⃣ 为什么以前 3 个 Pod 没事，现在不行？
+几个常见原因（通常不止一个同时存在）：
+🔹 原因 1：limit < 应用启动峰值
+Java / Node / Python
+启动时 class loading / JIT / cache
+峰值远高于 steady state
+👉 跑得起来 ≠ 起得来
+🔹 原因 2：你只降了 limit，没降 request
+例如：
+复制代码
+Yaml
+requests:
+  memory: 1Gi
+limits:
+  memory: 512Mi   ❌
+Scheduler 以为你需要 1Gi
+但 cgroup 只给 512Mi
+启动必炸
+🔹 原因 3：应用本身不感知 cgroup
+典型 Java 问题：
+-Xmx 仍然是 1G
+Pod limit 只有 512Mi
+直接 OOM
+4️⃣ 那为什么是“只有一个” Pod OOM？
+这是个好问题 👍
+原因通常是：
+新版本 Pod 才用新 limit
+老 Pod 还是旧 limit
+或者：
+流量打到某一个 Pod
+或 startup 顺序不同
+你可以对比：
+复制代码
+Bash
+kubectl get pod -o wide
+kubectl get pod <old> -o yaml | grep memory -A3
+kubectl get pod <new> -o yaml | grep memory -A3
+5️⃣ 你现在应该怎么修？
+按优先级来 👇
+✅ Step 1：先稳住
+把 memory limit 调回 ≥ 应用启动峰值
+或临时 scale：
+复制代码
+Bash
+kubectl scale deploy xxx --replicas=3
+✅ Step 2：确认 rollingUpdate 行为
+复制代码
+Bash
+kubectl get deploy xxx -o yaml | grep -A5 strategy
+如果不想出现第 4 个 Pod：
+复制代码
+Yaml
+maxSurge: 0
+maxUnavailable: 1
+✅ Step 3：确认应用内存配置
+如果是 Java：
+-Xmx ≤ limit × 70%
+开启容器感知：
+复制代码
+
+-XX:+UseContainerSupport
+6️⃣ 核心认知（很重要）
+K8s 只保证“副本数”，不保证“你这个 limit 能跑得起来”。
+limit 太小 = Pod 必死，但 Deployment 还是会拼命拉。
+如果你愿意，把下面任意一个贴出来，我可以直接给你精确结论而不是推断：
+Deployment 的 resources
+应用类型（Java / Node / Go）
+kubectl describe pod 里 OOM 的那段
+rollingUpdate 配置
+这个现象你已经抓到关键点了，其实你离“把 limit 配对”只差最后一步。
