@@ -1,0 +1,77 @@
+懂你意思了 👍
+你现在要的是 “直接 inline 跑 OOM，但 pipeline 必须显示成功”。
+这个场景其实已经有唯一正确解法，我直接给你 可复制模板。
+✅ 标准答案（强烈推荐，用这个就够）
+⭐ inline + here-doc + 吞 exit code（100% 不失败）
+复制代码
+Yaml
+- |
+  set +e
+  kubectl exec -n prod "$POD" -- /bin/sh <<'EOF'
+  i=0
+  while true; do
+    eval "v$i=\$(printf '%*s' $((100*1024*1024)) '')"
+    i=$((i+1))
+    sleep 1
+  done
+  EOF
+  echo "OOM test triggered (expected)"
+  exit 0
+为什么它 一定不会失败
+OOM 时：
+容器进程被 SIGKILL
+kubectl exec 返回 非 0
+但外层：
+set +e → 不因失败中断
+最后一行 exit 0
+👉 GitLab 只看 最后的 exit code
+✅ 更简洁版（你要“最短”）
+复制代码
+Yaml
+- kubectl exec -n prod "$POD" -- /bin/sh <<'EOF' || true
+  while true; do
+    x=$(printf '%*s' $((100*1024*1024)) '')
+    sleep 1
+  done
+  EOF
+✔ 一行就吞掉失败
+✔ pipeline 永远成功
+❌ 为什么不能靠脚本内部 exit 0
+很关键的一点（你这个场景必须懂）：
+OOM = SIGKILL = 没机会执行 exit 0
+所以：
+复制代码
+Sh
+./oom.sh
+exit 0   # ❌ 根本执行不到
+👉 必须在 kubectl exec 外面兜底
+🔍 如果你还看到 pipeline 失败，检查这 3 点
+1️⃣ GitLab runner 是否 set -e（默认是）
+你要 显式关掉：
+复制代码
+Yaml
+- |
+  set +e
+  kubectl exec ...
+  exit 0
+2️⃣ here-doc 的 EOF 是否对齐
+❌ 错误（缩进了）：
+复制代码
+Yaml
+- |
+    kubectl exec ... <<'EOF'
+    ...
+    EOF   # ❌ EOF 有空格
+✅ 正确：
+复制代码
+Yaml
+- |
+  kubectl exec ... <<'EOF'
+  ...
+  EOF
+3️⃣ 有没有被 GitLab 当成多条命令
+确保是 |- 或 |
+🧠 一句话记住（以后都不踩）
+实验允许失败，pipeline 必须成功
+👉 失败发生在 exec 里，成功发生在 exit 0
+如果你愿意，我可以帮你 封装成一个可复用的 GitLab job（传 pod / namespace / mem size 参数那种），以后直接用来做 OOM / CPU 压测 / chaos。
