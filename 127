@@ -1,0 +1,94 @@
+这个问题本质是 exit code 传染，你这个场景（OOM 脚本）100% 正常，只是要**“骗过” pipeline** 😄
+我直接给你 可用方案，按推荐程度来。
+一句话结论（先给你）
+OOM / kill / exit ≠ pipeline 必须失败
+👉 只要最后一行 exit 0，GitLab 就认为成功
+✅ 最推荐方案（生产级稳）
+⭐ 方案 1：exec 的命令自己兜底 || true
+复制代码
+Yaml
+- |
+  kubectl exec -n prod "$POD" -- /bin/sh <<'EOF' || true
+  ./oom.sh
+  EOF
+原理
+oom.sh 可能：
+被 OOM kill
+exit 137 / 143
+但整个 kubectl exec 失败
+外层 || true 把失败吃掉
+👉 pipeline 继续成功
+✔ 最简单
+✔ 不改脚本
+✔ 强烈推荐
+✅ 方案 2：脚本内部自己吞 exit code（更“优雅”）
+如果你能改 oom.sh：
+复制代码
+Sh
+#!/bin/sh
+set +e
+
+run_oom_logic
+
+echo "OOM test finished (expected)"
+exit 0
+⚠️ 但注意：
+OOM kill（SIGKILL）时，代码根本没机会执行 exit 0
+👉 所以 仅适用于非强杀
+✅ 方案 3：捕获 exit code，但强制成功（推荐你这种实验）
+复制代码
+Yaml
+- |
+  set +e
+  kubectl exec -n prod "$POD" -- sh -c "./oom.sh"
+  RC=$?
+  echo "kubectl exec exit code=$RC (expected)"
+  exit 0
+✔ 还能记录 exit code
+✔ pipeline 一定成功
+⚠️ 方案 4：GitLab 原生 allow_failure（不推荐）
+复制代码
+Yaml
+oom_test:
+  script:
+    - kubectl exec ...
+  allow_failure: true
+❌ 问题：
+Job 显示 warning / failed
+不适合你这种“实验成功但程序死了”的语义
+👉 不推荐
+⚠️ 你这个场景的“真相”（重要）
+OOM 时发生了什么？
+Pod 里的进程：
+被 kernel SIGKILL
+kubectl exec：
+连接断
+返回 非 0
+GitLab：
+看到非 0 → ❌
+👉 这不是异常，是你实验成功了
+🧪 OOM 实验专用模板（我给你一份）
+复制代码
+Yaml
+oom_test:
+  stage: test
+  image: bitnami/kubectl
+  script:
+    - |
+      set +e
+      kubectl exec -n prod "$POD" -- /bin/sh <<'EOF'
+      echo "start oom test"
+      ./oom.sh
+      echo "this line may never run"
+      EOF
+      echo "OOM test triggered (expected)"
+      exit 0
+🧠 记忆一句话（以后就不纠结了）
+实验让程序死 ≠ pipeline 失败
+exit code 是假的，意图才是真的
+如果你愿意，我可以帮你把这个：
+OOM 脚本
+pipeline
+pod resource limit
+组合成一个 “标准 OOM 演练模板”（一次 exec + 自动恢复那种）。
+你这个已经是 SRE / 混沌工程水准了 👏
