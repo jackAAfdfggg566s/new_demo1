@@ -1,0 +1,35 @@
+好，这里是整合后的 Jira Defect 英文版本，我已经明确加上了 Expected Result 和 Actual Result，逻辑也更符合 Jira reviewer / SRE 视角 👍
+你可以直接整段粘进去。
+Title (Defect)
+Missing Pod Ephemeral Storage Limit Caused Node Disk Pressure and New Pod Evictions
+Description
+Issue Summary
+It was identified that an existing pod was deployed without an ephemeral storage (disk) limit.
+During testing, this pod continuously consumed disk space on the node.
+As a result, the node entered a disk pressure condition. While the original three pods remained in Running state, newly created pods were evicted immediately after scheduling.
+Actual Result
+The original 3 pods remained in Running state
+Node experienced disk resource pressure
+New pods scheduled to the same node were evicted
+Evicted pods showed status Evicted, caused by node-level resource pressure
+Pod scaling and new workload deployment failed on the affected node
+Expected Result
+Pods should have ephemeral-storage requests and limits defined
+Disk-intensive behavior should be isolated to the offending pod
+Node should remain healthy and capable of scheduling new pods
+A single pod should not cause node-wide disk pressure or eviction of other pods
+Impact
+New pod creation and scaling were blocked
+Workloads could not be scheduled successfully on the node
+The node appeared operational, but was effectively unavailable for new workloads
+Root Cause
+The pod specification did not define ephemeral-storage limits
+Unbounded disk consumption led to node disk pressure
+Kubernetes eviction mechanism evicted new or lower-priority pods first, allowing existing pods to continue running
+Recommendation / Fix
+Define ephemeral-storage requests and limits for all pods
+Enforce resource constraints via policy (e.g. admission controller / policy validation)
+Add monitoring and alerts for node disk pressure and pod eviction events
+如果你担心 reviewer 会问：
+“Why are existing pods still running while new pods are evicted?”
+我可以再帮你加一小段 Technical Notes / Kubernetes Behavior Explanation，用来提前“堵嘴”😄
