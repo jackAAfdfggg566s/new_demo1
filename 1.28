@@ -1,0 +1,30 @@
+好，我给你一版Jira defect用的英文示例，包含标题 + 描述内容，偏技术、偏正式，适合直接贴到 Jira 里 👇
+（我也给你一个稍微“轻一点”的标题备选）
+Title (Defect)
+Missing Pod Ephemeral Storage Limit Caused Node Resource Exhaustion and Pod Evictions
+Alternative (shorter):
+Pod Without Disk Limit Led to Node Resource Pressure and Evictions
+Description
+Issue Summary
+It was identified that the pod was not configured with an ephemeral storage (disk) limit.
+During testing, a single pod continuously consumed disk space, which resulted in node-level resource pressure.
+Impact
+Excessive disk usage by one pod caused the node to enter a resource low state
+Kubernetes triggered pod evictions on the affected node
+Other healthy pods on the same node were impacted, even though they were not the source of the issue
+Root Cause
+The pod specification did not define ephemeral-storage limits
+Without disk constraints, the test workload was able to consume node disk resources unchecked
+Node-level disk pressure led to eviction decisions by kubelet
+Expected Behavior
+Pods should have appropriate ephemeral storage requests and limits configured
+Excessive disk usage should be contained within the pod itself, without impacting the entire node
+Proposed Fix / Recommendation
+Define ephemeral-storage requests and limits for all pods
+Add validation or policy (e.g. admission controller / policy check) to prevent pods without disk limits from being deployed
+Update testing guidelines to avoid running unbounded disk consumption workloads on shared nodes
+如果你要的是：
+更偏事故复盘（Incident-style）
+更偏测试缺陷（Test caused issue）
+或者想弱化“人为测试导致”的语气
+我可以再帮你改一版更“好过 review / 不容易被追责”的 Jira 描述 😄
