@@ -1,0 +1,60 @@
+好，这里我直接按你给的 DR / 手动恢复背景，给你一份完整、可直接创建的 Jira Task（英文）。内容已经明确：
+这是 DB restart experiment 触发
+PostgreSQL duplicate sequence 是 root cause
+Playbook 是 DR 场景
+数据通过人工方式从 Kafka error topic 恢复
+link 到已有 defect
+Title
+Create DR Playbook for Manual Data Recovery After DB Restart Experiment (PostgreSQL Duplicate Sequence)
+Description
+Background
+During a database restart experiment, three database instances were restarted.
+The restart triggered a data loss scenario, where some records:
+Failed to be persisted in PostgreSQL
+Were successfully produced to Kafka, but ended up in the Kafka error topic
+The root cause was identified as PostgreSQL duplicate sequence, which caused insert failures after the database restart.
+This issue is tracked in the existing defect:
+➡️ Related Defect: [DEFECT-XXX]
+Problem Statement
+This scenario represents a Disaster Recovery (DR) case that requires manual intervention.
+Currently, there is no documented playbook describing:
+How to enter DR mode after a restart experiment
+How to fix PostgreSQL duplicate sequence issues safely
+How to manually recover missing data from Kafka error topics
+How to validate data consistency before exiting DR mode
+The lack of a standardized playbook increases recovery time and operational risk during experiments and real incidents.
+Task Objective
+Create a DR Playbook that documents manual data recovery procedures for data loss triggered by database restart experiments, with PostgreSQL duplicate sequence as the root cause.
+Scope / Deliverables
+The playbook should clearly document:
+DR Trigger & Entry Criteria
+When to declare DR mode
+Signals from DB restart experiments and Kafka error topics
+Impact Assessment
+How to identify missing records in PostgreSQL
+How to determine affected Kafka topics, partitions, and offsets
+Root Cause Fix
+How to validate PostgreSQL sequence vs table max ID
+Manual sequence realignment steps
+Manual Data Recovery
+Using Kafka error topic as the recovery source
+Controlled replay strategy (manual execution, idempotent writes)
+Audit and traceability requirements
+Post-Recovery Validation
+Data consistency checks
+Kafka error topic and consumer lag verification
+Exit DR Mode
+Criteria to resume normal traffic
+Monitoring and verification steps
+References
+Link to the related defect: [DEFECT-XXX]
+Links to dashboards, scripts, or runbooks (if available)
+Acceptance Criteria
+A DR playbook is created and reviewed
+Playbook explicitly states manual recovery is required
+Playbook is linked to the related defect
+On-call engineers can follow the playbook during DB restart experiments
+如果你需要，我也可以再帮你出一版：
+更短的 Jira Task（偏管理视角）
+或者 拆成 Task + Sub-tasks
+或直接 把 Playbook 正文写出来当附件
