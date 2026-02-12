@@ -1,0 +1,145 @@
+Aurora Global Database（全局数据库）本质上是 跨 Region 的主从集群架构，用于低延迟读 + 灾备。你说的“两个分区”，通常可以理解为：两个 Region（区域）里的两个 Aurora Cluster，一个是 primary（写），一个是 secondary（只读 + 可提升为主）。
+我按架构 → 术语 → CLI 查询 三部分给你拆清楚。
+一、Aurora Global Database 架构怎么理解
+✅ 结构示意
+复制代码
+
+Global Database
+├── Primary Region (写)
+│   └── Aurora Cluster A
+│       ├── writer instance
+│       └── reader instances
+│
+└── Secondary Region (只读)
+    └── Aurora Cluster B
+        ├── reader instances
+关键点：
+概念
+说明
+Global Database
+顶层逻辑对象
+Primary Cluster
+主 Region，可写
+Secondary Cluster
+从 Region，只读
+复制方式
+存储层复制（物理日志复制）
+延迟
+通常 < 1 秒
+用途
+跨区读、灾备
+所以你说的两个分区，在 AWS 里更准确叫：
+两个 Region 成员 Cluster
+二、CLI 怎么查看 Global Database 信息
+✅ 1️⃣ 查看所有 Global Database
+Bash
+复制代码
+aws rds describe-global-clusters
+返回里关键字段：
+复制代码
+
+GlobalClusters:
+  - GlobalClusterIdentifier: my-global-db
+    Engine: aurora-mysql
+    GlobalClusterMembers:
+        - DBClusterArn: arn:xxx:cluster:primary-cluster
+          IsWriter: true
+        - DBClusterArn: arn:xxx:cluster:secondary-cluster
+          IsWriter: false
+这里可以看到：
+哪个是 writer
+哪些是 secondary
+每个 cluster 的 ARN
+✅ 2️⃣ 查看某个 Global Database
+Bash
+复制代码
+aws rds describe-global-clusters \
+  --global-cluster-identifier my-global-db
+三、查看每个 Region 里的具体 Cluster
+Global DB 只告诉你成员，不告诉实例细节，需要分 Region 查。
+✅ 查 primary region cluster
+Bash
+复制代码
+aws rds describe-db-clusters \
+  --db-cluster-identifier primary-cluster \
+  --region us-east-1
+✅ 查 secondary region cluster
+Bash
+复制代码
+aws rds describe-db-clusters \
+  --db-cluster-identifier secondary-cluster \
+  --region ap-southeast-2
+重点字段：
+复制代码
+
+GlobalClusterIdentifier
+ReplicationSourceIdentifier
+DBClusterMembers
+Status
+四、快速看哪个 Region 是主
+用 jq 会很清晰：
+Bash
+复制代码
+aws rds describe-global-clusters \
+| jq '.GlobalClusters[].GlobalClusterMembers[] |
+     {cluster: .DBClusterArn, writer: .IsWriter}'
+五、查看跨区复制状态（很关键）
+在 secondary cluster 里：
+Bash
+复制代码
+aws rds describe-db-clusters \
+  --db-cluster-identifier secondary-cluster \
+  --region ap-southeast-2 \
+  --query "DBClusters[0].Status"
+六、查看延迟（复制 lag）
+Aurora Global 的延迟指标在 CloudWatch：
+metric：
+复制代码
+
+AuroraGlobalDBReplicationLag
+CLI：
+Bash
+复制代码
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/RDS \
+  --metric-name AuroraGlobalDBReplicationLag \
+  --dimensions Name=DBClusterIdentifier,Value=secondary-cluster \
+  --start-time 2026-02-12T00:00:00Z \
+  --end-time 2026-02-12T01:00:00Z \
+  --period 60 \
+  --statistics Average
+七、列出 Global DB + Region 一次性看全
+实战常用：
+Bash
+复制代码
+aws rds describe-global-clusters \
+  --query "GlobalClusters[].{
+    Global:GlobalClusterIdentifier,
+    Members:GlobalClusterMembers[].{
+        Cluster:DBClusterArn,
+        Writer:IsWriter
+    }
+}"
+八、常见误解澄清
+❌ 不是 Multi-AZ
+Multi-AZ
+Global DB
+同 Region
+跨 Region
+自动 failover
+手动或 API 提升
+同步
+近实时异步
+❌ 不是普通 Read Replica
+Global DB 是：
+storage-level replication
+不是 SQL binlog 复制。
+九、如果你要做自动化排查，我可以给你一套脚本：
+可以一次输出：
+global db
+region
+primary
+secondary
+replication lag
+cluster 状态
+你要的话我可以直接帮你写。
