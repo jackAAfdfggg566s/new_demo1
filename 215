@@ -1,0 +1,106 @@
+可以的。看到的是 ENI 级别的 Flow Log 时，照样可以反推到 subnet，因为每个 ENI（网卡）都唯一隶属于一个 subnet。核心思路是：
+ENI → 查 subnetId → 再用 ENI 过滤 Flow Log
+下面给你一套最直接、可审计的做法（CLI + 控制台两种）。
+✅ 方法一：用 ENI 反查 subnet（最准确）
+在 Amazon Web Services 里，每个 ENI 都有 SubnetId 属性。
+CLI 查 ENI 属于哪个 subnet
+假设你在 Flow Log 里看到：
+复制代码
+
+eni-0abc123
+执行：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --network-interface-ids eni-0abc123 \
+  --query 'NetworkInterfaces[0].SubnetId'
+会直接返回：
+复制代码
+
+subnet-xxxx
+一次性把某个 subnet 下所有 ENI 列出来
+这个更有用：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --filters Name=subnet-id,Values=subnet-xxxx \
+  --query 'NetworkInterfaces[*].NetworkInterfaceId'
+得到：
+复制代码
+
+eni-1
+eni-2
+eni-3
+这就是该 subnet 的全部网卡集合。
+✅ 方法二：控制台路径
+控制台：
+复制代码
+
+VPC → Network Interfaces
+搜索栏输入：
+复制代码
+
+subnet-xxxx
+或筛选：
+复制代码
+
+Filter → Subnet ID
+可以直接看到：
+哪些 ENI 属于这个 subnet
+ENI 绑定的资源（EC2 / RDS / NLB / EKS pod 等）
+✅ 方法三：在 Flow Log 里直接用 ENI 过滤
+VPC Flow Log 记录里有字段：
+复制代码
+
+interface-id
+在 Amazon CloudWatch Logs Insights 里查：
+查询某 subnet 的流量（通过 ENI 集合）
+先拿到 ENI 列表，然后：
+Sql
+复制代码
+fields @timestamp, interfaceId, srcAddr, dstAddr, action
+| filter interfaceId in ["eni-1","eni-2","eni-3"]
+| sort @timestamp desc
+✅ 方法四：直接用 Flow Log 里的 subnetId 字段（如果你开的是新版格式）
+如果创建 Flow Log 时选了 all fields / custom format，日志里会有：
+复制代码
+
+subnet-id
+那就可以直接查：
+Sql
+复制代码
+filter subnetId = "subnet-xxxx"
+但注意：
+⚠️ 老格式 flow log 没有 subnetId 字段
+⚠️ 只会有 interface-id
+✅ 方法五：从资源反推 ENI（很实用）
+如果你是为了证明“subnet 被断开导致某资源不通”，可以反查：
+EC2
+Bash
+复制代码
+aws ec2 describe-instances \
+  --query 'Reservations[*].Instances[*].NetworkInterfaces[*].NetworkInterfaceId'
+RDS
+RDS 也有 ENI（在子网里）：
+Bash
+复制代码
+aws rds describe-db-instances \
+  --query 'DBInstances[*].DBSubnetGroup'
+EKS Pod / Node
+K8s CNI 会创建 ENI（aws-node）：
+复制代码
+
+EC2 → Network Interfaces → Description 包含 pod / node 名称
+✅ 审计级证据链建议（你这个场景适用）
+如果你要证明：
+subnet 断开 → 流量失败
+标准证据链：
+1️⃣ subnet → 列出全部 ENI
+2️⃣ ENI → Flow Log REJECT 记录
+3️⃣ 时间点 → 与 subnet 变更时间对齐
+4️⃣ 辅助用 AWS CloudTrail 查 route / nacl 变更
+如果你把：
+subnet id
+一个 ENI id
+flow log 样本行
+贴出来，我可以帮你直接写出精确的 Logs Insights 查询语句，不用你自己拼。
