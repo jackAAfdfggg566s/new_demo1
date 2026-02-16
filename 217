@@ -1,0 +1,112 @@
+结论先给清楚：在 EKS 场景下，把 FIS 执行角色里排除 autoscaling:UpdateAutoScalingGroup 和 autoscaling:SetInstanceProtection ——大多数情况下是合理、而且是推荐的最小权限做法。只有在你要做“ASG 配置级故障实验”时才需要保留。
+涉及服务背景：
+故障注入：AWS Fault Injection Simulator
+容器平台：Amazon EKS
+云平台：Amazon Web Services
+✅ 为什么在 EKS 里排除这两个权限是合理的
+EKS node group 本质上：
+复制代码
+
+EKS node group = Auto Scaling Group + EC2
+而 node 生命周期通常由：
+EKS managed node group controller
+cluster autoscaler
+k8s eviction/drain
+共同控制。
+FIS 实验一般目标是：
+复制代码
+
+破坏节点 / 容量 / 网络 / 实例
+而不是：
+复制代码
+
+修改 ASG 配置行为
+所以权限应当分离。
+🔍 逐个看这两个权限
+一、排除 autoscaling:UpdateAutoScalingGroup —— ✅ 推荐
+这个权限能改：
+min / max size
+desired capacity
+health check
+AZ 配置
+scaling policy 绑定
+在 EKS node group 上如果被 FIS 使用，可能导致：
+node group 配置漂移
+EKS 自动修复触发
+cluster autoscaler 逻辑被干扰
+实验结果不可控
+而大多数 FIS 动作根本不需要它。
+典型仍能正常运行的实验：
+terminate instance
+stop instance
+reboot instance
+asg capacity error
+AZ outage
+network fault
+这些用的是：
+复制代码
+
+SetDesiredCapacity
+TerminateInstanceInAutoScalingGroup
+不是 UpdateAutoScalingGroup。
+二、排除 autoscaling:SetInstanceProtection —— ✅ 推荐
+这个权限作用：
+复制代码
+
+给实例加 scale-in 保护
+在 EKS 场景会产生副作用：
+阻止 node scale-in
+破坏 autoscaler 行为
+造成节点滞留
+pod 调度失真
+而 FIS 常规实验：
+❌ 不需要给节点加保护
+✔️ 反而通常要让它能被终止
+所以排除是更干净的设计。
+❌ 什么时候“不该排除”
+只有当你的实验目标是：
+🎯 ASG 行为级实验
+例如：
+测试错误 scaling policy
+模拟 ASG 参数错误
+故意破坏 node group 容量配置
+ASG 控制面故障注入
+这类实验才需要：
+复制代码
+
+UpdateAutoScalingGroup
+SetInstanceProtection
+但这类实验：
+通常不建议直接对生产 EKS node group 做
+✅ 实战最小权限基线（EKS + FIS）
+如果目标是：对 EKS worker node 做故障注入
+保留：
+Json
+复制代码
+ec2:StopInstances
+ec2:TerminateInstances
+ec2:DescribeInstances
+
+autoscaling:DescribeAutoScalingGroups
+autoscaling:SetDesiredCapacity
+autoscaling:TerminateInstanceInAutoScalingGroup
+排除：
+Json
+复制代码
+autoscaling:UpdateAutoScalingGroup
+autoscaling:SetInstanceProtection
+eks:*
+✅ 最终判断标准（给你一个快速自检法）
+看你的 FIS experiment template：
+复制代码
+
+actions:
+  actionId:
+只要不是：
+复制代码
+
+asg configuration fault
+asg policy fault
+asg parameter fault
+👉 在 EKS 场景排除这两个权限是技术上正确 + 安全上更优。
+如果你把 FIS template 的 actionId 列表贴出来，我可以直接帮你做一行一行的权限必要性判定，避免过度授权或实验跑不起来。
