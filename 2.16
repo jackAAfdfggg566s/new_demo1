@@ -1,0 +1,68 @@
+不合理。有没有 NLB 和 readiness probe 是否“有意义”是两回事。
+readiness 的作用发生在 Kubernetes 集群内部的流量路由与调度层，不依赖是否挂了外部的 NLB。
+我按网络路径把逻辑拆开，你一看就清楚。
+✅ readiness probe 的真正作用点
+readiness probe 控制的是：
+复制代码
+
+Pod 是否进入 Service endpoints
+也就是：
+复制代码
+
+Service → Endpoints → Pod
+只要你用了 Kubernetes Service（ClusterIP / NodePort / LoadBalancer），readiness 就有意义。
+✅ 即使没有 NLB，也仍然有这些流量路径
+即便没有外部 NLB，请求仍可能来自：
+集群内其他 Pod（微服务互调）
+CronJob / Job
+内部 API 调用
+Sidecar
+Ingress Controller（哪怕不是 NLB 型）
+Service mesh（Istio / Linkerd）
+NodePort 访问
+这些都依赖：
+复制代码
+
+Service endpoints
+而 endpoints 是否包含该 Pod —— 由 readiness 决定。
+✅ readiness 失败时实际发生什么
+复制代码
+
+readiness = False
+↓
+Pod 从 endpoints 移除
+↓
+Service 不再转发流量到该 Pod
+这和有没有 NLB 没有直接关系。
+❌ 对方说法什么时候才“部分成立”
+只有在这种非常特殊的架构下才勉强说得通：
+复制代码
+
+没有 Service
+没有 Ingress
+没有 mesh
+没有集群内调用
+客户端直接用 Pod IP 访问
+也就是：
+完全绕过 Kubernetes Service 体系
+但这种架构在生产微服务里几乎不被认为是规范做法。
+✅ 反而更关键的一点
+没有 NLB 时，更需要 readiness，而不是更不需要。
+因为：
+没有外部 LB 做健康筛选
+只能靠 K8s endpoints 控制
+readiness 是唯一流量闸门
+✅ 工程评审级结论
+你可以这样回应对方（技术上站得住）：
+Readiness probe controls pod participation in Kubernetes Service endpoints, not only external load balancers. Even without NLB, it is still essential for in-cluster traffic routing and failure isolation.
+✅ 快速自查一句话
+只要你的资源里存在：
+复制代码
+
+kind: Service
+👉 readiness 就一定有意义。
+如果你愿意，把你们的 Service 类型（ClusterIP / NodePort / Headless）贴出来，我可以直接告诉你：
+readiness 是否参与流量控制
+是否会影响调用路径
+是否存在“看起来没用但其实很关键”的情况
+这条说法在你们架构里是否属于误判。
