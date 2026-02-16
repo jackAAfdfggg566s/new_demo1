@@ -1,0 +1,84 @@
+可以直接给你精确结论：
+排除那两个 ASG 权限后，EKS 的 pod 仍然可以“参与/受到”那个 FIS action 的影响——前提是你的 FIS target 仍然包含 EKS 的 node（ASG 或 EC2 实例）。
+如果你把 EKS node 也从 target 里排除了，那 pod 就基本不会受影响。
+涉及对象说明一下：
+故障注入服务：AWS Fault Injection Simulator
+容器平台：Amazon EKS
+你前面提到的 action：aws:ec2:asg-insufficient-instance-capacity-error
+✅ 先把“谁在运行 action”说清楚
+不是：
+复制代码
+
+pod 运行 FIS action
+而是：
+复制代码
+
+FIS → 操作 ASG / EC2 → 影响 node → 间接影响 pod
+链路是：
+复制代码
+
+FIS action
+  ↓
+ASG / EC2 节点层
+  ↓
+node 不可扩容 / 被终止
+  ↓
+pod Pending / 被驱逐 / 重调度
+✅ 排除这两个权限后会不会影响 action 执行？
+你排除的是：
+复制代码
+
+autoscaling:UpdateAutoScalingGroup
+autoscaling:SetInstanceProtection
+而这个 action 主要依赖的是：
+复制代码
+
+autoscaling:SetDesiredCapacity
+autoscaling:TerminateInstanceInAutoScalingGroup
+autoscaling:DescribeAutoScalingGroups
+👉 不依赖你排除的那两个权限
+所以：
+✅ action 仍然能执行
+✅ 节点层故障仍然会发生
+✅ pod 仍然会受到影响
+❗真正决定 pod 是否受影响的不是这两个 permission
+而是：
+🎯 你的 FIS target 有没有选中 EKS node group 的 ASG / 实例
+情况 A — target 包含 EKS node ASG
+例如：
+复制代码
+
+targets:
+  resourceType: aws:autoscaling:autoScalingGroup
+  tags: eks-nodegroup
+结果：
+扩容失败
+新 node 起不来
+pod Pending
+HPA 扩容失败
+调度拥塞
+👉 pod 明显受影响
+👉 实验有效
+情况 B — target 排除了 EKS node ASG
+例如：
+复制代码
+
+exclude tags: eks:cluster-name
+结果：
+EKS node 不受影响
+pod 正常调度
+扩容正常
+👉 pod 基本无感
+👉 实验对 EKS workload 无效
+✅ 在 EKS 场景的最佳实践
+如果你的目标是：
+🎯 测试 EKS 工作负载抗扩容失败能力
+应该：
+✔️ target 包含 node group ASG
+✔️ 保留 SetDesiredCapacity / TerminateInASG
+✔️ 排除 UpdateAutoScalingGroup
+✔️ 排除 SetInstanceProtection
+这是：
+既能生效，又最小权限，又不破坏 node group 配置 的组合。
+如果你把你的 FIS template 的 target 和 action 片段贴出来，我可以直接帮你判断：
+pod 会不会被影响、实验会不会被权限卡住。
