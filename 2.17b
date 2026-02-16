@@ -1,0 +1,121 @@
+我直接用精确定义 + 行为影响 + 在 EC2 与 EKS 两种场景的区别给你拆清楚这两个权限的作用。
+涉及范围先说明：
+权限作用对象：Amazon Web Services 的 Auto Scaling Group（ASG）
+不属于 pod 层，不属于 Kubernetes API
+既可作用于普通 EC2 ASG，也可作用于 Amazon EKS 的 node group（因为 node group 本质就是 ASG）
+✅ 这两个 permission 的本质对象
+它们不是直接针对 pod
+也不是直接针对单台 EC2 实例属性
+而是：
+复制代码
+
+针对 Auto Scaling Group 行为控制
+一、autoscaling:UpdateAutoScalingGroup —— 做什么用
+✅ 功能
+允许修改 ASG 配置参数：
+可以改：
+复制代码
+
+min size
+max size
+desired capacity
+subnet / AZ
+health check type
+launch template
+termination policy
+cooldown
+属于：
+ASG 控制面配置修改权限
+📌 对 EC2 应用实例有什么影响？
+如果你的 EC2 是：
+复制代码
+
+单台裸 EC2（不在 ASG）
+👉 完全没影响
+如果你的 EC2 是：
+复制代码
+
+在 ASG 里的应用实例
+👉 会产生重大影响：
+可能发生：
+应用实例数量被改
+扩容/缩容策略被破坏
+AZ 分布被改
+launch template 被换
+新实例配置变化
+📌 对 EKS node 的影响？
+因为 EKS node group = ASG：
+UpdateAutoScalingGroup 可以：
+改 node 数量范围
+改 node 模板
+改 subnet
+破坏 node group 稳定性
+所以通常 不建议给 FIS
+二、autoscaling:SetInstanceProtection —— 做什么用
+✅ 功能
+给 ASG 里的某个实例加标志：
+复制代码
+
+scale-in protected = true
+效果：
+ASG 在缩容时 不能终止这台实例
+📌 对 EC2 应用实例的影响？
+如果 EC2 在 ASG：
+会导致：
+ASG 想缩容 → 终止不了这台
+只会终止别的实例
+可能造成容量分布异常
+可能导致某些实例长期“卡住”
+如果 EC2 不在 ASG：
+👉 没任何作用
+📌 对 EKS node 的影响？
+对 EKS node 会导致：
+node 无法被 scale in
+cluster autoscaler 行为异常
+节点滞留
+pod 调度失真
+扩容/缩容实验结果不干净
+三、和 FIS 实验的关系
+在 AWS Fault Injection Simulator 里：
+大多数故障注入 action 需要的是：
+复制代码
+
+TerminateInstanceInAutoScalingGroup
+SetDesiredCapacity
+StopInstances
+TerminateInstances
+❌ 不需要：
+复制代码
+
+UpdateAutoScalingGroup
+SetInstanceProtection
+除非你做的是：
+复制代码
+
+ASG 配置级故障实验
+ASG 策略破坏实验
+Scaling policy chaos
+四、是否“针对 EC2 应用实例”——准确说法
+更精确的技术说法是：
+复制代码
+
+不是针对 EC2 实例本身
+而是针对“托管这些实例的 ASG 控制逻辑”
+影响路径：
+复制代码
+
+permission
+  ↓
+ASG 行为
+  ↓
+EC2 实例生命周期
+  ↓
+应用 / pod
+五、给你一个快速判断规则
+如果实验目标是：
+✅ 节点故障 / 实例故障 / 容量不足实验
+排除这两个权限 —— 正确
+❌ ASG 配置破坏 / 扩容策略实验
+需要保留 —— 否则 action 会失败
+如果你愿意，把你那条 FIS action 名字再贴一次，我可以直接帮你判定：
+它到底会不会用到这两个权限，以及排除后是否 100% 能跑。
