@@ -1,0 +1,146 @@
+要检查 EC2 到某个 Web 服务之间的 TLS 是否建立完成，可以从三个层次做验证：TCP → TLS 握手 → 证书校验。下面给你一套现场可用的排查流程（偏运维 / SRE 视角）。
+涉及环境：Amazon EC2
+✅ 一、先确认 TCP 连通（不是 TLS，但必须先通）
+在 EC2 上：
+Bash
+复制代码
+nc -vz example.com 443
+或：
+Bash
+复制代码
+telnet example.com 443
+结果应看到：
+复制代码
+
+Connected to example.com
+如果这里失败：
+Security Group
+NACL
+route table
+proxy / firewall
+VPC endpoint
+先排这些，TLS 还没开始。
+✅ 二、直接看 TLS 握手（最标准方法）
+🎯 用 openssl s_client（最权威）
+Bash
+复制代码
+openssl s_client -connect example.com:443 -servername example.com
+关键判断点：
+成功握手会看到：
+复制代码
+
+SSL-Session:
+Protocol  : TLSv1.2 (或 TLSv1.3)
+Cipher    : TLS_...
+Verify return code: 0 (ok)
+说明：
+✅ TCP 已建立
+✅ TLS 握手完成
+✅ 证书链校验通过
+❌ 常见失败特征
+握手失败
+复制代码
+
+handshake failure
+原因：
+对端不支持你的 TLS version
+cipher suite 不匹配
+中间设备拦截
+证书错误
+复制代码
+
+Verify return code: 20 (unable to get local issuer certificate)
+说明：
+TLS 建立了
+但证书链不被信任
+SNI 必须注意
+很多 Web 服务必须带 SNI：
+复制代码
+
+-servername example.com
+否则会误判 TLS 失败。
+✅ 三、用 curl 看 TLS 建立全过程
+Bash
+复制代码
+curl -v https://example.com
+关键输出：
+复制代码
+
+* TLSv1.3 (OUT), TLS handshake, Client hello
+* TLSv1.3 (IN), TLS handshake, Server hello
+* SSL connection using TLSv1.3
+看到：
+复制代码
+
+SSL connection using ...
+= TLS 成功
+更详细：
+Bash
+复制代码
+curl --tlsv1.2 -v https://example.com
+可强制版本测试。
+✅ 四、抓包确认（最底层）
+如果你要绝对确认是否完成握手：
+Bash
+复制代码
+sudo tcpdump -i eth0 port 443
+TLS 握手特征：
+复制代码
+
+Client Hello
+Server Hello
+Certificate
+Finished
+如果只有：
+复制代码
+
+Client Hello → 没有 Server Hello
+说明：
+被拦截
+被丢弃
+对端拒绝
+✅ 五、检查应用层是否真的用 TLS（常被忽略）
+有些服务：
+443 端口
+但跑明文 HTTP（配置错误）
+验证：
+Bash
+复制代码
+curl -vk https://host
+如果看到：
+复制代码
+
+HTTP/1.1 200 OK
+且没有 TLS 日志 → 配置异常。
+✅ 六、如果是 Java / Kafka / SDK 客户端
+看客户端日志是否有：
+复制代码
+
+SSLHandshakeException
+TLS handshake timeout
+certificate_unknown
+✅ 七、云环境专项检查点
+在 EC2 → 外部 Web：
+检查：
+Security Group outbound 443
+NACL outbound
+proxy 设置
+VPC DNS
+NAT gateway
+企业防火墙
+✅ 八、最快速判定法（实战推荐）
+在 EC2 上直接跑：
+Bash
+复制代码
+openssl s_client -connect host:443 -servername host </dev/null
+看到：
+复制代码
+
+Verify return code: 0 (ok)
+即可判定：
+TLS 已建立 + 证书可信
+如果你告诉我：
+目标是公网 Web 还是内网 LB
+用的是 curl / Java / Kafka / SDK
+是否在 EKS pod 里
+我可以给你对应的精细排查路径（包括 node vs pod 抓包位点）。
