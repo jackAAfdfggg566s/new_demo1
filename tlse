@@ -1,0 +1,156 @@
+Below is a precise English explanation of how to interpret
+openssl s_client -connect example.com:443 -servername example.com output and how it compares with what Chrome shows in the Security panel.
+I’ll keep it operational and field-oriented.
+✅ What This Command Actually Does
+复制代码
+
+openssl s_client -connect example.com:443 -servername example.com
+This command acts as a raw TLS client. It performs:
+TCP connection to port 443
+TLS ClientHello (with SNI = example.com)
+TLS handshake
+Certificate chain retrieval
+Cipher + protocol negotiation
+Optional certificate verification (against local trust store)
+It prints the full handshake transcript and negotiated session parameters.
+✅ What Indicates TLS Handshake Success
+You consider TLS successfully established when these elements appear:
+1️⃣ Protocol and Cipher Negotiated
+Example:
+复制代码
+
+Protocol  : TLSv1.3
+Cipher    : TLS_AES_256_GCM_SHA384
+Meaning:
+TLS version negotiation succeeded
+Cipher suite agreement succeeded
+Key exchange completed
+If handshake failed, these fields are missing.
+2️⃣ Certificate Chain Is Returned
+Example:
+复制代码
+
+Certificate chain
+ 0 s:CN=example.com
+   i:CN=R3,O=Let's Encrypt
+Meaning:
+Server sent its certificate
+Intermediate CA(s) provided
+Handshake reached certificate stage
+No certificate block → handshake did not complete.
+3️⃣ Verify Return Code
+Most important line:
+复制代码
+
+Verify return code: 0 (ok)
+Meaning:
+Certificate chain validated
+Trusted by your local CA bundle
+No signature/path errors
+Non-zero codes indicate trust or chain problems — TLS may still be established but not trusted.
+4️⃣ SSL-Session Block Present
+Example:
+复制代码
+
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_256_GCM_SHA384
+Meaning:
+Handshake finished
+Session keys derived
+Secure channel ready
+This is definitive evidence that TLS handshake completed.
+✅ How This Compares to Chrome Security Panel
+Chrome Security view shows:
+TLS version
+Cipher suite
+Certificate subject / issuer
+Validity dates
+SAN names
+Trust status
+OCSP / revocation
+Certificate Transparency
+HSTS status
+Both Chrome and openssl use the same TLS protocol flow, so negotiated protocol and cipher should match if:
+Same hostname (SNI)
+Same network path
+Same server endpoint
+⚠️ Important Differences
+Chrome performs extra validation:
+Chrome checks:
+OCSP stapling
+CRL revocation
+Certificate Transparency logs
+HSTS rules
+Hostname enforcement
+Browser trust store policy
+openssl s_client by default:
+Does NOT check revocation
+Uses OS/OpenSSL trust store
+Does not enforce browser policies
+So:
+复制代码
+
+openssl success ≠ browser trust guaranteed
+But:
+复制代码
+
+openssl handshake success = TLS established
+✅ Why Results Usually Match (Underlying Principle)
+TLS handshake is standardized:
+复制代码
+
+ClientHello
+ServerHello
+Certificate
+Key Exchange
+Finished
+Both Chrome and OpenSSL:
+Send ClientHello
+Negotiate protocol/cipher
+Validate certificate chain
+Derive session keys
+Same inputs → same negotiated outputs.
+⚠️ Common Causes of Mismatch
+❌ Missing SNI
+Without:
+复制代码
+
+-servername example.com
+Server may return a default certificate (wrong site).
+Chrome always sends SNI.
+❌ Different network edge
+Examples:
+Browser hits CDN edge node
+EC2 hits origin server
+Different certificate deployed per edge
+❌ TLS version support difference
+Old OpenSSL:
+复制代码
+
+TLS 1.2 only
+Chrome:
+复制代码
+
+TLS 1.3
+Results differ.
+✅ Practical Parsing Checklist
+When you read openssl s_client output, verify:
+复制代码
+
+[ ] Protocol line present
+[ ] Cipher line present
+[ ] Certificate chain printed
+[ ] SSL-Session block exists
+[ ] Verify return code: 0 (ok)
+[ ] Subject/SAN matches hostname
+If all true → TLS handshake completed successfully.
+✅ Bottom-Line Answer
+If:
+openssl s_client shows successful handshake
+Protocol and cipher match Chrome
+Certificate subject/SAN match Chrome
+Verification code is OK
+Then:
+TLS connection is successfully established.
+If you paste a real openssl s_client output, I can annotate it line-by-line and map each field to the exact TLS handshake phase.
