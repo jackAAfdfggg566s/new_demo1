@@ -1,0 +1,78 @@
+Below is a structured Test Report in formal technical English. You can adjust hostnames, timestamps, and environment details as needed.
+Test Report
+Title: TLS Connectivity Verification via OpenSSL
+Date: 18 February 2026
+Environment: Production / Staging (specify)
+Target Host: example.com
+Port: 443
+Tester: (Name)
+1. Objective
+To verify successful TLS establishment between client and target web server using the openssl s_client command and compare the handshake results with browser (Chrome) security details to confirm certificate validity and secure channel establishment.
+2. Test Command Executed
+Bash
+复制代码
+openssl s_client -connect example.com:443 -servername example.com
+Command Purpose
+-connect example.com:443
+Initiates a TCP connection to the target host on port 443.
+-servername example.com
+Enables SNI (Server Name Indication), ensuring the correct certificate is presented by servers hosting multiple domains.
+3. Observations
+The following key outputs were observed:
+3.1 TLS Handshake Status
+SSL-Session: section present
+Protocol: TLSv1.2 (or TLSv1.3)
+Cipher: TLS_AES_256_GCM_SHA384 (example)
+Verify return code: 0 (ok)
+This indicates:
+TCP connection successfully established
+TLS handshake completed
+Cipher suite negotiated successfully
+Certificate chain verified without errors
+3.2 Certificate Details
+Observed fields:
+subject= matches expected domain (CN=example.com or SAN contains example.com)
+issuer= matches trusted CA
+Validity period is current (Not Before / Not After dates valid)
+3.3 Chrome Browser Security Comparison
+From Chrome → Security → Certificate Details:
+Same certificate Subject CN / SAN
+Same Issuer CA
+Same validity period
+Same TLS protocol version
+Same negotiated cipher suite
+The browser shows:
+Connection is secure.
+4. Analysis
+4.1 Why Matching Outputs Confirm TLS Success
+TLS handshake process includes:
+TCP 3-way handshake
+ClientHello (protocol versions + cipher suites)
+ServerHello (selected cipher)
+Certificate exchange
+Key exchange
+Finished messages
+If openssl s_client outputs:
+Negotiated protocol
+Selected cipher
+Valid certificate chain
+Verify return code: 0 (ok)
+Then:
+The server presented a valid certificate
+The certificate chain is trusted
+The handshake completed successfully
+Encryption keys were negotiated
+Since Chrome reports identical certificate and cipher details, both clients established secure TLS sessions independently and successfully.
+Matching protocol version and cipher suite confirm that:
+The same TLS configuration is applied server-side
+No SSL interception or proxy modification occurred
+No certificate mismatch exists
+5. Conclusion
+The TLS connection to example.com:443 was successfully established.
+Evidence:
+OpenSSL handshake completed
+Certificate verified successfully (Verify return code: 0)
+Negotiated protocol and cipher match browser results
+Chrome reports secure connection
+Therefore, TLS configuration and certificate deployment are functioning correctly.
+If you want, I can also provide a more formal enterprise-style report template suitable for audit documentation.
