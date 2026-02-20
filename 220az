@@ -1,0 +1,140 @@
+很好，这个信息很关键。
+即使有 RDS Proxy，30 分钟内应用仍然报错，说明问题一定在“应用所在 subnet 的网络路径”层，而不是数据库 failover 本身。
+下面精确拆解。
+一、关键事实重构
+你的场景现在是：
+EKS 某 AZ subnet 被断 30 分钟
+RDS Multi-AZ failover 1 分钟恢复
+前面还有 RDS Proxy
+应用持续报错直到 subnet 恢复
+结论提前说：
+RDS Proxy 不能解决“客户端所在 subnet 无网络”的问题。
+它只解决数据库 failover 的问题。
+二、流量真实路径
+即使有 Proxy，链路仍然是：
+复制代码
+
+Pod
+  ↓
+Node ENI
+  ↓
+Subnet (被隔离)
+  ↓
+RDS Proxy ENI
+  ↓
+RDS
+如果 Subnet 被断开：
+SYN 发不出去
+DNS 可以解析
+但 TCP 建立不了
+你会看到：
+i/o timeout
+connection timed out
+no route to host
+而不是：
+proxy authentication error
+too many connections
+三、为什么 RDS Proxy 没“兜底”？
+理解 RDS Proxy 的职责非常重要。
+RDS Proxy 解决的是：
+场景
+是否解决
+RDS failover
+✅
+连接池耗尽
+✅
+连接风暴
+✅
+数据库重启
+✅
+客户端 subnet 断网
+❌
+Proxy 本质是：
+数据库侧的高可用组件
+不是：
+网络层高可用组件
+四、为什么 30 分钟内一直报错？
+现在推演实际行为：
+Step 1 — Subnet 被隔离
+AZ-a 的 subnet 被 FIS 或路由操作断开。
+Node 仍然 Ready
+Pod 仍然 Running
+kubelet 仍然心跳正常（取决于实验方式）
+K8s 不会驱逐 Pod。
+Step 2 — RDS failover 完成（1 分钟）
+Proxy 自动检测：
+主库切换
+backend 连接重建
+endpoint 不变
+从 Proxy 视角：
+一切正常
+Step 3 — 应用继续尝试连接
+但此时：
+Pod → Proxy ENI 的网络路径仍然断
+TCP 三次握手失败
+连接池不断 retry
+所以：
+只要 subnet 不恢复，应用永远连不上
+五、为什么 Kubernetes 没迁移 Pod？
+关键点来了。
+如果只是 subnet 网络断：
+Node 可能仍处于 Ready
+API Server 仍可达
+kubelet 没被判定 NotReady
+因此：
+Pod 不会被 reschedule 到其他 AZ
+这就是典型的 “partial AZ isolation” 问题。
+六、真正的根因类型（常见三种）
+1️⃣ FIS aws:network:disrupt-connectivity 断 subnet
+这种方式：
+只断数据平面
+不一定断 control plane
+最常见。
+2️⃣ NAT Gateway 单 AZ
+如果：
+Private subnet 全部走 AZ-a 的 NAT
+NAT 在 AZ-a
+AZ-a 断
+那么：
+即便 Proxy 在 AZ-b
+仍然出不去
+3️⃣ Pod 全在同一个 AZ
+检查：
+复制代码
+
+kubectl get pods -o wide
+如果全部在 AZ-a：
+那就根本没有跨 AZ 容错。
+七、为什么 subnet 恢复后马上恢复？
+因为：
+TCP 可以建立
+DNS 仍然是对的
+Proxy 已经准备好
+连接池自动重连成功
+网络通了，系统自动恢复。
+八、核心结论
+你的现象说明：
+这是 EKS 网络层 AZ 隔离问题
+不是 RDS 问题
+不是 RDS Proxy 问题
+Proxy 无法跨 subnet 提供网络层高可用。
+九、正确的 HA 设计应该是
+NodeGroup 跨 2–3 个 AZ
+Pod anti-affinity
+HPA 允许跨 AZ 扩容
+NAT per AZ
+RDS Proxy 跨 AZ
+Subnet route table 独立
+这样：
+当 AZ-a 断：
+Node NotReady
+Pod reschedule 到 AZ-b
+应用继续访问 Proxy
+不会 30 分钟中断。
+十、如果你愿意，我可以帮你做一个精准诊断
+我需要你确认：
+你断的是 subnet 还是 ENI？
+NAT 是否单 AZ？
+Pod 是否都在同一 AZ？
+Node 在那 30 分钟是 Ready 还是 NotReady？
+你这个案例非常典型，是很多公司做 AZ chaos test 时踩的坑。
