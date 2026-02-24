@@ -1,0 +1,116 @@
+你这个架构是：
+GitLab Runner
+→ scp 脚本到远程机器
+→ ssh 执行 sh
+→ 脚本里跑 SQL
+这种结构非常容易卡住，而且通常不是数据库问题，而是“shell / 会话行为差异”。
+我直接给你按真实工程排查顺序说。
+一、最常见原因：psql 等待输入 / 没真正退出
+如果脚本里是类似：
+Bash
+复制代码
+psql -h xxx -U xxx -d xxx
+而不是：
+Bash
+复制代码
+psql -h xxx -U xxx -d xxx -c "SQL"
+那它会：
+进入交互模式
+等待 stdin
+CI 里看起来像卡住
+二、stdout 阻塞（高概率）
+如果 SQL 返回大量数据，例如：
+Sql
+复制代码
+SELECT * FROM big_table;
+然后：
+ssh session 的 buffer 满了
+pipeline 没及时消费 stdout
+进程会 block。
+表现就是：
+数据库执行完
+pipeline 一直不结束
+解决方式：
+Bash
+复制代码
+psql -c "SQL" > /dev/null
+或者：
+Bash
+复制代码
+psql -c "SQL" -t -A
+只输出纯结果。
+三、事务未结束
+如果脚本里：
+Bash
+复制代码
+psql <<EOF
+BEGIN;
+SQL;
+EOF
+但没有 COMMIT，某些锁可能一直持有。
+四、ssh 会话非交互环境差异
+ssh 执行 sh 时：
+不会加载 ~/.bashrc
+不会加载环境变量
+PATH 可能不同
+PG* 环境变量可能缺失
+例如：
+work_mem 不同
+search_path 不同
+连接的是不同 DB
+你可以在脚本最前面加：
+Bash
+复制代码
+echo $PATH
+psql --version
+env | grep PG
+五、数据库被锁等待（非常常见）
+在数据库里查：
+Sql
+复制代码
+SELECT pid, state, wait_event_type, wait_event, query
+FROM pg_stat_activity
+WHERE state <> 'idle';
+如果看到：
+复制代码
+
+wait_event_type = Lock
+那不是慢，是在等锁。
+六、没有 set -e，实际失败但没退出
+建议脚本开头加：
+Bash
+复制代码
+set -euo pipefail
+否则 SQL 报错 pipeline 也可能不终止。
+七、CI 和远程机器网络不同
+远程机器：
+可能跨 AZ
+可能 DNS 解析慢
+可能连接了只读实例
+特别是如果你用的是：
+Amazon RDS
+Amazon Aurora
+跨区访问差异会非常明显。
+🎯 我给你一个快速判断方法
+在远程机器上直接运行：
+Bash
+复制代码
+time psql -c "SELECT 1"
+如果这个都慢 → 网络或 DNS 问题。
+再运行：
+Bash
+复制代码
+time psql -c "SELECT count(*) FROM your_table"
+如果 count 快，但原 SQL 慢 → 执行计划问题。
+如果数据库里能看到 SQL 执行完，但 pipeline 不退出 → stdout 阻塞。
+🔎 经验判断（按概率）
+stdout 被卡住（高概率）
+psql 进入交互模式
+被锁等待
+执行计划不同
+网络慢
+你可以贴一下：
+脚本里怎么调用 psql
+SQL 是 select 还是 update
+是否有大量结果输出
+我可以直接帮你定位是哪一类问题。
