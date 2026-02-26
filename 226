@@ -1,0 +1,124 @@
+你的需求本质是：
+在 GitLab pipeline 中，通过 SSH 到远程机器，循环检查某个进程是否存在（ps -ef | grep），一旦检测到就 kill。
+下面给你一个工程上可用、可控退出、不误杀 grep、自带超时机制的实现方式。
+一、核心问题
+直接写：
+Bash
+复制代码
+while true; do
+  ps -ef | grep xxx
+done
+有几个典型问题：
+会匹配到 grep 自己
+没有超时会死循环
+kill 可能杀错进程
+pipeline 可能卡死
+所以我们要规范写法。
+二、推荐远程执行脚本（安全版本）
+GitLab CI 示例
+Yaml
+复制代码
+check_and_kill:
+  stage: test
+  script:
+    - |
+      ssh user@remote-host '
+        TARGET="my_process_name"
+        TIMEOUT=60
+        INTERVAL=2
+        ELAPSED=0
+
+        while [ $ELAPSED -lt $TIMEOUT ]; do
+          PID=$(pgrep -f "$TARGET")
+
+          if [ ! -z "$PID" ]; then
+            echo "Process found: $PID"
+            kill -9 $PID
+            echo "Process killed"
+            exit 0
+          fi
+
+          sleep $INTERVAL
+          ELAPSED=$((ELAPSED+INTERVAL))
+        done
+
+        echo "Timeout reached, process not found"
+        exit 1
+      '
+三、为什么用 pgrep 而不是 ps | grep
+不要这样：
+Bash
+复制代码
+ps -ef | grep my_process
+因为：
+会匹配到 grep
+可能误匹配类似名称
+解析麻烦
+用：
+Bash
+复制代码
+pgrep -f my_process
+更专业。
+四、如果必须用 ps grep（标准写法）
+Bash
+复制代码
+PID=$(ps -ef | grep my_process | grep -v grep | awk '{print $2}')
+但这是 legacy 写法，不推荐。
+五、增强版（防止杀多个进程）
+如果你只想杀第一个：
+Bash
+复制代码
+PID=$(pgrep -f "$TARGET" | head -n 1)
+六、如果你想等进程结束，而不是 kill
+Bash
+复制代码
+while pgrep -f "$TARGET" > /dev/null; do
+  sleep 2
+done
+七、避免 pipeline 卡死的关键点
+1️⃣ 一定要有 TIMEOUT
+否则 CI runner 会一直跑。
+2️⃣ ssh 要带超时（推荐）
+Bash
+复制代码
+ssh -o ConnectTimeout=10 user@host
+八、常见错误场景
+❌ pipeline 卡 5 分钟失败
+可能原因：
+ssh 无法退出
+while 死循环
+kill 后没 exit
+远程脚本没 return
+九、如果进程是 docker / k8s 里的
+如果是容器内进程，ps 是看不到的。
+需要：
+Bash
+复制代码
+docker exec container pgrep xxx
+或
+Bash
+复制代码
+kubectl exec pod -- pgrep xxx
+十、极简生产版本（推荐）
+如果你要一个最干净的版本：
+Bash
+复制代码
+ssh user@host '
+for i in {1..30}; do
+  PID=$(pgrep -f my_process)
+  if [ -n "$PID" ]; then
+    kill -9 $PID
+    exit 0
+  fi
+  sleep 2
+done
+exit 1
+'
+最多等 60 秒
+找到就 kill
+找不到返回 1
+如果你告诉我：
+进程名是什么
+是普通 Linux 进程？Docker？还是 K8s？
+是等启动再 kill？还是等结束？
+我可以给你一个完全针对你场景的版本。
