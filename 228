@@ -1,0 +1,143 @@
+在 GitLab 的 **pipeline 手动触发界面（Run pipeline）**里，可以让用户输入 SQL，再由 job 执行。核心机制是 CI/CD Variables + manual pipeline。
+下面是一个常见实现方案。
+方案一：Run Pipeline 输入 SQL（最简单、最常用）
+1 定义 .gitlab-ci.yml
+Yaml
+复制代码
+stages:
+  - run_sql
+
+run_sql_job:
+  stage: run_sql
+  when: manual
+  script:
+    - echo "Running SQL:"
+    - echo "$SQL_QUERY"
+    - psql "$DB_CONN" -c "$SQL_QUERY"
+说明：
+when: manual → job 在 UI 上手动触发
+$SQL_QUERY → 用户输入的 SQL
+psql 只是例子，可以换成 mysql / sqlplus 等
+2 用户运行 pipeline
+进入：
+复制代码
+
+GitLab
+→ CI/CD
+→ Pipelines
+→ Run pipeline
+会看到 Variables 输入框，例如：
+复制代码
+
+Key: SQL_QUERY
+Value: select * from users limit 10;
+然后运行 pipeline。
+3 pipeline 执行
+job 会运行：
+Bash
+复制代码
+psql "$DB_CONN" -c "select * from users limit 10;"
+方案二：做成真正“交互菜单”
+GitLab 还支持 预定义变量 + 选择列表（适合防止随便执行 SQL）。
+例如：
+Yaml
+复制代码
+variables:
+  SQL_QUERY:
+    description: "Input SQL to run"
+    value: "select now();"
+运行 pipeline 时 UI 会显示输入框。
+方案三：更安全（推荐生产）
+不要允许任意 SQL，而是：
+用户只选 SQL 类型。
+Yaml
+复制代码
+variables:
+  SQL_ACTION:
+    value: "check_connections"
+    options:
+      - check_connections
+      - show_tables
+      - db_size
+    description: "Select SQL action"
+script：
+Bash
+复制代码
+case "$SQL_ACTION" in
+  check_connections)
+    SQL="select * from pg_stat_activity;"
+    ;;
+  show_tables)
+    SQL="\dt"
+    ;;
+  db_size)
+    SQL="select pg_database_size(current_database());"
+    ;;
+esac
+
+psql "$DB_CONN" -c "$SQL"
+这样 UI 会变成 下拉菜单。
+方案四：真正让用户输入 SQL（但避免 shell 注入）
+推荐写成文件：
+Yaml
+复制代码
+script:
+  - echo "$SQL_QUERY" > query.sql
+  - psql "$DB_CONN" -f query.sql
+避免 shell quoting 问题。
+常见坑
+1 SQL 有引号 pipeline 会失败
+错误例子
+复制代码
+
+select * from table where name="jack";
+因为 shell quoting。
+解决：
+复制代码
+
+psql -f query.sql
+2 SQL 很长
+GitLab variable 最大：
+复制代码
+
+10k 字符
+超过需要：
+artifact
+repo 文件
+3 权限控制
+建议限制：
+复制代码
+
+Protected branch
+Protected variable
+Maintainer only
+避免执行：
+复制代码
+
+drop table
+delete
+实际生产常见架构
+很多团队会做：
+复制代码
+
+GitLab pipeline
+      ↓
+ssh 到 bastion
+      ↓
+执行 sql script
+      ↓
+返回结果
+例如：
+Yaml
+复制代码
+script:
+  - ssh db-admin "psql -d prod -f -" <<EOF
+$SQL_QUERY
+EOF
+如果你愿意，我可以再给你一个 完整生产级 .gitlab-ci.yml 模板（带这些能力）：
+UI 输入 SQL
+防止危险 SQL（drop/delete）
+ssh 到远程 DB server
+输出执行时间
+pipeline 不失败但显示 SQL 结果
+这个在 SRE / DBA 团队里非常常见。
