@@ -1,0 +1,88 @@
+在 Amazon Web Services（AWS）里，RDS 实例在 VPC 中会创建 ENI（Elastic Network Interface）。
+如果你要排查网络（例如 subnet、AZ、security group、flow log），需要找到对应 ENI。
+下面给你精确做法。
+一、通过 RDS 直接查 ENI（推荐）
+1️⃣ 先查 RDS 实例的网络信息
+Bash
+复制代码
+aws rds describe-db-instances \
+  --db-instance-identifier <your-db-name> \
+  --query "DBInstances[0].DBSubnetGroup"
+可以看到：
+Subnets
+VpcId
+2️⃣ 通过实例 endpoint 反查 ENI（更精准）
+Bash
+复制代码
+aws rds describe-db-instances \
+  --db-instance-identifier <your-db-name> \
+  --query "DBInstances[0].Endpoint.Address"
+拿到 endpoint，例如：
+复制代码
+
+mydb.abcxyz.ap-southeast-2.rds.amazonaws.com
+解析成 IP：
+Bash
+复制代码
+nslookup mydb.xxx.rds.amazonaws.com
+得到私网 IP，例如：
+复制代码
+
+10.0.2.15
+然后查 ENI：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --filters Name=addresses.private-ip-address,Values=10.0.2.15
+会返回：
+NetworkInterfaceId (eni-xxxx)
+SubnetId
+PrivateIp
+SecurityGroups
+AvailabilityZone
+二、直接按 RDS 描述过滤 ENI（常用 SRE 写法）
+RDS ENI 描述一般包含：
+复制代码
+
+RDSNetworkInterface
+可以直接：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --filters Name=description,Values="RDSNetworkInterface*"
+如果多个 RDS，可以再加 VPC 过滤：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --filters Name=vpc-id,Values=vpc-xxxx
+三、Aurora 情况（多 ENI）
+如果是 Amazon Aurora：
+每个 instance 一个 ENI
+writer 和 reader 各自有
+failover 时 IP 可能变化
+所以要：
+Bash
+复制代码
+aws rds describe-db-instances \
+  --filters Name=db-cluster-id,Values=<cluster-id>
+然后对每个 instance 查 endpoint → IP → ENI。
+四、控制台查看路径
+RDS → Databases → 选实例
+Connectivity & security
+点击 VPC → Subnet
+在 EC2 → Network Interfaces 里筛选
+五、如果是你之前提到的 EKS 访问 RDS 问题
+你可以：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --filters Name=group-id,Values=<rds-sg-id>
+这样可以确认：
+RDS ENI 在哪个 subnet
+是否在 failover AZ
+是否 flow log 有 reject
+如果你告诉我：
+是单实例 RDS 还是 Aurora？
+是否刚发生 failover？
+是 ap-southeast-2（悉尼）？
+我可以给你一条最干净的排查链路命令，从 EKS pod → node → subnet → RDS ENI 一路定位。
