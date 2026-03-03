@@ -1,0 +1,126 @@
+下面给你精确、可直接执行的排查方法。目标：
+判断 ENI 属于 RDS 还是 EKS
+通过 ENI 查所属 subnet
+全部使用 Amazon Web Services CLI。
+一、通过 ENI 判断属于 RDS 还是 EKS
+假设你从 VPC Flow Log 里拿到：
+Bash
+复制代码
+eni-0abc123456
+执行：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --network-interface-ids eni-0abc123456 \
+  --query 'NetworkInterfaces[0].{Description:Description,OwnerId:OwnerId,RequesterId:RequesterId,SubnetId:SubnetId,Groups:Groups[*].GroupId,Attachment:Attachment.InstanceId}'
+重点看 4 个字段：
+① 看 Description（最快）
+✅ 如果是 RDS
+通常会看到类似：
+复制代码
+
+RDSNetworkInterface
+Amazon RDS
+或者 description 里带：
+复制代码
+
+RDS
+✅ 如果是 EKS
+常见情况：
+amazon-eks-node
+aws-K8S-eni
+或者 attachment 有 instance id
+例如：
+复制代码
+
+Attachment.InstanceId = i-xxxxx
+那说明：
+这个 ENI 挂在 EC2 上（大概率是 EKS node）
+② 看 Attachment.InstanceId
+如果有值：
+复制代码
+
+i-0abcxxxx
+再查：
+Bash
+复制代码
+aws ec2 describe-instances \
+  --instance-ids i-0abcxxxx \
+  --query 'Reservations[0].Instances[0].{Name:Tags[?Key==`Name`]|[0].Value,ASG:Tags[?Key==`aws:autoscaling:groupName`]|[0].Value}'
+如果看到：
+复制代码
+
+eks-xxx-nodegroup
+那就是 EKS。
+③ 看 RequesterId
+RDS ENI 通常是：
+复制代码
+
+amazon-rds
+EKS ENI 通常是：
+复制代码
+
+amazon-eks
+这个字段非常准确。
+二、通过 ENI 查 subnet
+最简单命令：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --network-interface-ids eni-0abc123456 \
+  --query 'NetworkInterfaces[0].SubnetId' \
+  --output text
+输出：
+复制代码
+
+subnet-0xyz123
+三、通过 subnet 再查 AZ
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --subnet-ids subnet-0xyz123 \
+  --query 'Subnets[0].{AZ:AvailabilityZone,CIDR:CidrBlock,VpcId:VpcId}'
+可以确认：
+是哪个 AZ
+是哪个 CIDR
+是否和 failover 后 RDS AZ 一致
+四、快速判断逻辑（实战经验）
+特征
+属于 RDS
+属于 EKS
+有 InstanceId
+❌
+✅
+Description 包含 RDS
+✅
+❌
+RequesterId = amazon-rds
+✅
+❌
+SecurityGroup 名称类似 eks-cluster
+❌
+✅
+五、如果是 RDS ENI，再确认是否 failover 后新 ENI
+可以查：
+Bash
+复制代码
+aws rds describe-db-instances \
+  --db-instance-identifier your-db \
+  --query 'DBInstances[0].DBSubnetGroup.Subnets[*].SubnetIdentifier'
+然后确认：
+ENI 的 subnet 是否属于这个 DB subnet group
+是否和 failover 后 AZ 匹配
+六、你现在场景推断
+你之前有：
+EKS
+RDS
+failover
+subnet 断 30 分钟
+如果 REJECT 的 ENI 是：
+EKS node ENI → 说明是 node 到 DB 被拒
+RDS ENI → 说明 DB SG/NACL 拒绝
+两种根因完全不同。
+如果你把：
+ENI describe 输出
+Flow log 一条记录
+贴出来，我可以直接帮你判断是哪一层的问题。
