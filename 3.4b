@@ -1,0 +1,71 @@
+直接通过 ENI 查询 SubnetId。下面给你最简命令和排查用完整命令。
+环境：Amazon Web Services CLI
+一、最简单命令（推荐）
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --network-interface-ids eni-xxxxxxxx \
+  --query 'NetworkInterfaces[0].SubnetId' \
+  --output text
+输出示例：
+复制代码
+
+subnet-0abc123456
+这就是该 ENI 所属的 subnet。
+二、同时查看 AZ 和 CIDR（实战排查常用）
+先拿到 subnet：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --network-interface-ids eni-xxxxxxxx \
+  --query 'NetworkInterfaces[0].SubnetId' \
+  --output text
+然后查 subnet 详情：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --subnet-ids subnet-0abc123456 \
+  --query 'Subnets[0].{AZ:AvailabilityZone,CIDR:CidrBlock,VpcId:VpcId}'
+输出示例：
+Json
+复制代码
+{
+  "AZ": "ap-southeast-2a",
+  "CIDR": "10.0.1.0/24",
+  "VpcId": "vpc-xxxx"
+}
+三、一条命令直接查出 AZ（更高效）
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --network-interface-ids eni-xxxxxxxx \
+  --query 'NetworkInterfaces[0].{Subnet:SubnetId,AZ:AvailabilityZone,PrivateIP:PrivateIpAddress}'
+输出示例：
+Json
+复制代码
+{
+  "Subnet": "subnet-0abc123456",
+  "AZ": "ap-southeast-2a",
+  "PrivateIP": "10.0.1.25"
+}
+这一步在排查：
+RDS failover 是否切到新 AZ
+EKS node 是否跨 AZ
+subnet 是否异常
+非常关键。
+四、如果是排查 Flow Log REJECT
+建议你额外看：
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --network-interface-ids eni-xxxxxxxx \
+  --query 'NetworkInterfaces[0].{Subnet:SubnetId,Groups:Groups[*].GroupId,Owner:RequesterId}'
+可以同时确认：
+subnet
+security group
+是 RDS 还是 EKS
+如果你把：
+ENI id
+failover 后 RDS AZ
+出问题时间段的 subnet
+给我，我可以帮你判断是不是 AZ / subnet 不一致导致的 5432 REJECT。
