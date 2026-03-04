@@ -1,0 +1,169 @@
+你这个需求本质是：
+在一个指定 AZ 内，针对该 AZ 下的所有 Subnet 做网络级故障注入（断连），并且用 AWS CLI + Script 自动化执行。
+下面给你一个结构化、可落地的方案。
+一、核心原理
+在 AWS Fault Injection Service 里：
+aws:network:disrupt-connectivity
+支持的 target 类型是 subnet
+FIS 会对该 subnet 内所有 ENI 生效
+等价于“这个 subnet 被隔离”
+所以：
+你要做的不是一个个断 ENI
+而是动态获取某个 AZ 下所有 Subnet → 作为 FIS Target
+二、步骤设计
+Step 1 — 获取某个 AZ 下所有 Subnet
+例如断开 ap-southeast-2a（悉尼区）
+Bash
+复制代码
+AZ=ap-southeast-2a
+
+aws ec2 describe-subnets \
+  --filters "Name=availability-zone,Values=$AZ" \
+  --query "Subnets[].SubnetId" \
+  --output text
+输出类似：
+复制代码
+
+subnet-aaa111 subnet-bbb222 subnet-ccc333
+Step 2 — 生成 FIS Target JSON
+FIS target 结构示例：
+Json
+复制代码
+{
+  "SubnetTarget": {
+    "resourceType": "aws:ec2:subnet",
+    "resourceArns": [
+      "arn:aws:ec2:ap-southeast-2:123456789012:subnet/subnet-aaa111"
+    ],
+    "selectionMode": "ALL"
+  }
+}
+注意：
+resourceType 固定为 aws:ec2:subnet
+selectionMode 必须 ALL
+三、完整 Script 示例（可直接用）
+下面给你一个完整 bash 自动化脚本：
+Bash
+复制代码
+#!/bin/bash
+
+REGION=ap-southeast-2
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AZ=ap-southeast-2a
+DURATION=PT5M   # 5分钟
+
+# 1️⃣ 获取 subnet 列表
+SUBNETS=$(aws ec2 describe-subnets \
+  --region $REGION \
+  --filters "Name=availability-zone,Values=$AZ" \
+  --query "Subnets[].SubnetId" \
+  --output text)
+
+# 2️⃣ 构造 ARN 列表
+ARN_LIST=""
+for subnet in $SUBNETS; do
+  ARN_LIST="$ARN_LIST \"arn:aws:ec2:$REGION:$ACCOUNT_ID:subnet/$subnet\","
+done
+
+# 去掉最后一个逗号
+ARN_LIST=${ARN_LIST::-1}
+
+# 3️⃣ 生成 FIS 模板 JSON
+cat > fis-template.json <<EOF
+{
+  "description": "Disconnect all subnets in $AZ",
+  "targets": {
+    "SubnetTarget": {
+      "resourceType": "aws:ec2:subnet",
+      "resourceArns": [ $ARN_LIST ],
+      "selectionMode": "ALL"
+    }
+  },
+  "actions": {
+    "DisruptConnectivity": {
+      "actionId": "aws:network:disrupt-connectivity",
+      "parameters": {
+        "duration": "$DURATION"
+      },
+      "targets": {
+        "Subnets": "SubnetTarget"
+      }
+    }
+  },
+  "stopConditions": []
+}
+EOF
+
+# 4️⃣ 创建实验模板
+TEMPLATE_ID=$(aws fis create-experiment-template \
+  --region $REGION \
+  --cli-input-json file://fis-template.json \
+  --query "experimentTemplate.id" \
+  --output text)
+
+echo "Template created: $TEMPLATE_ID"
+
+# 5️⃣ 启动实验
+aws fis start-experiment \
+  --region $REGION \
+  --experiment-template-id $TEMPLATE_ID
+
+echo "Experiment started"
+四、执行效果
+当你执行后：
+指定 AZ 内所有 subnet
+网络流量被 drop
+VPC Flow Log 会看到 REJECT
+EKS Pod 会报数据库连不上
+RDS Proxy 连接失败
+Kafka 等也会断连
+五、关键风险说明（必须注意）
+⚠ 1. 这是 subnet 级别隔离
+意味着：
+所有 EC2
+所有 EKS Node
+所有 RDS ENI
+所有 ALB ENI
+都会断
+如果你的：
+RDS 只在这个 AZ
+或者只有一个 nodegroup
+那就是全挂
+⚠ 2. 和 RDS failover 区别
+这个是网络层断
+RDS 本身不会 failover
+但 client 会 timeout
+如果你在用 RDS Proxy，断的就是 Proxy ENI
+六、如果你想“一次只断一个 subnet”
+可以改 selectionMode：
+复制代码
+
+"selectionMode": "COUNT(1)"
+这样每次随机断一个
+七、如何做“一次断一个 AZ”，循环执行
+可以写一个 loop：
+Bash
+复制代码
+for az in ap-southeast-2a ap-southeast-2b ap-southeast-2c
+do
+   AZ=$az
+   ./run-fis.sh
+   sleep 600
+done
+八、在你当前场景下的建议
+你之前做过：
+EKS AZ failover
+RDS failover
+subnet 断连半小时
+如果你想模拟真实 AZ 故障：
+建议：
+1️⃣ 先断 EKS node subnet
+2️⃣ 再断 DB subnet
+3️⃣ 再断 NAT subnet
+逐层验证
+否则你看到的现象会非常复杂（你之前那种半小时才恢复就是这种耦合问题）。
+如果你愿意，我可以帮你：
+设计一个完整的 AZ outage 实验架构
+画出 EKS + RDS + NAT 的依赖关系
+或者帮你优化 IAM permission 最小化策略
+你现在是想模拟 EKS 故障，还是数据库层故障？
