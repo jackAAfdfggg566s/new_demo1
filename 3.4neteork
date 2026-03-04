@@ -1,0 +1,85 @@
+很好，这个问题在排查 failover + REJECT 时非常关键。
+你现在有：
+复制代码
+
+VPC Flow Log 里看到一个 IP
+目标：
+判断这个 IP 是属于 RDS、EKS Node、Pod ENI，还是别的资源。
+下面给你精确排查路径（全部基于 Amazon Web Services CLI）。
+一、第一步：用 IP 反查 ENI（最关键）
+Bash
+复制代码
+aws ec2 describe-network-interfaces \
+  --filters Name=addresses.private-ip-address,Values=10.0.1.25 \
+  --query 'NetworkInterfaces[*].{ENI:NetworkInterfaceId,Desc:Description,Owner:RequesterId,Instance:Attachment.InstanceId,Subnet:SubnetId,SG:Groups[*].GroupId}'
+把 10.0.1.25 换成你 Flow Log 里的 IP。
+如果能查到，说明：
+这是 VPC 内部私网 IP
+二、如何判断是 RDS 还是 EKS？
+看输出里的这几个字段：
+情况 1️⃣ 属于 RDS
+特征：
+Description 包含 RDS
+RequesterId = amazon-rds
+没有 Attachment.InstanceId
+例如：
+Json
+复制代码
+{
+  "ENI": "eni-xxx",
+  "Desc": "RDSNetworkInterface",
+  "Owner": "amazon-rds",
+  "Instance": null
+}
+说明这个 IP 属于：
+👉 Amazon RDS
+情况 2️⃣ 属于 EKS Node
+特征：
+有 Attachment.InstanceId
+可以查到 EC2
+继续查：
+Bash
+复制代码
+aws ec2 describe-instances \
+  --instance-ids i-xxxx \
+  --query 'Reservations[0].Instances[0].Tags'
+如果 tag 里有：
+复制代码
+
+eks
+nodegroup
+说明是：
+👉 Amazon EKS node
+情况 3️⃣ 属于 EKS Pod ENI（VPC CNI 模式）
+特征：
+Description 类似：
+复制代码
+
+aws-K8S-eni
+RequesterId 可能是 amazon-eks
+没有 EC2 instance id（或是 secondary ENI）
+说明是：
+👉 Pod 级 ENI（VPC CNI）
+三、如果查不到 ENI？
+如果命令无结果，可能：
+① 是公网 IP
+查：
+Bash
+复制代码
+aws ec2 describe-addresses \
+  --public-ips 3.25.x.x
+② 是 NAT Gateway
+查：
+Bash
+复制代码
+aws ec2 describe-nat-gateways \
+  --filter Name=nat-gateway-addresses.public-ip,Values=3.25.x.x
+四、结合你的场景（5432 REJECT）
+通常 Flow Log 会有：
+srcaddr
+dstaddr
+判断逻辑：
+dst IP 属于
+意味着
+RDS ENI
+DB 在拒绝
