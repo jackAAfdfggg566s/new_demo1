@@ -1,0 +1,77 @@
+如果你要 通过 subnet 过滤某个 VPC，在 AWS CLI 里有几种常用方法。核心是利用 subnet 的属性 vpc-id。
+相关资源属于 Amazon Web Services 的 Amazon VPC。
+1️⃣ 通过 subnet 查询它属于哪个 VPC
+如果你已经有 subnet id：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --subnet-ids subnet-123456 \
+  --query "Subnets[].VpcId" \
+  --output text
+输出类似：
+复制代码
+
+vpc-0abc12345
+2️⃣ 只列出某个 VPC 的所有 subnet
+这是最常用的过滤方式：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --filters Name=vpc-id,Values=vpc-12345678 \
+  --query "Subnets[].SubnetId" \
+  --output text
+如果你要更多信息：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --filters Name=vpc-id,Values=vpc-12345678
+3️⃣ 如果你已经有一批 subnet，需要过滤属于某个 VPC 的
+例如：
+复制代码
+
+subnet-a subnet-b subnet-c
+可以用 query 过滤：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --subnet-ids subnet-a subnet-b subnet-c \
+  --query "Subnets[?VpcId=='vpc-12345678'].SubnetId" \
+  --output text
+4️⃣ 常见组合（你 FIS 脚本里很有用）
+例如只拿 某个 VPC + 某个 AZ 的 subnet：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --filters \
+    Name=vpc-id,Values=vpc-12345678 \
+    Name=availability-zone,Values=ap-southeast-2a \
+  --query "Subnets[].SubnetId" \
+  --output text
+这在你之前做 AZ failover / FIS subnet 隔离实验 时很常用。
+5️⃣ 如果你要反查（通过 subnet 找 VPC + AZ）
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --subnet-ids subnet-123 \
+  --query "Subnets[].{VPC:VpcId,AZ:AvailabilityZone}"
+输出：
+复制代码
+
+[
+  {
+    "VPC": "vpc-xxxx",
+    "AZ": "ap-southeast-2a"
+  }
+]
+✅ 总结
+目的
+命令
+subnet 属于哪个 VPC
+describe-subnets --subnet-ids
+列出某 VPC 的 subnet
+--filters Name=vpc-id
+多 subnet 过滤 VPC
+--query Subnets[?VpcId=='vpc-xxx']
+VPC + AZ subnet
+--filters vpc-id + availability-zone
+如果你是为了 FIS 一次断开某 AZ 所有 subnet，我可以给你一条 最干净的一行 CLI，直接输出可用的 subnet list，脚本会简单很多。
