@@ -1,0 +1,104 @@
+如果 --filters Name=vpc-id 没过滤出来，通常是下面几个原因。按顺序检查即可。
+1️⃣ 先确认 subnet 是否真的属于这个 VPC
+先直接查 subnet：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --subnet-ids subnet-xxxx \
+  --query "Subnets[].VpcId" \
+  --output text
+如果返回：
+复制代码
+
+vpc-xxxx
+说明 subnet 在这个 VPC。
+如果返回的是别的 vpc，那过滤当然不会命中。
+2️⃣ 确认 Region（最常见原因）
+很多时候是 region 不一致。
+例如 subnet 在：
+复制代码
+
+ap-southeast-2
+但 CLI 默认 region 可能是：
+复制代码
+
+us-east-1
+检查：
+Bash
+复制代码
+aws configure get region
+或直接指定：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --region ap-southeast-2 \
+  --filters Name=vpc-id,Values=vpc-xxxx \
+  --query "Subnets[].SubnetId" \
+  --output text
+3️⃣ filters 语法必须是这种格式
+正确写法：
+Bash
+复制代码
+--filters Name=vpc-id,Values=vpc-xxxx
+错误常见写法：
+复制代码
+
+Name=vpc-id=vpc-xxxx
+Name=vpc-id Values=vpc-xxxx
+4️⃣ 如果是脚本变量
+例如：
+Bash
+复制代码
+VPC_ID=vpc-xxxx
+命令应该写：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --filters Name=vpc-id,Values=$VPC_ID \
+  --query "Subnets[].SubnetId" \
+  --output text
+不要写成：
+复制代码
+
+Values="$VPC_ID,"
+逗号会导致匹配失败。
+5️⃣ 快速验证命令（推荐）
+先列出所有 subnet 看 VPC：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --query "Subnets[].{Subnet:SubnetId,VPC:VpcId}" \
+  --output table
+确认：
+复制代码
+
+subnet-xxx → vpc-yyy
+再过滤。
+6️⃣ 最稳的一行命令（推荐）
+你如果想 拿某 VPC 的所有 subnet id：
+Bash
+复制代码
+aws ec2 describe-subnets \
+  --filters Name=vpc-id,Values=vpc-xxxx \
+  --query "Subnets[].SubnetId" \
+  --output text
+输出会是：
+复制代码
+
+subnet-a subnet-b subnet-c subnet-d
+可以直接给你脚本里的：
+复制代码
+
+SUBNET_IDS
+变量使用。
+✅ 建议你做一个快速排查
+运行这条：
+Bash
+复制代码
+aws ec2 describe-subnets --subnet-ids subnet-xxxx
+把返回里的：
+复制代码
+
+VpcId
+AvailabilityZone
+贴出来，我可以帮你判断为什么 filter 没命中。
