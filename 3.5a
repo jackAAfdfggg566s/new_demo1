@@ -1,0 +1,117 @@
+我直接给你结论：
+20 个 subnet 放进同一个 target 的 resourceArns 数组，正常情况下不会报错。
+在 AWS Fault Injection Service 中：
+20 个属于小规模
+常见默认限制通常 ≥50
+只要 ARN 拼接正确，基本不会因为“数量”失败
+什么时候会报错？
+通常不是因为 20 个太多，而是：
+JSON 超过 API payload 限制（很少发生）
+某些 subnet 不存在 / 不在该 region
+ARN 拼接错误
+IAM 权限不完整
+该实验 action 运行时触发底层 NACL 规则上限
+如果你想“自动分成多个 target”（更稳健）
+假设：
+20 个 subnet
+每 5 个分一组
+自动生成多个 target
+下面是可直接用的 Bash 逻辑。
+自动分组脚本示例
+Bash
+复制代码
+REGION=ap-southeast-2
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AZ=ap-southeast-2a
+GROUP_SIZE=5
+
+# 获取 subnet 列表
+SUBNETS=($(aws ec2 describe-subnets \
+  --region $REGION \
+  --filters "Name=availability-zone,Values=$AZ" \
+  --query "Subnets[].SubnetId" \
+  --output text))
+
+TOTAL=${#SUBNETS[@]}
+TARGET_INDEX=1
+
+echo '{'
+echo '  "targets": {'
+
+for ((i=0; i<$TOTAL; i+=$GROUP_SIZE)); do
+    echo "    \"SubnetTarget$TARGET_INDEX\": {"
+    echo "      \"resourceType\": \"aws:ec2:subnet\","
+    echo "      \"resourceArns\": ["
+
+    for ((j=i; j<i+$GROUP_SIZE && j<$TOTAL; j++)); do
+        ARN="arn:aws:ec2:$REGION:$ACCOUNT_ID:subnet/${SUBNETS[$j]}"
+        if [ $j -lt $((i+$GROUP_SIZE-1)) ] && [ $j -lt $((TOTAL-1)) ]; then
+            echo "        \"$ARN\","
+        else
+            echo "        \"$ARN\""
+        fi
+    done
+
+    echo "      ],"
+    echo "      \"selectionMode\": \"ALL\""
+    if [ $((i+$GROUP_SIZE)) -lt $TOTAL ]; then
+        echo "    },"
+    else
+        echo "    }"
+    fi
+
+    TARGET_INDEX=$((TARGET_INDEX+1))
+done
+
+echo '  }'
+echo '}'
+生成效果示例
+如果 20 个 subnet，group_size=5
+会生成：
+Json
+复制代码
+SubnetTarget1 → 5 个
+SubnetTarget2 → 5 个
+SubnetTarget3 → 5 个
+SubnetTarget4 → 5 个
+然后在 actions 里绑定多个 target
+Json
+复制代码
+"actions": {
+  "DisruptConnectivity": {
+    "actionId": "aws:network:disrupt-connectivity",
+    "parameters": {
+      "duration": "PT5M"
+    },
+    "targets": {
+      "Subnets": "SubnetTarget1"
+    }
+  }
+}
+⚠ 注意：
+一个 action 一次只能绑定一个 target 名称。
+如果你想同时断 4 组：
+需要 4 个 action。
+更优雅的方式（推荐）
+其实不需要分组。
+20 个 subnet：
+完全可以放一个 target
+结构更简单
+排查更容易
+除非：
+你担心 quota
+或想分阶段断网
+最专业的设计建议
+如果你的目标是：
+模拟 AZ 故障
+不要按“数量分组”
+应该按“业务角色分组”：
+Target1 = EKS node subnet
+Target2 = DB subnet
+Target3 = NAT subnet
+这样实验更有工程意义。
+如果你告诉我：
+你这 20 个 subnet 是同一个 AZ？
+还是多个 AZ？
+是生产环境还是测试环境？
+我可以给你一个最合理的 FIS 架构方案。
