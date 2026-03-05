@@ -1,0 +1,109 @@
+很好，这个问题是数组没有正确拆分导致的。
+你现在：
+Bash
+复制代码
+SUBNET_IDS=$(aws ec2 describe-subnets ... --output text)
+--output text 返回的是：
+复制代码
+
+subnet-aaa subnet-bbb subnet-ccc
+这是空格分隔的一行字符串。
+但你用了：
+Bash
+复制代码
+IFS=' ' read -r -a SUBNET_ARRAY <<< "$SUBNET_IDS"
+在某些 shell 环境下（特别是脚本里），
+如果前面有 set -f 或 IFS 被污染，会导致整个字符串被当成一个元素。
+所以 TOTAL=1。
+✅ 最稳定修复方案
+不要用 read -a。
+直接用 Bash 数组展开。
+把这一行：
+Bash
+复制代码
+IFS=' ' read -r -a SUBNET_ARRAY <<< "$SUBNET_IDS"
+改成：
+Bash
+复制代码
+SUBNET_ARRAY=($SUBNET_IDS)
+然后：
+Bash
+复制代码
+TOTAL=${#SUBNET_ARRAY[@]}
+echo "TOTAL=$TOTAL"
+✅ 完整修正版（你当前结构兼容）
+Bash
+复制代码
+GROUP_SIZE=5
+REGION="ap-southeast-2"
+
+# 关键修改在这里
+SUBNET_ARRAY=($SUBNET_IDS)
+
+TOTAL=${#SUBNET_ARRAY[@]}
+echo "TOTAL=$TOTAL"
+
+TARGET_INDEX=1
+TARGET_BLOCKS=""
+
+for ((i=0; i<TOTAL; i+=GROUP_SIZE)); do
+
+    ARN_IDS=""
+
+    for ((j=i; j<i+GROUP_SIZE && j<TOTAL; j++)); do
+        subnet_id=${SUBNET_ARRAY[$j]}
+        ARN_IDS+="\"arn:aws:ec2:${REGION}:${AWS_ACCOUNT_ID}:subnet/${subnet_id}\","
+    done
+
+    ARN_IDS=${ARN_IDS%,}
+
+    TARGET_BLOCKS+="
+    \"SubnetTarget${TARGET_INDEX}\": {
+        \"resourceType\": \"aws:ec2:subnet\",
+        \"resourceArns\": [ ${ARN_IDS} ],
+        \"selectionMode\": \"ALL\"
+    },"
+
+    TARGET_INDEX=$((TARGET_INDEX+1))
+done
+
+TARGET_BLOCKS=${TARGET_BLOCKS%,}
+🔍 如果 TOTAL 还是 1
+那说明：
+SUBNET_IDS 实际长这样：
+复制代码
+
+subnet-aaa,subnet-bbb,subnet-ccc
+是逗号分隔。
+那就改成：
+Bash
+复制代码
+IFS=',' read -ra SUBNET_ARRAY <<< "$SUBNET_IDS"
+或者：
+Bash
+复制代码
+SUBNET_ARRAY=($(echo $SUBNET_IDS | tr ',' ' '))
+📌 快速排查命令
+加一行：
+Bash
+复制代码
+echo "RAW: [$SUBNET_IDS]"
+如果输出是：
+复制代码
+
+[subnet-aaa subnet-bbb subnet-ccc]
+用空格 split。
+如果是：
+复制代码
+
+[subnet-aaa,subnet-bbb,subnet-ccc]
+用逗号 split。
+🎯 结论
+你的问题不是 FIS。
+是 Bash 数组解析。
+改成：
+Bash
+复制代码
+SUBNET_ARRAY=($SUBNET_IDS)
+即可解决 TOTAL=1。
+如果你愿意，把 echo "$SUBNET_IDS" 的实际输出贴给我，我可以精确告诉你用哪种 split 最安全。
