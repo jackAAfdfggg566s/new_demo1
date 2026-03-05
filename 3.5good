@@ -1,0 +1,128 @@
+我基于你图片里的原始代码结构给你做“最小侵入式修改”。
+不重写整体逻辑，只替换你现在生成 ARN_IDS 那一段。
+你现在的问题是：
+复制代码
+
+一个 target 里 resourceArns 超过 5 个
+我们改成：
+复制代码
+
+每 5 个 subnet 生成一个独立的 ARN_IDS_BLOCK
+最后生成多个 target 片段
+🔧 直接替换你图片里 39–52 行那段
+把你现在这段：
+Bash
+复制代码
+ARN_IDS=$(for subnet_id in $(echo $SUBNET_IDS | tr ',' ' ')
+do
+  echo -n "\"arn:aws:ec2:ap-southeast-2:$AWS_ACCOUNT_ID:subnet/$subnet_id\","
+done)
+
+# Remove trailing comma
+ARN_IDS=${ARN_IDS%,}
+替换为👇
+✅ 修改版本（按 5 个拆分）
+Bash
+复制代码
+GROUP_SIZE=5
+REGION="ap-southeast-2"
+
+IFS=' ' read -r -a SUBNET_ARRAY <<< "$SUBNET_IDS"
+TOTAL=${#SUBNET_ARRAY[@]}
+
+TARGET_INDEX=1
+TARGET_BLOCKS=""
+
+for ((i=0; i<TOTAL; i+=GROUP_SIZE)); do
+
+    ARN_IDS=""
+
+    for ((j=i; j<i+GROUP_SIZE && j<TOTAL; j++)); do
+        subnet_id=${SUBNET_ARRAY[$j]}
+        ARN_IDS+="\"arn:aws:ec2:${REGION}:${AWS_ACCOUNT_ID}:subnet/${subnet_id}\","
+    done
+
+    # remove trailing comma
+    ARN_IDS=${ARN_IDS%,}
+
+    TARGET_BLOCKS+="
+    \"SubnetTarget${TARGET_INDEX}\": {
+        \"resourceType\": \"aws:ec2:subnet\",
+        \"resourceArns\": [ ${ARN_IDS} ],
+        \"selectionMode\": \"ALL\"
+    },"
+
+    TARGET_INDEX=$((TARGET_INDEX+1))
+done
+
+# remove final trailing comma
+TARGET_BLOCKS=${TARGET_BLOCKS%,}
+🔧 然后你原来的 sed 替换
+你原来是：
+Bash
+复制代码
+sed ... s|REPLACE_IDS|$IDS|
+现在改成：
+Bash
+复制代码
+sed -e "s|__TARGETS__|$TARGET_BLOCKS|g" base_template.json > final.json
+⚠ 关键注意
+你现在只是生成了多个 target。
+但是：
+一个 action 只能绑定一个 target
+所以你的 JSON 里：
+复制代码
+
+"actions": {
+   "DisruptConnectivity": {
+       ...
+       "targets": {
+           "Subnets": "SubnetTarget1"
+       }
+   }
+}
+如果不改 action，
+只会断第一组。
+🔥 如果你要一次断全部
+还必须按同样逻辑生成多个 action：
+复制代码
+
+DisruptConnectivity1
+DisruptConnectivity2
+DisruptConnectivity3
+每个绑定对应的 SubnetTargetX。
+📌 你现在代码结构总结
+你原逻辑是：
+复制代码
+
+SUBNET_IDS
+   ↓
+拼成一个 ARN_IDS
+   ↓
+sed 替换 json
+现在变成：
+复制代码
+
+SUBNET_IDS
+   ↓
+拆分成 5 个一组
+   ↓
+生成多个 SubnetTargetX
+   ↓
+sed 替换 targets 区域
+🚀 更专业建议
+其实你现在这种：
+用 sed 改 JSON 字符串
+非常脆弱。
+更稳的是用：
+复制代码
+
+jq
+生成 JSON。
+如果你愿意，我可以给你一版：
+✔ 无 sed
+✔ 无字符串拼接
+✔ 自动分组
+✔ 自动生成 actions
+✔ 结构绝对合法
+你现在是生产脚本还是测试脚本？
