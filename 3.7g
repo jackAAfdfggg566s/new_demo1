@@ -1,0 +1,105 @@
+明白，你的流程是：
+复制代码
+
+AZ → Node → EC2 InstanceId → NodeGroup(长ASG名字)
+而不是通过 EKS NodeGroup API。
+这种方式其实更直接，因为在 EC2 上每个节点都有 tag：
+复制代码
+
+aws:autoscaling:groupName
+这个 就是 FIS 需要的 ASG（长名字）。
+下面给你一个按你逻辑写的脚本。
+脚本：AZ → Node → InstanceID → ASG(NodeGroup长名字)
+适用于 Amazon Elastic Kubernetes Service 节点。
+Bash
+复制代码
+#!/bin/bash
+
+AZ=$1
+
+if [ -z "$AZ" ]; then
+  echo "Usage: $0 <AZ>"
+  exit 1
+fi
+
+# 获取 AZ 下的 node
+nodes=$(kubectl get nodes \
+-l topology.kubernetes.io/zone=$AZ \
+-o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+
+for node in $nodes
+do
+  # 获取 instance id
+  instance=$(kubectl get node $node \
+  -o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+
+  # 获取 ASG 名字 (FIS target)
+  asg=$(aws ec2 describe-instances \
+  --instance-ids $instance \
+  --query "Reservations[0].Instances[0].Tags[?Key=='aws:autoscaling:groupName'].Value" \
+  --output text)
+
+  echo "$AZ  $node  $instance  $asg"
+done | sort -u
+运行：
+复制代码
+
+./get-asg-by-az.sh ap-southeast-2a
+输出示例：
+复制代码
+
+ap-southeast-2a ip-10-0-1-23  i-0a1234abcd  eks-ng-app-NodeGroup-3F4A1B9D
+ap-southeast-2a ip-10-0-1-24  i-0b2345bcde  eks-ng-app-NodeGroup-3F4A1B9D
+ap-southeast-2a ip-10-0-1-30  i-0c3456cdef  eks-ng-batch-NodeGroup-1A2B3C
+最后 sort -u 后你会得到：
+复制代码
+
+eks-ng-app-NodeGroup-3F4A1B9D
+eks-ng-batch-NodeGroup-1A2B3C
+这就是 FIS target ID。
+为什么这样是正确的
+在 AWS Fault Injection Simulator 中：
+复制代码
+
+resourceType = aws:autoscaling:autoScalingGroup
+所以 target 必须是：
+复制代码
+
+aws:autoscaling:groupName
+而 EC2 instance tag：
+复制代码
+
+aws:autoscaling:groupName
+正好就是这个值。
+一条命令版（很多人做 FIS 用这个）
+如果你不想写脚本：
+Bash
+复制代码
+kubectl get nodes -l topology.kubernetes.io/zone=ap-southeast-2a \
+-o jsonpath='{range .items[*]}{.spec.providerID}{"\n"}{end}' \
+| awk -F/ '{print $NF}' \
+| xargs -I {} aws ec2 describe-instances \
+--instance-ids {} \
+--query "Reservations[0].Instances[0].Tags[?Key=='aws:autoscaling:groupName'].Value" \
+--output text | sort -u
+直接输出：
+复制代码
+
+eks-ng-app-NodeGroup-3F4A1B9D
+eks-ng-batch-NodeGroup-1A2B3C
+💡 做 AZ 故障实验时一个很关键的点：
+如果你的 AZ 有：
+复制代码
+
+4 nodes
+3 nodegroups
+这个脚本会自动得到：
+复制代码
+
+3 个 ASG
+然后你把 这 3 个 ASG 作为 FIS target，就是正确的 AZ 实验配置。
+如果你愿意，我可以再给你一个 生产级 FIS 脚本，可以自动生成：
+复制代码
+
+AZ → ASG list → FIS target JSON
+基本是 EKS chaos engineering 常用脚本。
