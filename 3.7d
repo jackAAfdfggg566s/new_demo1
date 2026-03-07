@@ -1,0 +1,197 @@
+你观察到的现象其实是 EKS 的正常设计，但在做 AWS Fault Injection Simulator（FIS） 的
+aws:ec2:asg-insufficient-instance-capacity-error 实验时，确实需要理解清楚影响范围。
+先解释核心点。
+1 为什么 NodeGroup 名字在不同 AZ 会“重复”
+在 Amazon Elastic Kubernetes Service 中：
+一个 NodeGroup 本质是一个 Auto Scaling Group（ASG）跨多个 AZ。
+结构通常是：
+复制代码
+
+NodeGroup: ng-app
+   └─ AutoScalingGroup: eks-ng-app-xxxxx
+        ├─ subnet-az1
+        ├─ subnet-az2
+        └─ subnet-az3
+所以：
+AZ
+NodeGroup
+2a
+ng-app
+2b
+ng-app
+2c
+ng-app
+看起来像“重复”，但实际上是 同一个 NodeGroup。
+2 FIS 这个 action 的作用对象
+aws:ec2:asg-insufficient-instance-capacity-error
+作用对象是：
+Auto Scaling Group
+不是：
+AZ
+Node
+Pod
+效果是：
+复制代码
+
+ASG scale out
+→ 返回 InsufficientInstanceCapacity
+模拟：
+复制代码
+
+EC2 capacity 不足
+3 如果 NodeGroup 跨 AZ，会发生什么
+假设：
+复制代码
+
+NodeGroup ng-app
+AZ:
+  2a
+  2b
+  2c
+FIS 注入后：
+复制代码
+
+ASG scale out
+→ 所有 AZ 都返回 capacity error
+也就是说：
+整个 NodeGroup 无法扩容。
+而不是：
+复制代码
+
+只影响某一个 AZ
+4 这和你想做的 AZ 测试可能不一致
+很多人做 AZ failover 想测试：
+复制代码
+
+AZ A down
+→ NodeGroup 在 B / C 扩容
+但如果用这个 FIS action：
+复制代码
+
+NodeGroup scale out
+→ 整个 ASG 失败
+结果变成：
+复制代码
+
+B / C 也不能扩容
+这就变成：
+复制代码
+
+Regional EC2 capacity failure
+而不是：
+复制代码
+
+Single AZ failure
+5 会导致什么影响
+在 EKS 场景可能出现：
+1 Cluster Autoscaler 扩容失败
+复制代码
+
+pending pods
+日志会出现：
+复制代码
+
+InsufficientInstanceCapacity
+2 AZ 故障恢复失败
+正常情况：
+复制代码
+
+AZ A node lost
+→ scheduler
+→ CA scale out
+→ AZ B / C 创建 node
+FIS 后：
+复制代码
+
+scale out fail
+3 Pod 长时间 Pending
+如果 workload 有：
+复制代码
+
+podAntiAffinity
+topologySpreadConstraints
+影响更明显。
+6 NodeGroup 名重复是否合理
+完全合理。
+EKS 官方推荐：
+复制代码
+
+NodeGroup 跨 AZ
+而不是：
+复制代码
+
+1 AZ 1 NodeGroup
+原因：
+更容易管理
+ASG 自动跨 AZ
+scheduler 更均衡
+7 如果你想测试 AZ capacity shortage（更真实）
+推荐方法不是这个 action。
+而是：
+方法1
+FIS action：
+复制代码
+
+aws:ec2:stop-instances
+针对：
+复制代码
+
+AZ A nodes
+方法2
+FIS action：
+复制代码
+
+aws:network:disrupt-connectivity
+针对：
+复制代码
+
+subnet
+方法3
+通过 taint node：
+复制代码
+
+node.kubernetes.io/unreachable
+8 AWS 官方做法（Chaos testing）
+AWS 建议测试：
+复制代码
+
+AZ loss
+而不是：
+复制代码
+
+ASG capacity failure
+因为现实中：
+复制代码
+
+capacity shortage 通常 AZ 级
+不是 region。
+9 判断你这个设计是否合理
+关键看：
+复制代码
+
+NodeGroup
+↓
+是否跨 3 AZ
+如果是：
+复制代码
+
+ng-app
+  2a
+  2b
+  2c
+这是 最佳实践。
+✅ 总结
+NodeGroup 名在不同 AZ “重复”是正常设计
+因为 NodeGroup 是 跨 AZ 的 ASG
+FIS asg-insufficient-instance-capacity-error 会影响 整个 NodeGroup
+不只是某个 AZ
+可能导致 所有 AZ 无法扩容
+💡 如果你愿意，我可以帮你判断一件很关键的事：
+很多 EKS 集群做 FIS 测试其实是错的。
+你可以贴一下这条命令输出：
+复制代码
+
+kubectl get nodes -L topology.kubernetes.io/zone,eks.amazonaws.com/nodegroup
+我可以直接帮你分析：
+是否存在 AZ 单点
+FIS 实验是否 设计正确。
