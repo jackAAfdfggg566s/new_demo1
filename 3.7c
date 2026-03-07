@@ -1,0 +1,86 @@
+如果你有 EC2 Instance ID，想找到它在 Amazon Elastic Kubernetes Service 中属于哪个 NodeGroup，最简单可靠的方法是 读取 EC2 instance 的 tag。EKS 会自动给节点打 tag：
+复制代码
+
+eks:nodegroup-name
+下面给你一个实用脚本。
+脚本：Instance ID → NodeGroup
+Bash
+复制代码
+#!/bin/bash
+
+INSTANCE_ID=$1
+
+NODEGROUP=$(aws ec2 describe-instances \
+  --instance-ids $INSTANCE_ID \
+  --query "Reservations[0].Instances[0].Tags[?Key=='eks:nodegroup-name'].Value" \
+  --output text)
+
+echo "Instance: $INSTANCE_ID"
+echo "NodeGroup: $NODEGROUP"
+运行：
+Bash
+复制代码
+./get-nodegroup.sh i-0123456789abcdef0
+输出示例：
+复制代码
+
+Instance: i-0123456789abcdef0
+NodeGroup: ng-app
+如果你要 批量查
+Bash
+复制代码
+#!/bin/bash
+
+for id in "$@"
+do
+  ng=$(aws ec2 describe-instances \
+    --instance-ids $id \
+    --query "Reservations[0].Instances[0].Tags[?Key=='eks:nodegroup-name'].Value" \
+    --output text)
+
+  echo "$id -> $ng"
+done
+运行：
+复制代码
+
+./get-nodegroup.sh i-aaa i-bbb i-ccc
+输出：
+复制代码
+
+i-aaa -> ng-app
+i-bbb -> ng-system
+i-ccc -> ng-batch
+如果想同时看到 AZ（排查 AZ failover 很有用）
+Bash
+复制代码
+aws ec2 describe-instances \
+--instance-ids $INSTANCE_ID \
+--query "Reservations[0].Instances[0].[Placement.AvailabilityZone,Tags[?Key=='eks:nodegroup-name'].Value|[0]]" \
+--output text
+输出：
+复制代码
+
+ap-southeast-2a   ng-app
+最强排查脚本（推荐）
+如果你在做 EKS / AZ 故障 / FIS 实验，建议用这个：
+复制代码
+
+InstanceID | NodeGroup | AZ
+Bash
+复制代码
+aws ec2 describe-instances \
+--instance-ids "$@" \
+--query "Reservations[*].Instances[*].[InstanceId,Placement.AvailabilityZone,Tags[?Key=='eks:nodegroup-name'].Value|[0]]" \
+--output table
+输出：
+复制代码
+
+---------------------------------------
+| InstanceId | AZ              | NG   |
+---------------------------------------
+| i-aaa      | ap-southeast-2a | app  |
+| i-bbb      | ap-southeast-2b | app  |
+| i-ccc      | ap-southeast-2c | sys  |
+💡 补充一个很多人不知道的技巧
+如果你只有 Kubernetes node name（比如 ip-10-0-1-23），
+我也可以给你一个 一条命令直接查 NodeGroup 的脚本，排查 EKS 网络问题会非常快。
