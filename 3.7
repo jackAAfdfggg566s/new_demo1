@@ -1,0 +1,88 @@
+在 Amazon Elastic Kubernetes Service（EKS）中，Pod 本身没有 node group 信息，因为调度是 Pod → Node。
+所以需要 先找到 Pod 所在 Node，再从 Node 判断属于哪个 Node Group。
+下面是最常用的方法。
+方法1（最常用）：通过 Node label 获取 Node Group
+1 先查 Pod 在哪个 Node
+Bash
+复制代码
+kubectl get pod <pod-name> -n <namespace> -o wide
+输出示例：
+复制代码
+
+NAME        READY   STATUS    NODE
+test-pod    1/1     Running   ip-10-0-1-25.ec2.internal
+记录 Node：
+复制代码
+
+ip-10-0-1-25.ec2.internal
+2 查看 Node 的 label
+Bash
+复制代码
+kubectl get node ip-10-0-1-25.ec2.internal --show-labels
+你会看到类似：
+复制代码
+
+eks.amazonaws.com/nodegroup=prod-nodegroup-1
+这个就是 Node Group 名字。
+方法2（推荐）：直接一条命令
+Bash
+复制代码
+kubectl get pod <pod-name> -n <namespace> -o jsonpath='{.spec.nodeName}' \
+| xargs kubectl get node -o jsonpath='{.metadata.labels.eks\.amazonaws\.com/nodegroup}'
+输出：
+复制代码
+
+prod-nodegroup-1
+方法3：查看 Node 详细信息
+Bash
+复制代码
+kubectl describe node <node-name>
+在 Labels 里找：
+复制代码
+
+eks.amazonaws.com/nodegroup=prod-nodegroup-1
+方法4：如果是 Karpenter / 自建 node group
+如果不是 EKS Managed Node Group，可能会看到：
+复制代码
+
+karpenter.sh/provisioner-name
+或者：
+复制代码
+
+alpha.eksctl.io/nodegroup-name
+常见 label：
+Label
+含义
+eks.amazonaws.com/nodegroup
+EKS managed nodegroup
+alpha.eksctl.io/nodegroup-name
+eksctl 创建
+karpenter.sh/provisioner-name
+Karpenter
+方法5：批量查 Pod → NodeGroup
+例如查 namespace 所有 Pod：
+Bash
+复制代码
+kubectl get pod -n <ns> -o wide
+然后：
+Bash
+复制代码
+kubectl get nodes -L eks.amazonaws.com/nodegroup
+输出：
+复制代码
+
+NAME                          NODEGROUP
+ip-10-0-1-25.ec2.internal     prod-nodegroup-1
+ip-10-0-2-33.ec2.internal     prod-nodegroup-2
+对照即可。
+✅ 最实用的一条命令（推荐收藏）
+Bash
+复制代码
+kubectl get pod <pod> -n <ns> -o jsonpath='{.spec.nodeName}' \
+| xargs -I {} kubectl get node {} -o jsonpath='{.metadata.labels.eks\.amazonaws\.com/nodegroup}'
+💡 如果你是在做 AWS FIS 或 AZ 故障测试（看你之前在做 EKS + FIS），我可以再给你一个脚本：
+一条命令列出：
+复制代码
+
+Pod | Node | NodeGroup | AZ
+排查 AZ failover / nodegroup 分布 非常好用。
