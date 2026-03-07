@@ -1,0 +1,75 @@
+明白了，你问的核心是：
+在 FIS experiment template 里，target 显示的是“长名字”的 NodeGroup，而不是 kubectl / node label 上的短名字，原因是什么？脚本怎么改成拿这个长名字？
+我来详细解释。
+1 为什么 FIS target 是“长名字”
+在 AWS Fault Injection Simulator 中，FIS 的 target 需要操作的是 Auto Scaling Group (ASG)，而不是 Kubernetes 的 NodeGroup label。
+短名字 (ng-app) 只是 Kubernetes label，用于 scheduler 调度 Pod。
+长名字 (eks-ng-app-NodeGroup-3F4A1B9D) 是 AWS 自动生成的 ASG 名称。
+结构通常是：eks-<cluster>-<nodegroup>-<随机字符串>
+FIS 要操作的对象是 ASG，必须用这个完整名字。
+简单理解：K8s 看的 NodeGroup 只是逻辑名字，FIS 操作 AWS 层面的 ASG，必须要完整名字。
+2 脚本改法
+之前我们拿到的是短名字：
+Bash
+复制代码
+kubectl get nodes \
+  -l topology.kubernetes.io/zone=$AZ \
+  -o jsonpath='{range .items[*]}{.metadata.labels.eks\.amazonaws\.com/nodegroup}{"\n"}{end}' \
+  | sort -u
+现在需要做两步：
+去重得到 短名字 NodeGroup
+调用 aws eks describe-nodegroup 转成 ASG 名称
+完整脚本示例（输出长名字供 FIS 用）
+Bash
+复制代码
+#!/bin/bash
+
+CLUSTER=$1
+AZ=$2
+
+echo "AZ=$AZ, Cluster=$CLUSTER"
+
+# 获取 AZ 下所有 NodeGroup 短名字
+nodegroups=$(kubectl get nodes \
+  -l topology.kubernetes.io/zone=$AZ \
+  -o jsonpath='{range .items[*]}{.metadata.labels.eks\.amazonaws\.com/nodegroup}{"\n"}{end}' \
+  | sort -u)
+
+# 转成 ASG 名
+for ng in $nodegroups; do
+  asg=$(aws eks describe-nodegroup \
+    --cluster-name $CLUSTER \
+    --nodegroup-name $ng \
+    --query "nodegroup.resources.autoScalingGroups[0].name" \
+    --output text)
+
+  echo "$AZ  $ng  $asg"
+done
+运行示例：
+Bash
+复制代码
+./get-fis-target-asg.sh my-cluster ap-southeast-2a
+输出：
+复制代码
+
+ap-southeast-2a  ng-app     eks-ng-app-NodeGroup-3F4A1B9D
+ap-southeast-2a  ng-batch   eks-ng-batch-NodeGroup-1A2B3C
+ap-southeast-2a  ng-system  eks-ng-system-NodeGroup-9X8Y7Z
+3 脚本核心改动说明
+原来
+改成
+kubectl get nodes 得到 NodeGroup label（短名字）
+用 aws eks describe-nodegroup 查询 ASG
+输出短名字
+输出 ASG 名（长名字）
+FIS target 必须是 ASG 名称，所以短名字不能直接用。
+4 补充建议
+如果你有多个 AZ，可以循环 AZ，生成所有 AZ 对应的 ASG 列表。
+输出的 ASG 直接放到 FIS JSON target resourceArns 里即可。
+不要用 kubectl label 的短名字填 FIS，否则实验不会生效。
+我可以帮你写一个 最终版本脚本，一次性：
+输入 cluster 名
+输出全部 AZ 的 ASG 列表
+直接生成 FIS target JSON
+这样就能直接拿去做 AZ 故障实验。
+你希望我帮你写吗？
