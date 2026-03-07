@@ -1,0 +1,71 @@
+可以用 kubectl + bash 从 Amazon Elastic Kubernetes Service 的 Node labels 里提取 某个 AZ 下所有 NodeGroup，再保存到一个 list（数组）。
+关键 label：
+topology.kubernetes.io/zone → AZ
+eks.amazonaws.com/nodegroup → NodeGroup
+脚本示例（推荐）
+Bash
+复制代码
+#!/bin/bash
+
+AZ="ap-southeast-2a"
+
+nodegroups=($(kubectl get nodes \
+-l topology.kubernetes.io/zone=$AZ \
+-o jsonpath='{range .items[*]}{.metadata.labels.eks\.amazonaws\.com/nodegroup}{"\n"}{end}' \
+| sort -u))
+
+echo "NodeGroups in $AZ:"
+
+for ng in "${nodegroups[@]}"; do
+    echo $ng
+done
+输出示例
+复制代码
+
+NodeGroups in ap-southeast-2a:
+ng-app
+ng-batch
+ng-system
+如果你只想得到 list（变量）
+Bash
+复制代码
+nodegroups=$(kubectl get nodes \
+-l topology.kubernetes.io/zone=ap-southeast-2a \
+-o jsonpath='{range .items[*]}{.metadata.labels.eks\.amazonaws\.com/nodegroup}{"\n"}{end}' \
+| sort -u)
+使用：
+Bash
+复制代码
+for ng in $nodegroups
+do
+   echo $ng
+done
+如果你要做 FIS / AZ 故障测试（更实用版本）
+输出：
+AZ → NodeGroup → NodeCount
+Bash
+复制代码
+kubectl get nodes \
+-o jsonpath='{range .items[*]}{.metadata.labels.topology\.kubernetes\.io/zone}{" "}{.metadata.labels.eks\.amazonaws\.com/nodegroup}{"\n"}{end}' \
+| sort | uniq -c
+示例：
+复制代码
+
+3 ap-southeast-2a ng-app
+2 ap-southeast-2b ng-app
+1 ap-southeast-2c ng-batch
+这样你可以马上看到：
+每个 AZ 有多少 node
+属于哪个 nodegroup
+💡 给你一个更强的脚本（很多做 EKS 故障演练都会用）
+可以一次生成：
+复制代码
+
+AZ -> NodeGroup list
+如果你需要我可以写一个 20行的完整脚本，直接输出：
+复制代码
+
+ap-southeast-2a : ng-app ng-batch
+ap-southeast-2b : ng-app
+ap-southeast-2c : ng-system
+做 AZ failover / FIS testing 会非常方便。
