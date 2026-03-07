@@ -1,0 +1,77 @@
+你可以通过 kubectl 读取 Node 的 label 来获取某个 AZ 下所有 NodeGroup。在 Amazon Elastic Kubernetes Service 中，每个 Node 都有两个关键 label：
+topology.kubernetes.io/zone → AZ
+eks.amazonaws.com/nodegroup → NodeGroup
+下面是一个简单可靠的脚本。
+脚本：通过 AZ 获取该 AZ 下所有 NodeGroup
+Bash
+复制代码
+#!/bin/bash
+
+AZ=$1
+
+kubectl get nodes \
+-l topology.kubernetes.io/zone=$AZ \
+-o jsonpath='{range .items[*]}{.metadata.labels.eks\.amazonaws\.com/nodegroup}{"\n"}{end}' \
+| sort | uniq
+运行：
+Bash
+复制代码
+./get-nodegroup-by-az.sh ap-southeast-2a
+输出示例：
+复制代码
+
+ng-app
+ng-batch
+ng-system
+如果你想 直接生成 FIS 需要的 ASG
+NodeGroup 还需要转成 Auto Scaling Group（FIS target 用的是 ASG）。
+Bash
+复制代码
+#!/bin/bash
+
+CLUSTER=$1
+AZ=$2
+
+for ng in $(kubectl get nodes \
+-l topology.kubernetes.io/zone=$AZ \
+-o jsonpath='{range .items[*]}{.metadata.labels.eks\.amazonaws\.com/nodegroup}{"\n"}{end}' \
+| sort -u)
+do
+  asg=$(aws eks describe-nodegroup \
+    --cluster-name $CLUSTER \
+    --nodegroup-name $ng \
+    --query "nodegroup.resources.autoScalingGroups[0].name" \
+    --output text)
+
+  echo "$AZ  $ng  $asg"
+done
+运行：
+复制代码
+
+./get-asg-by-az.sh my-cluster ap-southeast-2a
+输出：
+复制代码
+
+ap-southeast-2a  ng-app     eks-ng-app-abc123
+ap-southeast-2a  ng-batch   eks-ng-batch-def456
+ap-southeast-2a  ng-system  eks-ng-system-ghi789
+如果你只是想 快速看分布（排查用）
+一条命令就够：
+Bash
+复制代码
+kubectl get nodes -L topology.kubernetes.io/zone,eks.amazonaws.com/nodegroup
+输出类似：
+复制代码
+
+NAME        ZONE               NODEGROUP
+node1       ap-southeast-2a    ng-app
+node2       ap-southeast-2a    ng-app
+node3       ap-southeast-2a    ng-batch
+node4       ap-southeast-2a    ng-system
+💡 做 FIS AZ 故障实验时的推荐流程：
+根据 AZ 获取 Node
+提取 NodeGroup
+去重
+转换为 ASG
+作为 FIS target
+如果需要，我可以给你一个 完整 40 行脚本，一次自动生成 FIS experiment template 的 target JSON，做 AZ 故障实验基本一键生成。
