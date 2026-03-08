@@ -1,0 +1,55 @@
+你图里这段是一个 Auto Scaling Group ARN。
+格式其实是固定的，所以那一串数字不是随便生成的，是 Auto Scaling Group 的唯一 ID（UUID），由 AWS 在创建 ASG 时自动生成。
+你截图里的结构大概是这样：
+复制代码
+
+arn:aws:autoscaling:ap-southeast-2:ACCOUNT_ID:autoScalingGroup:UUID:autoScalingGroupName/ASG_NAME
+拆开就是：
+arn:aws:autoscaling → 服务
+ap-southeast-2 → region
+ACCOUNT_ID → AWS账号
+autoScalingGroup → 资源类型
+613c35d4-bd45-4f36-8379-1487b2cc66e2 → ASG UUID
+autoScalingGroupName/eks-tcsnft01-... → ASG名字
+所以完整 ARN 示例：
+复制代码
+
+arn:aws:autoscaling:ap-southeast-2:676206919209:autoScalingGroup:613c35d4-bd45-4f36-8379-1487b2cc66e2:autoScalingGroupName/eks-tcsnft01
+关键点
+这个 UUID 不需要你自己生成，应该 从 AWS API 查询出来。
+最简单方法：
+Bash
+复制代码
+aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names eks-tcsnft01 \
+  --query 'AutoScalingGroups[0].AutoScalingGroupARN' \
+  --output text
+输出会直接给你完整 ARN。
+如果你脚本里已经有 ASG name
+你可以这样拿：
+Bash
+复制代码
+asg_arn=$(aws autoscaling describe-auto-scaling-groups \
+  --auto-scaling-group-names $asg \
+  --query 'AutoScalingGroups[0].AutoScalingGroupARN' \
+  --output text)
+然后直接放进你的 FIS JSON：
+Bash
+复制代码
+"resourceArns": ["$asg_arn"]
+就不用自己拼 UUID。
+如果是 EKS NodeGroup 自动创建的 ASG
+可以先查 nodegroup → 再拿 ASG：
+Bash
+复制代码
+aws eks describe-nodegroup \
+  --cluster-name CLUSTER \
+  --nodegroup-name NODEGROUP \
+  --query 'nodegroup.resources.autoScalingGroups[*].name'
+然后再 describe-auto-scaling-groups 拿 ARN。
+✅ 最推荐的做法：
+不要自己拼 ARN
+直接从 AWS CLI/API 取 AutoScalingGroupARN。
+如果你愿意，我可以给你一个 完整脚本（30行左右）：
+EKS cluster → nodegroup → ASG → 自动生成 FIS targets JSON
+这样你现在那个 replaced1 replaced2 replaced3 的循环也可以一起解决。
