@@ -1,0 +1,89 @@
+很好，现在 JSON 已经正常了 👍
+在你现在的脚本基础上，加 去重（deduplicate ASG ARN） 很简单。
+原因也很重要：
+在 Amazon Elastic Kubernetes Service (EKS) 里，一个 Amazon EC2 Auto Scaling group 往往有多个 node，如果你按 node 循环，就会得到 重复的 ASG ARN。
+方法1（最简单推荐）
+在生成 JSON 前 先去重数组：
+Bash
+复制代码
+unique_asg_arns=($(printf "%s\n" "${asg_arns[@]}" | sort -u))
+然后生成 JSON：
+Bash
+复制代码
+json_arns=$(printf '"%s",' "${unique_asg_arns[@]}")
+json_arns=${json_arns%,}
+json_arns="[$json_arns]"
+
+echo "$json_arns"
+示例
+原数组：
+复制代码
+
+arn1
+arn1
+arn2
+arn3
+arn3
+去重后：
+复制代码
+
+arn1
+arn2
+arn3
+最终 JSON：
+Json
+复制代码
+["arn1","arn2","arn3"]
+放进你的完整逻辑
+Bash
+复制代码
+asg_arns=()
+
+for node in $(kubectl get nodes -l topology.kubernetes.io/zone=$AZ_STRING \
+-o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+do
+
+instance=$(kubectl get node $node \
+-o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+
+asg=$(aws ec2 describe-instances \
+--instance-ids $instance \
+--query "Reservations[0].Instances[0].Tags[?Key=='aws:autoscaling:groupName'].Value" \
+--output text)
+
+asg_id=$(aws autoscaling describe-auto-scaling-groups \
+--auto-scaling-group-names $asg \
+--query 'AutoScalingGroups[0].AutoScalingGroupARN' \
+--output text)
+
+asg_arns+=("$asg_id")
+
+done
+
+
+# 去重
+unique_asg_arns=($(printf "%s\n" "${asg_arns[@]}" | sort -u))
+
+# 生成 JSON
+json_arns=$(printf '"%s",' "${unique_asg_arns[@]}")
+json_arns=${json_arns%,}
+json_arns="[$json_arns]"
+
+echo "$json_arns"
+最终效果
+例如：
+复制代码
+
+node1 → asgA
+node2 → asgA
+node3 → asgB
+node4 → asgC
+最终 JSON：
+Json
+复制代码
+["asgA","asgB","asgC"]
+可以直接给 **AWS Fault Injection Simulator 的 resourceArns 使用。
+💡 再给你一个 很关键的小优化（很多人做 chaos test 会忽略）：
+其实不用从 node → instance → ASG 查三层。
+EKS nodegroup API 直接就能拿到 ASG，脚本可以从 30 行缩到 10 行，而且天然不会重复。
+如果你愿意，我可以给你一个 专门做 FIS AZ failover 的最简脚本版本（很多团队生产环境用的那种）。
