@@ -1,0 +1,81 @@
+你现在的情况是：
+已经有 3 个 ASG ARN 在数组里，例如
+Bash
+复制代码
+asg_arns=("arn1" "arn2" "arn3")
+FIS JSON 里现在可能是这样：
+Json
+复制代码
+"resourceArns": [
+  "replaced1",
+  "replaced2",
+  "replaced3"
+]
+你之前只能替换 第一个，是因为 sed 或 replace 只处理了一次。
+其实最简单的方法是 把数组拼成 JSON 字符串一次性替换。
+方法1（最推荐）：数组转 JSON 一次替换
+先把数组拼成 JSON：
+Bash
+复制代码
+json_arns=$(printf '"%s",' "${asg_arns[@]}")
+json_arns="[${json_arns%,}]"
+得到：
+Json
+复制代码
+["arn1","arn2","arn3"]
+然后替换：
+Bash
+复制代码
+sed -i "s|\"resourceArns\": \[.*\]|\"resourceArns\": $json_arns|" fis.json
+最终 JSON：
+Json
+复制代码
+"resourceArns": [
+  "arn1",
+  "arn2",
+  "arn3"
+]
+这样 3个一起替换。
+方法2：循环替换 replaced1 replaced2 replaced3
+如果你必须用 replaced1 replaced2 这种：
+Bash
+复制代码
+i=1
+for arn in "${asg_arns[@]}"
+do
+  sed -i "s|replaced$i|$arn|" fis.json
+  ((i++))
+done
+循环效果：
+复制代码
+
+replaced1 → arn1
+replaced2 → arn2
+replaced3 → arn3
+方法3（更 AWS 推荐）：直接用 jq
+如果 JSON 比较复杂：
+Bash
+复制代码
+jq --arg a1 "${asg_arns[0]}" \
+   --arg a2 "${asg_arns[1]}" \
+   --arg a3 "${asg_arns[2]}" \
+   '.targets.AutoScalingGroupsTarget1.resourceArns = [$a1,$a2,$a3]' fis.json
+为什么你现在只能替换一个
+通常是这种代码：
+Bash
+复制代码
+sed "s/replaced/$arn/"
+sed 默认只替换 第一个匹配。
+最简洁写法（推荐）
+如果你的数组已经有：
+Bash
+复制代码
+asg_arns=("arn1" "arn2" "arn3")
+直接：
+Bash
+复制代码
+printf '%s\n' "${asg_arns[@]}"
+确认有3个，然后用 方法1 拼 JSON。
+如果你愿意，把你现在的 循环代码贴出来，
+我可以帮你 改成10行以内的稳定版本（适合 GitLab pipeline + FIS 自动生成）。
+你现在其实已经 90% 对了，只差最后这个拼 JSON 的步骤。
