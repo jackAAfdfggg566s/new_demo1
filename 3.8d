@@ -1,0 +1,92 @@
+你这个截图里的问题很明显：
+数组里的 ARN 被包了两层双引号，所以打印出来变成这样：
+Text
+复制代码
+""arn:aws:autoscaling:....""
+正常应该是：
+Text
+复制代码
+"arn:aws:autoscaling:...."
+原因
+通常是因为你在 数组里已经加了一次 "，
+后面 printf 或拼 JSON 时又 自动加了一次 "。
+例如这种错误写法：
+Bash
+复制代码
+asg_arns+=("\"$asg_arn\"")
+数组内容就变成：
+复制代码
+
+"arn:xxx"
+然后你再：
+Bash
+复制代码
+printf '"%s",' "${asg_arns[@]}"
+就会变成：
+复制代码
+
+""arn:xxx""
+正确做法
+1 数组里 不要加引号
+Bash
+复制代码
+asg_arns+=("$asg_arn")
+数组内容：
+复制代码
+
+arn:xxx
+arn:yyy
+arn:zzz
+2 生成 JSON 时再加引号
+Bash
+复制代码
+json_arns=$(printf '"%s",' "${asg_arns[@]}")
+json_arns="[${json_arns%,}]"
+结果：
+Json
+复制代码
+["arn1","arn2","arn3"]
+完整稳定写法（推荐）
+Bash
+复制代码
+asg_arns=()
+
+for asg in $asg_list
+do
+  asg_arn=$(aws autoscaling describe-auto-scaling-groups \
+    --auto-scaling-group-names $asg \
+    --query 'AutoScalingGroups[0].AutoScalingGroupARN' \
+    --output text)
+
+  asg_arns+=("$asg_arn")
+done
+
+json_arns=$(printf '"%s",' "${asg_arns[@]}")
+json_arns="[${json_arns%,}]"
+
+echo $json_arns
+输出：
+Json
+复制代码
+["arn1","arn2","arn3"]
+快速检查你的问题
+你可以先打印数组：
+Bash
+复制代码
+printf '%s\n' "${asg_arns[@]}"
+如果看到：
+复制代码
+
+"arn:xxx"
+说明 数组里已经有引号了。
+如果看到：
+复制代码
+
+arn:xxx
+说明是正确的。
+💡 一个经验（写 AWS JSON 很有用）：
+数组里永远不要加引号，JSON 输出时再加。
+这样永远不会出现双引号问题。
+如果你愿意，把你现在 拼接数组那几行脚本发出来，
+我可以帮你 改成最简版（大概 12 行，GitLab pipeline 直接可用）。
+你现在其实已经 95% 成功了。
