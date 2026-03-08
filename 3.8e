@@ -1,0 +1,86 @@
+你现在打印是空，大概率是 数组没有初始化 + echo方式不对。
+我按你截图的代码给你一个 最小修改且一定能打印3个 ARN JSON 的版本。
+1 必须先初始化数组
+在 for 循环前加一行：
+Bash
+复制代码
+asg_arns=()
+否则 += 有时候不会正常工作。
+2 去掉多余双引号（你原来的问题）
+把这一行：
+Bash
+复制代码
+asg_arns+=("\"$asg_id\"")
+改成：
+Bash
+复制代码
+asg_arns+=("$asg_id")
+3 在循环结束后拼 JSON
+在 done 下面加：
+Bash
+复制代码
+json_arns=$(printf '"%s",' "${asg_arns[@]}")
+json_arns="[${json_arns%,}]"
+
+echo "final json:"
+echo "$json_arns"
+4 完整代码（按你截图改好的）
+Bash
+复制代码
+asg_arns=()
+
+for node in $(kubectl get nodes -l topology.kubernetes.io/zone=$AZ_STRING \
+-o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+do
+
+instance=$(kubectl get node $node \
+-o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+
+asg=$(aws ec2 describe-instances \
+--instance-ids $instance \
+--query "Reservations[0].Instances[0].Tags[?Key=='aws:autoscaling:groupName'].Value" \
+--output text)
+
+asg_id=$(aws autoscaling describe-auto-scaling-groups \
+--auto-scaling-group-names $asg \
+--query 'AutoScalingGroups[0].AutoScalingGroupARN' \
+--output text)
+
+echo "asg_id: $asg_id"
+
+asg_arns+=("$asg_id")
+
+done
+
+echo "array content:"
+printf '%s\n' "${asg_arns[@]}"
+
+json_arns=$(printf '"%s",' "${asg_arns[@]}")
+json_arns="[${json_arns%,}]"
+
+echo "final json:"
+echo "$json_arns"
+运行时你应该看到
+先打印数组：
+复制代码
+
+array content:
+arn:aws:autoscaling:xxx
+arn:aws:autoscaling:yyy
+arn:aws:autoscaling:zzz
+然后 JSON：
+Json
+复制代码
+["arn:aws:autoscaling:xxx","arn:aws:autoscaling:yyy","arn:aws:autoscaling:zzz"]
+如果还是空（很可能）
+那问题不是 JSON，而是 asg_id 没取到。
+你可以加一行调试：
+Bash
+复制代码
+echo "asg name: $asg"
+如果这里为空说明：
+复制代码
+
+aws:autoscaling:groupName
+这个 tag 没拿到。
+如果你愿意，我可以帮你把这个脚本 优化成 15 行稳定版，并解决一个你现在脚本里 EKS 常见的大坑（ASG 会重复3-6次）。这样后面做 FIS AZ failover 会更稳。
