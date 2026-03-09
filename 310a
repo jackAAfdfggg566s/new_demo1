@@ -1,0 +1,94 @@
+你之前的情况大概率是 数组里其实是字符串，但去重方式不对，或者 每次循环又重新赋值了数组。
+先给你一个 最稳的 Python 去重方法（保持顺序，不影响 FIS target 使用）。
+1 最简单的 ARN 去重方法
+假设你循环获取到了多个 asg_arn：
+Python
+复制代码
+asg_arns = []
+
+for node in nodes:
+    asg_arn = get_asg_arn(node)
+    asg_arns.append(asg_arn)
+
+# 去重
+asg_arns = list(set(asg_arns))
+
+print(asg_arns)
+但这个方法有个问题：
+顺序会乱。
+2 推荐方法（保持顺序）
+Python
+复制代码
+asg_arns = []
+
+for node in nodes:
+    asg_arn = get_asg_arn(node)
+    asg_arns.append(asg_arn)
+
+# 去重并保持顺序
+asg_arns = list(dict.fromkeys(asg_arns))
+
+print(asg_arns)
+例子：
+输入
+复制代码
+
+[
+arn1
+arn2
+arn1
+arn3
+arn2
+]
+输出
+复制代码
+
+[
+arn1
+arn2
+arn3
+]
+3 如果是在循环里拼接 JSON
+你之前应该类似这样：
+Python
+复制代码
+targets = []
+
+for i, arn in enumerate(asg_arns):
+    target = {
+        "resourceType": "aws:ec2:auto-scaling-group",
+        "resourceArns": [arn]
+    }
+    targets.append(target)
+4 另一种更安全写法（循环时直接去重）
+避免重复 append：
+Python
+复制代码
+asg_arns = []
+
+for node in nodes:
+    asg_arn = get_asg_arn(node)
+    if asg_arn not in asg_arns:
+        asg_arns.append(asg_arn)
+5 你很可能踩的坑（最常见）
+很多人写成这样：
+Python
+复制代码
+asg_arns = []
+
+for node in nodes:
+    asg_arns = [asg_arn]   # 每次循环都覆盖
+这样最后只剩 1个。
+6 调试方法（强烈建议）
+在循环里打印：
+Python
+复制代码
+print("current arn:", asg_arn)
+print("list:", asg_arns)
+马上能看出来问题。
+💡 如果你愿意，把你现在 获取 ARN + 去重 + 拼 JSON 那段代码贴出来。
+我可以帮你 改成一个完整可用版本（大概20行），直接解决：
+ARN重复
+双引号问题
+JSON target 拼接
+replaced1 replaced2 自动生成。
