@@ -1,0 +1,76 @@
+你这个现象其实已经很清楚了：
+unique_asg_arns 打印是 6 个（正确）
+final json 变成 12 个
+说明问题 不是去重失败，而是 拼接 JSON 那一步重复拼接了一次。
+问题就在这一行：
+Bash
+复制代码
+json_arns=$(printf "%s," "${unique_asg_arns[@]}")
+如果数组里有 6 个元素，printf 会这样执行：
+复制代码
+
+printf "%s," arn1 arn2 arn3 arn4 arn5 arn6
+但如果 unique_asg_arns 在 bash 里被当成 字符串列表再展开一次，就可能出现重复。
+最稳的写法（推荐）
+把这两行：
+Bash
+复制代码
+json_arns=$(printf "%s," "${unique_asg_arns[@]}")
+json_arns="${json_arns%,}"
+改成：
+Bash
+复制代码
+json_arns=$(printf '"%s",' "${unique_asg_arns[@]}")
+json_arns=${json_arns%,}
+这样直接生成：
+复制代码
+
+"arn1","arn2","arn3","arn4","arn5","arn6"
+不会再重复。
+再加一步调试（强烈建议）
+在生成 JSON 前打印：
+Bash
+复制代码
+echo "unique count: ${#unique_asg_arns[@]}"
+printf "%s\n" "${unique_asg_arns[@]}"
+如果显示：
+复制代码
+
+unique count: 6
+说明数组是正常的。
+更稳的方法（完全避免 bash 数组坑）
+直接这样写：
+Bash
+复制代码
+json_arns=$(printf "%s\n" "${unique_asg_arns[@]}" | paste -sd "," -)
+输出：
+复制代码
+
+arn1,arn2,arn3,arn4,arn5,arn6
+如果 JSON 需要引号：
+Bash
+复制代码
+json_arns=$(printf '"%s"\n' "${unique_asg_arns[@]}" | paste -sd "," -)
+输出：
+复制代码
+
+"arn1","arn2","arn3","arn4","arn5","arn6"
+总结
+你的脚本：
+去重已经成功
+问题只在 JSON 拼接
+推荐最终写法：
+Bash
+复制代码
+json_arns=$(printf '"%s"\n' "${unique_asg_arns[@]}" | paste -sd "," -)
+
+echo "final json:"
+echo "$json_arns"
+如果你愿意，我可以给你一个 专门为 AWS FIS target 生成的脚本版本，可以直接输出这种结构（你之前说的 replaced1 replaced2）：
+Json
+复制代码
+"Targets": {
+  "replaced1": { "resourceArns": [...] },
+  "replaced2": { "resourceArns": [...] }
+}
+脚本会 自动编号 target，不用你再手动拼 JSON。
