@@ -1,0 +1,82 @@
+我看了你的脚本，核心逻辑其实没问题，问题出在一个很常见的地方：
+asg_arn 里有隐藏字符（空格 / 换行 / tab）
+所以 sort -u 认为它们是不同字符串，导致去重失败。
+例如实际可能是：
+复制代码
+
+arn:aws:autoscaling:xxx:asg1
+arn:aws:autoscaling:xxx:asg1␠
+arn:aws:autoscaling:xxx:asg1
+看起来一样，但实际上不同。
+一步解决（推荐修改）
+把你这一行：
+Bash
+复制代码
+asg_arns+=("$asg_id")
+改成：
+Bash
+复制代码
+asg_arns+=("$(echo $asg_id | xargs)")
+作用：
+去掉前后空格
+去掉换行符
+标准化字符串
+再加一个更稳的去重写法
+把你现在这行：
+Bash
+复制代码
+unique_asg_arns=($(printf "%s\n" "${asg_arns[@]}" | sort -u))
+改成：
+Bash
+复制代码
+unique_asg_arns=($(printf "%s\n" "${asg_arns[@]}" | awk '!seen[$0]++'))
+优点：
+保持原顺序
+真正去重
+比 sort -u 更安全
+推荐最终版本
+Bash
+复制代码
+asg_arns=()
+
+for node in $(kubectl get nodes -l topology.kubernetes.io/zone=$AZ_STRING \
+-o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+do
+
+instance=$(kubectl get node $node \
+-o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+
+asg=$(aws ec2 describe-instances \
+--instance-ids $instance \
+--query "Reservations[0].Instances[0].Tags[?Key=='aws:autoscaling:groupName'].Value" \
+--output text)
+
+asg_id=$(aws autoscaling describe-auto-scaling-groups \
+--auto-scaling-group-names $asg \
+--query "AutoScalingGroups[0].AutoScalingGroupARN" \
+--output text)
+
+echo "asg_id: $asg_id"
+
+asg_arns+=("$(echo $asg_id | xargs)")
+
+done
+
+unique_asg_arns=($(printf "%s\n" "${asg_arns[@]}" | awk '!seen[$0]++'))
+
+printf "%s\n" "${unique_asg_arns[@]}"
+调试建议（强烈推荐）
+在去重前加一行：
+Bash
+复制代码
+printf "%q\n" "${asg_arns[@]}"
+如果看到：
+复制代码
+
+arn1
+arn1\ 
+arn1
+就说明是空格导致的重复。
+💡 我还能帮你把这个脚本 再优化一版（减少 2 次 AWS API 调用，速度快 3 倍），
+特别是你这个 EKS node → instance → ASG → ARN 的流程其实可以 一步拿到 ARN。
+如果你做 AWS FIS target 自动生成，那版会更稳定。
