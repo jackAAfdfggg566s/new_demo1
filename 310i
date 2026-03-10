@@ -1,0 +1,85 @@
+你现在出现 直接打印 ""，说明一个关键问题：
+unique_asg_arns 实际是空数组，或者 bash 没正确读取数组元素。
+先用一个 最简单、100%稳定的方法拼 JSON，不用 awk、不用复杂管道。
+直接用循环拼 JSON（最稳定）
+把你 JSON 拼接部分全部替换成这个：
+Bash
+复制代码
+json_arns=""
+
+for arn in "${unique_asg_arns[@]}"
+do
+    json_arns+="\"$arn\","
+done
+
+json_arns=${json_arns%,}
+
+echo "Final JSON:"
+echo "$json_arns"
+原理
+循环会这样构造：
+复制代码
+
+"arn1",
+"arn2",
+"arn3",
+最后一行：
+Bash
+复制代码
+json_arns=${json_arns%,}
+会去掉最后一个逗号。
+最终输出：
+复制代码
+
+"arn1","arn2","arn3"
+再加一个关键调试（非常重要）
+在拼 JSON 前加：
+Bash
+复制代码
+echo "unique count: ${#unique_asg_arns[@]}"
+printf "unique: %s\n" "${unique_asg_arns[@]}"
+如果输出是：
+复制代码
+
+unique count: 6
+unique: arn1
+unique: arn2
+...
+说明数组正常。
+如果是：
+复制代码
+
+unique count: 0
+那说明 unique 数组赋值那里有问题。
+还有一个你脚本常见的问题
+如果你是这样写的：
+Bash
+复制代码
+unique_asg_arns=($(printf "%s\n" "${asg_arns[@]}" | sort -u))
+有时 bash 会解析异常。
+建议改成：
+Bash
+复制代码
+mapfile -t unique_asg_arns < <(printf "%s\n" "${asg_arns[@]}" | sort -u)
+这个是 bash 官方推荐方式，不会丢数据。
+✅ 最终推荐组合：
+Bash
+复制代码
+mapfile -t unique_asg_arns < <(printf "%s\n" "${asg_arns[@]}" | sort -u)
+
+json_arns=""
+
+for arn in "${unique_asg_arns[@]}"
+do
+    json_arns+="\"$arn\","
+done
+
+json_arns=${json_arns%,}
+
+echo "$json_arns"
+如果你愿意，把你 完整脚本贴出来（大概 30 行那版）。
+我可以帮你 一次性改好并简化成 15 行版本，同时解决：
+ARN 去重
+JSON 拼接
+双引号问题
+FIS target 自动生成。
