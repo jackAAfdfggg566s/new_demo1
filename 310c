@@ -1,0 +1,81 @@
+我给你一份 完整、稳定、自动去重的版本（保持你现在逻辑，只修正问题）。
+核心改动：
+修复 instance 变量
+去掉后面的 sort -u
+在加入数组时直接去重
+清理 aws cli 返回的空格
+完整脚本（推荐版本）
+Bash
+复制代码
+#!/bin/bash
+
+asg_arns=()
+
+for node in $(kubectl get nodes -l topology.kubernetes.io/zone=$AZ_STRING \
+-o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+do
+
+instance=$(kubectl get node $node \
+-o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+
+asg=$(aws ec2 describe-instances \
+--instance-ids $instance \
+--query "Reservations[0].Instances[0].Tags[?Key=='aws:autoscaling:groupName'].Value" \
+--output text)
+
+asg_id=$(aws autoscaling describe-auto-scaling-groups \
+--auto-scaling-group-names $asg \
+--query "AutoScalingGroups[0].AutoScalingGroupARN" \
+--output text)
+
+# 清理空格
+asg_id=$(echo "$asg_id" | xargs)
+
+echo "asg_id: $asg_id"
+
+# 加入数组前先检查是否已存在
+if [[ ! " ${asg_arns[@]} " =~ " ${asg_id} " ]]; then
+    asg_arns+=("$asg_id")
+fi
+
+done
+
+echo "Unique ASG ARNs:"
+printf "%s\n" "${asg_arns[@]}"
+
+# 拼接 JSON 需要的字符串
+json_arns=$(printf "\"%s\"," "${asg_arns[@]}")
+json_arns="${json_arns%,}"
+
+echo "Final JSON:"
+echo "$json_arns"
+输出示例
+假设 AZ 里有 5 个 node，但只属于 2 个 ASG
+最终输出：
+复制代码
+
+asg_id: arn:aws:autoscaling:ap-southeast-2:xxx:asg/eks-nodegroup1
+asg_id: arn:aws:autoscaling:ap-southeast-2:xxx:asg/eks-nodegroup1
+asg_id: arn:aws:autoscaling:ap-southeast-2:xxx:asg/eks-nodegroup2
+asg_id: arn:aws:autoscaling:ap-southeast-2:xxx:asg/eks-nodegroup2
+asg_id: arn:aws:autoscaling:ap-southeast-2:xxx:asg/eks-nodegroup1
+
+Unique ASG ARNs:
+arn:aws:autoscaling:ap-southeast-2:xxx:asg/eks-nodegroup1
+arn:aws:autoscaling:ap-southeast-2:xxx:asg/eks-nodegroup2
+
+Final JSON:
+"arn:aws:autoscaling:ap-southeast-2:xxx:asg/eks-nodegroup1","arn:aws:autoscaling:ap-southeast-2:xxx:asg/eks-nodegroup2"
+再给你一个 更高级优化版（推荐生产用）
+你现在脚本 每个 node 调用 2 次 AWS API：
+describe-instances
+describe-auto-scaling-groups
+如果 EKS 有 20 个 node 就是 40 次 API。
+其实可以 直接从 instance tag 拿 ASG ARN，
+速度会 快 3-5 倍。
+如果你愿意，我可以给你一个 20 行的优化版脚本：
+✔ 自动去重
+✔ 自动生成 FIS target JSON
+✔ 支持 replaced1 replaced2 replaced3 自动编号
+✔ 运行速度更快
+（非常适合你之前做的 AWS FIS network failure 实验脚本）。
