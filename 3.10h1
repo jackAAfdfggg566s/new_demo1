@@ -1,0 +1,90 @@
+你现在的问题其实是 AWS FIS 的一个限制：
+一个 target 最多 5 个 resourceArns
+你现在 6 个 ARN
+所以需要拆成 2 个 target
+例如：
+Json
+复制代码
+replaced1 -> 5 个
+replaced2 -> 1 个
+你现在脚本已经有 asg_arns 数组，所以只需要 按 5 个一组拆分。
+修改脚本（核心部分）
+在你 done 后面 替换掉原来的 json 拼接代码，改成下面：
+Bash
+复制代码
+target_index=1
+count=0
+json_targets=""
+
+for arn in "${asg_arns[@]}"; do
+
+    arn="${arn//$'\r'/}"
+    arn="${arn//$'\n'/}"
+
+    if (( count % 5 == 0 )); then
+        if (( count > 0 )); then
+            json_targets=${json_targets%,}
+            json_targets+="]},"
+        fi
+
+        json_targets+="\"replaced${target_index}\":{\"resourceArns\":["
+        ((target_index++))
+    fi
+
+    json_targets+="\"$arn\","
+    ((count++))
+
+done
+
+json_targets=${json_targets%,}
+json_targets+="]}"
+
+echo "$json_targets"
+生成结果示例
+如果有 6 个 ARN：
+Json
+复制代码
+"replaced1":{
+  "resourceArns":[
+    "arn1",
+    "arn2",
+    "arn3",
+    "arn4",
+    "arn5"
+  ]
+},
+"replaced2":{
+  "resourceArns":[
+    "arn6"
+  ]
+}
+然后替换 template
+你现在这行：
+Bash
+复制代码
+sed -i -e "s|REPLACE_IDS|$IDS|g" $tmp_dir/$cur_template_file
+改成：
+Bash
+复制代码
+sed -i -e "s|REPLACE_IDS|$json_targets|g" $tmp_dir/$cur_template_file
+最终流程
+脚本会自动：
+1️⃣ 获取 node
+2️⃣ 找到 instance
+3️⃣ 找到 ASG ARN
+4️⃣ 去重
+5️⃣ 每 5 个拆一个 target
+6️⃣ 自动生成
+复制代码
+
+replaced1
+replaced2
+replaced3
+💡 一个重要优化建议（强烈推荐）
+你现在脚本 每个 node 调用 2 次 AWS API：
+describe-instances
+describe-auto-scaling-groups
+如果有 20 nodes 就 40 次 API。
+其实可以 直接从 instance tag 一步拿 ASG ARN，
+脚本可以从 32 行缩短到 15 行，运行速度 快 3-5 倍。
+如果你愿意，我可以给你一个 EKS + FIS 专用版本脚本（自动 AZ + 自动 target + 自动去重）。
