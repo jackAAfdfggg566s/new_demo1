@@ -1,0 +1,61 @@
+从你描述的现象：
+unique_asg_arns 打印 6 个
+final json 变成 12 个
+基本可以确定是 数组被 bash 二次展开 导致的。
+最稳的办法是 不要再用数组直接 printf 拼接，而是用 管道处理。
+下面这个写法在 bash 里是最稳定的。
+修改 JSON 拼接部分
+把你现在的拼接代码 全部替换为下面这段：
+Bash
+复制代码
+json_arns=$(printf "%s\n" "${unique_asg_arns[@]}" | awk '{print "\"" $0 "\""}' | paste -sd "," -)
+
+echo "Final JSON:"
+echo "$json_arns"
+解释
+步骤其实是三步：
+1️⃣ 每个 ARN 单独一行
+复制代码
+
+arn1
+arn2
+arn3
+2️⃣ 加双引号
+复制代码
+
+"arn1"
+"arn2"
+"arn3"
+3️⃣ 用逗号拼接
+复制代码
+
+"arn1","arn2","arn3"
+你应该看到的最终输出
+复制代码
+
+Final JSON:
+"arn:aws:autoscaling:xxx:asg1","arn:aws:autoscaling:xxx:asg2","arn:aws:autoscaling:xxx:asg3"
+数量 一定和 unique_asg_arns 一样。
+再给你一个调试命令（非常关键）
+在拼接前加一行：
+Bash
+复制代码
+echo "array count: ${#unique_asg_arns[@]}"
+如果输出：
+复制代码
+
+array count: 6
+但 JSON 是 12 个，那就说明 拼接代码的问题，不是去重。
+✅ 总结：
+把 JSON 拼接改成这一行基本就能彻底解决：
+Bash
+复制代码
+json_arns=$(printf "%s\n" "${unique_asg_arns[@]}" | awk '{print "\"" $0 "\""}' | paste -sd "," -)
+如果你愿意，我可以给你一个 专门给 AWS FIS 用的最终脚本（大概30行），可以直接生成这种结构，不需要你再替换 JSON：
+Json
+复制代码
+"Targets": {
+  "replaced1": { "resourceArns": [...] },
+  "replaced2": { "resourceArns": [...] }
+}
+而且会 自动按 AZ 生成 targets，做 EKS FIS 网络故障实验会非常方便。
