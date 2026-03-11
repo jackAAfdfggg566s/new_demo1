@@ -1,0 +1,90 @@
+你的脚本现在逻辑是：
+1️⃣ 通过 kubectl get nodes 获取 6 个 instance id
+2️⃣ 拼接成 ARN_IDS
+3️⃣ 用 sed 替换 REPLACE_INSTANCE_IDS
+现在你的需求是：
+6 个 node
+分成两个 target
+每个 target 3 个
+替换：
+REPLACE_INSTANCE_IDS1
+REPLACE_INSTANCE_IDS2
+核心思路：
+先把 instance 拆成 两个数组，再分别生成 ARN。
+修改后的关键代码
+替换你现在 ARN_IDS= 这一段：
+Bash
+复制代码
+# convert instance list to array
+IFS=',' read -ra INST_ARRAY <<< "$INSTANCE_IDS"
+
+IDS1=""
+IDS2=""
+
+for i in "${!INST_ARRAY[@]}"; do
+    id=${INST_ARRAY[$i]}
+    arn="\"arn:aws:ec2:ap-southeast-2:$AWS_ACCOUNT_ID:instance/$id\""
+
+    if [ $i -lt 3 ]; then
+        IDS1+="$arn,"
+    else
+        IDS2+="$arn,"
+    fi
+done
+
+# remove trailing comma
+IDS1=${IDS1%,}
+IDS2=${IDS2%,}
+
+echo "TARGET1:"
+echo "$IDS1"
+
+echo "TARGET2:"
+echo "$IDS2"
+
+# replace json placeholders
+sed -i -e "s|REPLACE_INSTANCE_IDS1|$IDS1|g" $tmp_dir/$cur_template_file
+sed -i -e "s|REPLACE_INSTANCE_IDS2|$IDS2|g" $tmp_dir/$cur_template_file
+最终效果
+如果有 6 个 instance：
+复制代码
+
+i-111
+i-222
+i-333
+i-444
+i-555
+i-666
+生成：
+TARGET1
+复制代码
+
+"arn:aws:ec2:ap-southeast-2:xxx:instance/i-111",
+"arn:aws:ec2:ap-southeast-2:xxx:instance/i-222",
+"arn:aws:ec2:ap-southeast-2:xxx:instance/i-333"
+TARGET2
+复制代码
+
+"arn:aws:ec2:ap-southeast-2:xxx:instance/i-444",
+"arn:aws:ec2:ap-southeast-2:xxx:instance/i-555",
+"arn:aws:ec2:ap-southeast-2:xxx:instance/i-666"
+然后替换 JSON：
+复制代码
+
+REPLACE_INSTANCE_IDS1
+REPLACE_INSTANCE_IDS2
+你的 JSON 示例应该像这样
+Json
+复制代码
+"Targets": {
+  "Target1": {
+    "resourceArns": [REPLACE_INSTANCE_IDS1]
+  },
+  "Target2": {
+    "resourceArns": [REPLACE_INSTANCE_IDS2]
+  }
+}
+💡 额外建议（很重要）
+如果 node 数量不是 6（比如 5 或 7），更安全写法是 自动每3个分组。
+我可以给你一个 更通用版本（生产级），大概只要 10 行代码就能自动分 target，做 FIS 注入特别好用。
+如果需要，我可以直接给你 完整脚本版本。
