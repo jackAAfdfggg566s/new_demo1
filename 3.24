@@ -1,0 +1,207 @@
+你现在的架构其实已经很接近 “AI 驱动测试” 了：
+已有 script（执行具体测试）
+已有 GitLab pipeline（调度执行）
+通过 参数控制不同测试
+要接入 AI聊天控制，核心思路是：
+AI → 解析自然语言 → 转成 pipeline 参数 → 触发 GitLab pipeline
+整体架构一般是 4 层。
+1 架构示意
+
+Chat UI (Slack / Web / ChatGPT)
+        │
+        ▼
+AI Agent (解析命令)
+        │
+        ▼
+Command Parser
+        │
+        ▼
+GitLab API trigger pipeline
+        │
+        ▼
+Pipeline 执行 script
+流程：
+用户说：
+
+先运行5分钟负载
+然后执行pod failover
+AI解析成：
+JSON
+{
+ "steps": [
+   {"action":"load_test","duration":"5m"},
+   {"action":"pod_failover"}
+ ]
+}
+然后触发 GitLab pipeline：
+
+POST /projects/:id/trigger/pipeline
+2 GitLab pipeline 改造（最关键）
+你现在 pipeline 可能是：
+
+LOAD_TEST=true
+POD_FAILOVER=true
+建议改成 步骤式执行
+例如：
+YAML
+stages:
+  - run
+
+run-test:
+  stage: run
+  script:
+    - python run_test.py "$TEST_PLAN"
+pipeline 参数：
+
+TEST_PLAN
+AI生成：
+
+TEST_PLAN='load_test:5m,pod_failover'
+3 run_test.py 示例
+AI只需要传一个 plan
+Python
+import sys
+plan=sys.argv[1]
+
+steps=plan.split(",")
+
+for step in steps:
+
+    if step.startswith("load_test"):
+        duration=step.split(":")[1]
+        print(f"run load test {duration}")
+        # 调用你的script
+        # sh load_test.sh 5m
+
+    if step=="pod_failover":
+        print("run pod failover")
+        # sh pod_failover.sh
+4 AI 解析（最简单方法）
+可以写一个 小服务
+例如 ai_agent.py
+用户输入：
+
+run load for 5 minutes then pod failover
+调用 AI：
+prompt：
+
+Convert user test instruction into pipeline plan.
+
+Instruction:
+run load for 5 minutes then pod failover
+
+Output JSON:
+AI返回：
+JSON
+{
+ "plan":"load_test:5m,pod_failover"
+}
+然后调用 GitLab：
+Bash
+curl --request POST \
+  --form token=xxxx \
+  --form ref=main \
+  --form "variables[TEST_PLAN]=load_test:5m,pod_failover" \
+  https://gitlab.com/api/v4/projects/123/trigger/pipeline
+5 聊天框方式（推荐）
+最实用的三种：
+方案1 Slack Bot（最常见）
+聊天：
+
+/test run load 5m then pod failover
+Bot：
+调AI解析
+调 GitLab API
+方案2 Web Chat UI
+内部做个小网页：
+
+Test AI
+
+[输入测试场景]
+
+> run load 5m then kill pod
+后台：
+
+Python FastAPI
++ OpenAI
++ GitLab API
+方案3 ChatGPT + webhook（最简单）
+直接：
+
+ChatGPT → webhook → pipeline
+6 更高级（AWS FIS / chaos automation）
+你的场景其实很适合做：
+AI Chaos Engineering Orchestrator
+例如：
+用户说
+
+模拟az failover
+负载10分钟
+断开kafka
+恢复
+AI生成：
+YAML
+steps:
+- load:10m
+- fis:az_failover
+- fis:kafka_disconnect
+- recover
+然后 pipeline 按顺序执行。
+7 最推荐架构（企业常见）
+
+ChatGPT / Slack
+       │
+       ▼
+AI Agent (Python FastAPI)
+       │
+       ▼
+GitLab Pipeline
+       │
+       ▼
+Test Scripts
+优点
+不改现有 script
+不改 pipeline
+只加一层 AI agent
+8 一个真实示例
+用户说：
+
+运行5分钟负载
+然后pod failover
+再检查数据库连接
+AI解析：
+
+load_test:5m,pod_failover,db_check
+pipeline：
+
+TEST_PLAN=load_test:5m,pod_failover,db_check
+自动执行。
+9 如果是 EKS + FIS（你之前做的）
+甚至可以：
+用户说：
+
+fail az subnet for 10 minutes
+AI解析：
+
+fis_action=az_subnet_fail
+duration=10
+然后触发 FIS。
+10 我可以给你一套完整 Demo（很简单）
+包括：
+1️⃣ AI test agent
+2️⃣ GitLab pipeline
+3️⃣ Chat interface
+大概 200行代码就能跑。
+可以做到：
+
+AI: run load 5m then pod failover
+AI: simulate kafka disconnect
+AI: fail az1 nodegroup
+自动执行。
+如果你愿意，我可以 给你一套非常适合你现在环境的架构（结合你现在用的）：
+EKS
+AWS FIS
+GitLab
+script
+做成一个 AI chaos testing platform。
+我也可以画一个 完整架构图 + 关键代码（非常实用）。
