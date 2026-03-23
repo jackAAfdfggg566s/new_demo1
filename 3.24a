@@ -1,0 +1,104 @@
+下面给你整理的是 从第 2 步开始到后面步骤（Chat → 触发 pipeline → 自动执行）对应的 YouTube 教程视频。这些视频基本就是你要做的流程：
+聊天 → 调 API → GitLab pipeline → 执行脚本。
+2️⃣ Slack / Chat 触发 GitLab Pipeline（ChatOps）
+这个视频重点讲：
+Slack slash command
+调 GitLab API
+触发 pipeline
+例如聊天：
+
+/deploy staging
+Slack Bot 执行：
+
+GitLab pipeline trigger
+这种模式叫 ChatOps。
+GitLab 官方也是用 Slack + ChatOps 来触发 CI/CD 任务。 �
+GitLab 文档
+3️⃣ Python 调 GitLab API 触发 Pipeline
+这个视频会教：
+1️⃣ GitLab trigger token
+2️⃣ API 调用 pipeline
+3️⃣ 传入变量
+典型代码：
+Python
+import requests
+
+url="https://gitlab.com/api/v4/projects/123/trigger/pipeline"
+
+data={
+ "token":"xxxxx",
+ "ref":"main",
+ "variables[TEST_PLAN]":"load:5m,pod_failover"
+}
+
+requests.post(url,data=data)
+这一步就是 AI Agent 最终执行的动作。
+4️⃣ ChatOps + CI/CD 自动化
+这个视频讲 完整架构：
+
+Chat
+ ↓
+Bot
+ ↓
+CI/CD pipeline
+ ↓
+Infrastructure
+也就是：
+
+Slack
+  ↓
+ChatOps bot
+  ↓
+GitLab pipeline
+  ↓
+script / deployment
+5️⃣ AI Agent 自动执行 DevOps 任务
+这个视频更接近你想做的：
+用户输入：
+
+run load test for 5 minutes
+then restart pods
+AI解析成：
+
+load_test:5m,pod_restart
+然后自动执行 automation。
+推荐观看顺序（非常重要）
+按这个顺序看最容易理解：
+1️⃣ Slack → GitLab ChatOps
+2️⃣ Python 调 GitLab API
+3️⃣ ChatOps automation
+4️⃣ AI DevOps agent
+看完你就能实现：
+
+Chat:
+
+run 5 minute load
+then pod failover
+自动执行：
+
+GitLab pipeline
+↓
+script
+↓
+EKS chaos test
+💡 我其实更建议你做这个最终架构（非常适合你现在的 EKS chaos testing）：
+
+ChatGPT / Slack
+        │
+        ▼
+AI Agent (Python)
+        │
+        ▼
+GitLab API
+        │
+        ▼
+Pipeline
+        │
+        ▼
+Test Script
+(load / pod failover / fis)
+如果你愿意，我可以再给你 3个更高级的视频（非常贴合你现在环境）：
+AI + Kubernetes chaos engineering 自动化
+AI DevOps Agent 控制 EKS
+ChatGPT 自动触发 CI/CD pipeline
+这些基本就是 你想做的 AI 自动测试平台。
