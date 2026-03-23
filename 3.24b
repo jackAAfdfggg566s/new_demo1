@@ -1,0 +1,173 @@
+你之前问的 AI agent 调 API，这里的 Agent 其实不是某一个固定产品名称，而是一个 角色/组件：
+AI Agent = 一个程序，用 AI 解析用户指令，然后自动调用 API 或脚本执行任务。
+简单理解：
+Plain text
+用户说话
+   ↓
+AI Agent 理解
+   ↓
+调用 API / script
+   ↓
+执行任务
+在你这个场景就是：
+Plain text
+聊天
+↓
+AI Agent
+↓
+GitLab API
+↓
+Pipeline
+↓
+script
+一、常见 AI Agent 框架（有具体名字）
+如果你想实现 AI 自动控制 pipeline，最常用的几个框架是：
+1️⃣ LangChain
+最常见的 AI agent 框架。
+特点：
+调 LLM
+调 API
+自动执行任务
+非常适合 DevOps automation
+例子：
+Python
+agent.run("run load test 5 minutes then pod failover")
+Agent 自动：
+Plain text
+解析命令
+↓
+调用 GitLab API
+2️⃣ AutoGPT
+一个自动执行任务的 AI agent。
+可以做：
+Plain text
+Goal:
+run chaos test
+然后自己：
+
+create plan
+run api
+execute
+但比较重，不太适合简单 automation。
+3️⃣ CrewAI
+最近 DevOps 很多人用。
+可以创建多个 agent：
+Plain text
+Planner agent
+DevOps agent
+Executor agent
+例如：
+Plain text
+User:
+run load then pod failover
+流程：
+
+Planner → 生成测试步骤
+Executor → 调 GitLab pipeline
+4️⃣ OpenAI Assistants API
+OpenAI 官方 agent 方式。
+支持：
+tools
+function calling
+workflow
+例如：
+JSON
+{
+ "name": "run_pipeline",
+ "parameters": {
+   "plan": "load:5m,pod_failover"
+ }
+}
+AI 自动调用。
+二、最简单 AI Agent（其实几十行代码）
+很多公司其实自己写一个 简单 agent。
+例如：
+Python
+import openai
+import requests
+
+prompt="run load 5 minutes then pod failover"
+
+plan="load:5m,pod_failover"
+
+requests.post(
+ "https://gitlab.com/api/v4/projects/123/trigger/pipeline",
+ data={
+   "token":"xxx",
+   "variables[PLAN]":plan
+ }
+)
+这个程序本身就是 AI agent。
+三、在 DevOps 里的 AI Agent
+AI agent 常用来做：
+场景
+Agent做什么
+CI/CD automation
+触发 pipeline
+Chaos testing
+运行 chaos test
+Incident response
+自动排障
+Cloud automation
+调 AWS API
+例如你现在的：
+Plain text
+EKS
+AWS FIS
+GitLab pipeline
+AI agent 可以：
+
+run load 5m
+fail az subnet
+disconnect kafka
+自动执行。
+四、你这个场景最适合的 Agent
+如果是你现在的环境：
+GitLab pipeline
+script
+chaos test
+AWS / EKS
+我最推荐：
+简单 AI Agent + GitLab API
+技术栈：
+
+Python
++ OpenAI API
++ GitLab API
++ FastAPI
+架构：
+
+Chat UI
+   ↓
+AI Agent
+   ↓
+GitLab API
+   ↓
+Pipeline
+   ↓
+script
+五、真实企业里的例子
+很多公司现在做 AI DevOps Agent：
+例如：
+Plain text
+User:
+run chaos test on kafka
+Agent：
+
+create plan
+trigger pipeline
+monitor result
+summarize report
+💡 其实你现在已经具备 80% 条件了：
+你已经有：
+GitLab pipeline
+script
+chaos test
+只需要加一个 AI agent 层。
+如果你愿意，我可以给你一个 非常贴合你环境的完整方案：
+AI → GitLab → EKS → AWS FIS
+而且我可以给你：
+架构图
+代码示例
+pipeline 示例
+基本 1天就能做出 prototype。
