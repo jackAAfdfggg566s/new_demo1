@@ -1,0 +1,91 @@
+如果 AWS CLI 返回多个 EBS volume id，你想在 bash 里遍历并保存到数组，推荐下面几种写法。
+方法1（最推荐，最干净）
+Bash
+instance_id=i-0abc123456
+
+readarray -t ebs_array < <(
+aws ec2 describe-instances \
+  --instance-ids $instance_id \
+  --query "Reservations[].Instances[].BlockDeviceMappings[].Ebs.VolumeId" \
+  --output text
+)
+
+echo "${ebs_array[@]}"
+输出：
+
+vol-123 vol-456 vol-789
+遍历：
+Bash
+for vol in "${ebs_array[@]}"; do
+    echo "Volume: $vol"
+done
+方法2（简单版）
+Bash
+instance_id=i-0abc123456
+
+ebs_array=($(aws ec2 describe-instances \
+  --instance-ids $instance_id \
+  --query "Reservations[].Instances[].BlockDeviceMappings[].Ebs.VolumeId" \
+  --output text))
+遍历：
+Bash
+for vol in "${ebs_array[@]}"; do
+  echo $vol
+done
+输出：
+
+vol-123
+vol-456
+vol-789
+方法3（如果你是 describe-volumes 查出来）
+比如：
+Bash
+aws ec2 describe-volumes \
+  --filters Name=attachment.instance-id,Values=i-0abc123456 \
+  --query "Volumes[].VolumeId" \
+  --output text
+保存数组：
+Bash
+ebs_array=($(aws ec2 describe-volumes \
+  --filters Name=attachment.instance-id,Values=$instance_id \
+  --query "Volumes[].VolumeId" \
+  --output text))
+验证数组内容
+Bash
+echo ${#ebs_array[@]}
+输出：
+
+3
+表示 3个EBS。
+打印：
+Bash
+printf "%s\n" "${ebs_array[@]}"
+常见错误（很多人踩坑）
+❌ 错误写法
+Bash
+ebs_array=$(aws ...)
+这是 字符串，不是数组。
+如果你是 EKS node → 自动查 instance → 查 EBS（完整脚本）
+Bash
+NODE=ip-10-0-1-23.ap-southeast-2.compute.internal
+
+INSTANCE_ID=$(kubectl get node $NODE -o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+
+ebs_array=($(aws ec2 describe-volumes \
+  --filters Name=attachment.instance-id,Values=$INSTANCE_ID \
+  --query "Volumes[].VolumeId" \
+  --output text))
+
+for vol in "${ebs_array[@]}"; do
+    echo "Found EBS: $vol"
+done
+如果你需要，我可以再给你一个 EKS 排查神器脚本：
+一条命令输出
+
+Node
+Pod
+PVC
+PV
+EBS volume
+AZ
+很多 EKS存储问题 / AZ failover / FIS实验 都靠这个脚本排查，会比 AWS CLI 快很多。
