@@ -1,0 +1,89 @@
+如果你想 用 AWS CLI 查看某个 EKS node（EC2）挂载的 EBS 卷，通常思路是：
+EKS Node → EC2 Instance → EBS Volume
+下面是常用几种方法。
+方法一：通过 NodeName → EC2 → EBS（最常用）
+1️⃣ 先获取 node 对应的 EC2 instance-id
+Bash
+kubectl get nodes -o wide
+输出类似：
+
+ip-10-0-1-23.ap-southeast-2.compute.internal   Ready   ...   i-0abc123456
+如果没有 instance id，可以用：
+Bash
+kubectl get node <node-name> -o jsonpath='{.spec.providerID}'
+输出：
+
+aws:///ap-southeast-2a/i-0abc123456
+提取 instance id：
+
+i-0abc123456
+2️⃣ 用 AWS CLI 查挂载的 EBS
+Bash
+aws ec2 describe-instances \
+  --instance-ids i-0abc123456 \
+  --query "Reservations[].Instances[].BlockDeviceMappings[].Ebs.VolumeId" \
+  --output text
+输出：
+
+vol-0123456789abcdef0
+vol-0abcdef1234567890
+这些就是该 EKS node 上挂载的 EBS volume。
+方法二：同时显示设备名
+Bash
+aws ec2 describe-instances \
+  --instance-ids i-0abc123456 \
+  --query "Reservations[].Instances[].BlockDeviceMappings[].{Device:DeviceName,Volume:Ebs.VolumeId}" \
+  --output table
+示例：
+
+---------------------------------
+|        DescribeInstances       |
++-----------+--------------------+
+|  Device   |      Volume        |
++-----------+--------------------+
+| /dev/xvda | vol-0123456789     |
+| /dev/xvdb | vol-0abcd123456    |
++-----------+--------------------+
+方法三：反查某个 EBS 属于哪个 Node
+如果你只有 volume id：
+Bash
+aws ec2 describe-volumes \
+  --volume-ids vol-0123456789abcdef0 \
+  --query "Volumes[].Attachments[].InstanceId"
+返回：
+
+i-0abc123456
+然后再：
+
+kubectl get node -o wide | grep i-0abc123456
+找到对应 node。
+方法四：查看 node 所有 EBS 详细信息
+Bash
+aws ec2 describe-volumes \
+  --filters Name=attachment.instance-id,Values=i-0abc123456 \
+  --query "Volumes[].{VolumeId:VolumeId,Size:Size,Type:VolumeType,State:State}" \
+  --output table
+输出：
+
+----------------------------------------
+|             DescribeVolumes          |
++-----------+------+-------+-----------+
+| VolumeId  | Size | Type  | State     |
++-----------+------+-------+-----------+
+| vol-01... |  20  | gp3   | in-use    |
+| vol-02... | 100  | gp3   | in-use    |
++-----------+------+-------+-----------+
+一条命令直接从 Node 查 EBS（推荐）
+Bash
+NODE=<node-name>
+
+INSTANCE_ID=$(kubectl get node $NODE -o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}')
+
+aws ec2 describe-volumes \
+  --filters Name=attachment.instance-id,Values=$INSTANCE_ID \
+  --query "Volumes[].VolumeId"
+💡 补充（EKS常见情况）
+EKS node 的 EBS 可能有两种：
+1️⃣ Root disk（node系统盘）
+2️⃣ PVC 动态创建的 EBS（Pod 使用）
+如果你想 查看 Pod 的 EBS PVC 对应关系，我也可以给你一条 kubectl + aws cli 一步查 Pod → PVC → EBS 的命令，排查存储问题非常好用。
