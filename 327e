@@ -1,0 +1,150 @@
+可以实现，而且 CloudWatch Dashboard 自动设置时间并截图有两种主流做法：
+1️⃣ 直接用 URL 参数控制时间（最简单）
+2️⃣ 用浏览器自动化（Playwright / Selenium）操作页面
+一般推荐 URL + 自动截图。
+方法一：CloudWatch URL 直接带时间参数（推荐）
+Amazon CloudWatch 的 Dashboard URL 支持 start / end 时间参数。
+示例 URL：
+Plain text
+https://console.aws.amazon.com/cloudwatch/home?region=ap-southeast-2#dashboards:name=my-dashboard;start=2026-03-27T01:00:00Z;end=2026-03-27T02:00:00Z
+说明：
+Plain text
+start=开始时间
+end=结束时间
+例如：
+Plain text
+start=2026-03-27T01:00:00Z
+end=2026-03-27T01:30:00Z
+打开就自动显示该时间范围。
+Python 自动生成 URL
+Python
+from datetime import datetime, timedelta
+
+start = datetime.utcnow() - timedelta(minutes=30)
+end = datetime.utcnow()
+
+url = f"https://console.aws.amazon.com/cloudwatch/home?region=ap-southeast-2#dashboards:name=my-dashboard;start={start.isoformat()}Z;end={end.isoformat()}Z"
+
+print(url)
+输出：
+Plain text
+https://console.aws.amazon.com/cloudwatch/home?region=ap-southeast-2#dashboards:name=my-dashboard;start=2026-03-27T02:00:00Z;end=2026-03-27T02:30:00Z
+方法二：自动登录 AWS 并截图
+因为 AWS Console 需要登录，所以一般用 Playwright。
+安装：
+Bash
+pip install playwright
+playwright install
+示例代码：
+Python
+from playwright.sync_api import sync_playwright
+
+url = "CLOUDWATCH_DASHBOARD_URL"
+
+with sync_playwright() as p:
+
+    browser = p.chromium.launch(headless=True)
+
+    page = browser.new_page()
+
+    page.goto(url)
+
+    page.wait_for_timeout(10000)
+
+    page.screenshot(path="dashboard.png", full_page=True)
+
+    browser.close()
+方法三：自动修改时间控件（模拟点击）
+如果 URL 不支持你想要的时间格式，可以自动操作 UI：
+Python
+page.click("text=Custom")
+page.fill("input[start-time]", "2026-03-27 01:00")
+page.fill("input[end-time]", "2026-03-27 02:00")
+page.click("text=Apply")
+但这个方法 不稳定，AWS UI 会变化。
+推荐的自动化架构
+结合你之前说的 GitLab pipeline + 自动报告：
+Plain text
+trigger pipeline
+       │
+       ▼
+获取测试时间
+       │
+       ▼
+生成 CloudWatch URL (带 start/end)
+       │
+       ▼
+Playwright 打开 dashboard
+       │
+       ▼
+自动截图
+       │
+       ▼
+插入 Word 报告
+示例（完整自动截图脚本）
+Python
+from playwright.sync_api import sync_playwright
+from datetime import datetime, timedelta
+
+start = datetime.utcnow() - timedelta(minutes=30)
+end = datetime.utcnow()
+
+dashboard = "my-dashboard"
+
+url = f"https://console.aws.amazon.com/cloudwatch/home?region=ap-southeast-2#dashboards:name={dashboard};start={start.isoformat()}Z;end={end.isoformat()}Z"
+
+with sync_playwright() as p:
+
+    browser = p.chromium.launch(headless=True)
+
+    page = browser.new_page()
+
+    page.goto(url)
+
+    page.wait_for_timeout(10000)
+
+    page.screenshot(path="cw_dashboard.png", full_page=True)
+
+    browser.close()
+一个更专业的方法（很多团队用）
+不用截图 Console，而是直接调用 API：
+Plain text
+GetMetricData
+用 SDK 获取数据，然后自己画图。
+这样：
+Plain text
+CloudWatch metrics
+      │
+      ▼
+Python matplotlib
+      │
+      ▼
+生成图
+      │
+      ▼
+插入 Word
+优点：
+不需要登录 AWS Console
+自动化稳定
+图更清晰
+✅ 总结
+CloudWatch 自动截图常见方案：
+方法
+难度
+稳定性
+URL 控制时间 + 截图
+⭐
+⭐⭐⭐⭐
+Playwright 操作 UI
+⭐⭐
+⭐⭐⭐
+API 获取数据画图
+⭐⭐⭐
+⭐⭐⭐⭐⭐
+如果你愿意，我可以再给你一个 完整脚本（约200行），实现：
+调用 GitLab pipeline
+获取测试开始时间
+自动生成 CloudWatch URL
+自动截图 Dashboard
+自动生成 Word 测试报告
+基本就是 全自动测试报告系统。
