@@ -1,0 +1,169 @@
+如果数据只在截图里，那就需要用 **OCR（图像识别）**把图片里的文字和数值提取出来，然后再填入 Word 模板。这是完全可以实现的，常见做法是：
+截图 → OCR识别 → 解析数据 → 填入模板
+下面给你一个实用方案。
+一、整体流程
+Plain text
+Pipeline运行
+   │
+   ├─ 截图 (dashboard / log / grafana 等)
+   │
+   ▼
+OCR识别图片文字
+   │
+   ▼
+解析关键数值
+   │
+   ▼
+填入Word模板
+比如截图里有：
+
+Latency: 23ms
+Success Rate: 99.8%
+Error Count: 0
+脚本识别后得到：
+Python
+latency = 23
+success = 99.8
+error = 0
+然后写入 Word。
+二、最常用 OCR 工具
+推荐 3 个：
+1️⃣ Tesseract（最常见）
+安装：
+Mac / Linux
+Bash
+brew install tesseract
+Python库
+Bash
+pip install pytesseract pillow
+代码示例：
+Python
+import pytesseract
+from PIL import Image
+
+img = Image.open("dashboard.png")
+
+text = pytesseract.image_to_string(img)
+
+print(text)
+输出：
+
+Latency: 23ms
+Success Rate: 99.8%
+Error Count: 0
+三、提取具体数值
+可以用 regex：
+Python
+import re
+
+latency = re.search(r'Latency:\s*(\d+)', text).group(1)
+success = re.search(r'Success Rate:\s*([\d.]+)', text).group(1)
+
+print(latency, success)
+得到：
+
+23
+99.8
+四、写入 Word 模板
+结合 docxtpl：
+Python
+from docxtpl import DocxTemplate
+
+doc = DocxTemplate("template.docx")
+
+context = {
+    "latency": latency,
+    "success_rate": success
+}
+
+doc.render(context)
+
+doc.save("report.docx")
+模板写：
+
+Latency: {{latency}} ms
+Success Rate: {{success_rate}} %
+五、如果截图是 Dashboard（更推荐的方法）
+其实很多 dashboard（Grafana / AWS / Kibana）都有 API，不建议 OCR。
+因为 OCR 有几个问题：
+精度不稳定
+字体变化会识别错
+数字可能错
+更稳定的是：
+
+dashboard API → json → 写报告
+例如：
+Grafana API：
+
+/api/datasources/proxy/...
+直接返回：
+JSON
+{
+  "latency": 23,
+  "success_rate": 99.8
+}
+比 OCR 稳定 100 倍。
+六、截图 + OCR 的完整代码示例
+Python
+import pytesseract
+from PIL import Image
+import re
+
+img = Image.open("test.png")
+
+text = pytesseract.image_to_string(img)
+
+latency = re.search(r'Latency:\s*(\d+)', text)
+success = re.search(r'Success Rate:\s*([\d.]+)', text)
+
+data = {
+    "latency": latency.group(1),
+    "success": success.group(1)
+}
+
+print(data)
+输出：
+
+{'latency': '23', 'success': '99.8'}
+七、自动化放到 Pipeline
+GitLab pipeline：
+YAML
+generate_report:
+  script:
+    - python screenshot.py
+    - python ocr_parse.py
+    - python generate_report.py
+自动完成：
+
+截图
+↓
+OCR识别
+↓
+提取数值
+↓
+生成报告
+八、现在很多公司其实这样做（更高级）
+他们不用 OCR，而是：
+
+Playwright
+     ↓
+截图 + 读取网页 DOM
+     ↓
+直接拿数值
+例如：
+Python
+value = page.locator("#latency").inner_text()
+这样 100%准确。
+九、建议你优先确认一件事（很关键）
+你的截图是来自哪种系统：
+1️⃣ Grafana
+2️⃣ AWS Console
+3️⃣ Kibana
+4️⃣ 自己的网页 dashboard
+5️⃣ log 页面
+不同系统 获取方式差别很大。
+如果你愿意，你可以发一张 你实际的截图（比如 dashboard 或测试结果页面）。
+我可以直接告诉你：
+是否需要 OCR
+或者可以直接抓数据
+甚至给你完整自动化脚本。
