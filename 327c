@@ -1,0 +1,158 @@
+可以，用 GitLab API 很容易实现：
+流程一般是：
+
+触发 pipeline
+     │
+     ▼
+传入 variables
+     │
+     ▼
+获取 pipeline id
+     │
+     ▼
+查询 pipeline / environment
+     │
+     ▼
+得到 URL
+下面给你一个 完整 Python 示例（最常见写法）。
+1 触发 GitLab Pipeline（带变量）
+GitLab API：
+
+POST /projects/:id/pipeline
+Python 示例：
+Python
+import requests
+
+GITLAB_URL = "https://gitlab.com"
+PROJECT_ID = "123456"
+TOKEN = "your_token"
+
+url = f"{GITLAB_URL}/api/v4/projects/{PROJECT_ID}/pipeline"
+
+payload = {
+    "ref": "main",
+    "variables": [
+        {"key": "TEST_DURATION", "value": "5"},
+        {"key": "ENV", "value": "staging"}
+    ]
+}
+
+headers = {
+    "PRIVATE-TOKEN": TOKEN
+}
+
+response = requests.post(url, headers=headers, json=payload)
+
+data = response.json()
+
+pipeline_id = data["id"]
+
+print("Pipeline ID:", pipeline_id)
+print("Pipeline URL:", data["web_url"])
+输出：
+
+Pipeline ID: 456789
+Pipeline URL: https://gitlab.com/xxx/project/-/pipelines/456789
+这个就是 pipeline 页面地址。
+2 等待 pipeline 运行完成
+通常要轮询：
+Python
+import time
+
+status_url = f"{GITLAB_URL}/api/v4/projects/{PROJECT_ID}/pipelines/{pipeline_id}"
+
+while True:
+
+    res = requests.get(status_url, headers=headers)
+
+    status = res.json()["status"]
+
+    print("status:", status)
+
+    if status in ["success", "failed", "canceled"]:
+        break
+
+    time.sleep(10)
+3 获取 job 列表
+有些 URL 在 job 里：
+
+GET /projects/:id/pipelines/:pipeline_id/jobs
+代码：
+Python
+jobs_url = f"{GITLAB_URL}/api/v4/projects/{PROJECT_ID}/pipelines/{pipeline_id}/jobs"
+
+jobs = requests.get(jobs_url, headers=headers).json()
+
+for job in jobs:
+    print(job["name"], job["web_url"])
+输出：
+
+deploy https://gitlab.com/.../jobs/111
+test https://gitlab.com/.../jobs/112
+4 获取 job log（如果 URL 在 log 里）
+Python
+job_id = jobs[0]["id"]
+
+log_url = f"{GITLAB_URL}/api/v4/projects/{PROJECT_ID}/jobs/{job_id}/trace"
+
+log = requests.get(log_url, headers=headers).text
+
+print(log)
+然后解析：
+Python
+import re
+
+url = re.search(r'https://[^\s]+', log)
+
+if url:
+    print("Found URL:", url.group())
+5 如果 pipeline 使用 environment（推荐）
+很多 CI/CD 会生成 environment URL：
+API：
+
+GET /projects/:id/environments
+代码：
+Python
+env_url = f"{GITLAB_URL}/api/v4/projects/{PROJECT_ID}/environments"
+
+envs = requests.get(env_url, headers=headers).json()
+
+for env in envs:
+    print(env["name"], env["external_url"])
+输出：
+
+review/test-123 https://test-env-123.example.com
+最终完整流程
+Python
+trigger pipeline
+      │
+      ▼
+获取 pipeline id
+      │
+      ▼
+等待 pipeline 完成
+      │
+      ▼
+获取 job / environment URL
+      │
+      ▼
+截图 / 解析数据
+      │
+      ▼
+生成测试报告
+小技巧（强烈推荐）
+让 pipeline 主动输出 URL：
+例如：
+
+echo "REPORT_URL=https://test-env-123.example.com"
+脚本直接解析：
+
+REPORT_URL=
+这样最稳定。
+如果你愿意，我可以给你一个 更高级的完整脚本（约150行），实现：
+调用 GitLab pipeline
+传入 variables
+等待 pipeline 完成
+自动获取 URL
+自动截图
+这是很多团队做 自动测试报告系统 的核心代码。
