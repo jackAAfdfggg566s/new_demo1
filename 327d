@@ -1,0 +1,184 @@
+可以实现。整体流程其实就是 3步：
+1️⃣ 调用 GitLab Pipeline API
+2️⃣ 传入 variables
+3️⃣ 获取 pipeline URL 或 job URL
+我给你一个 最实用的 Python 例子（很多自动化测试系统都这么做）。
+一、调用 GitLab Pipeline 并传入 variables
+GitLab API：
+
+POST /projects/:id/pipeline
+Python 示例：
+Python
+import requests
+
+gitlab_url = "https://gitlab.com/api/v4"
+project_id = "123456"
+token = "YOUR_ACCESS_TOKEN"
+
+url = f"{gitlab_url}/projects/{project_id}/pipeline"
+
+data = {
+    "ref": "main",
+    "variables": [
+        {"key": "TEST_DURATION", "value": "5"},
+        {"key": "TEST_TYPE", "value": "load"}
+    ]
+}
+
+headers = {
+    "PRIVATE-TOKEN": token
+}
+
+response = requests.post(url, headers=headers, json=data)
+
+print(response.json())
+返回结果类似：
+JSON
+{
+ "id": 789123,
+ "iid": 45,
+ "web_url": "https://gitlab.com/xxx/project/-/pipelines/789123",
+ "status": "created"
+}
+你要的 pipeline地址就是
+
+web_url
+二、获取 Pipeline URL
+代码：
+Python
+pipeline = response.json()
+
+pipeline_id = pipeline["id"]
+pipeline_url = pipeline["web_url"]
+
+print("Pipeline ID:", pipeline_id)
+print("Pipeline URL:", pipeline_url)
+输出：
+
+Pipeline ID: 789123
+Pipeline URL: https://gitlab.com/xxx/project/-/pipelines/789123
+这个 URL 就可以：
+打开 pipeline
+找 job
+截图
+写入 test report
+三、获取 Job URL（很多人需要）
+如果你是要截图 job 页面：
+
+GET /projects/:id/pipelines/:pipeline_id/jobs
+代码：
+Python
+job_url = f"{gitlab_url}/projects/{project_id}/pipelines/{pipeline_id}/jobs"
+
+jobs = requests.get(job_url, headers=headers).json()
+
+for job in jobs:
+    print(job["name"], job["web_url"])
+返回：
+
+load-test https://gitlab.com/.../jobs/1111
+stress-test https://gitlab.com/.../jobs/2222
+这些 URL 就可以：
+Selenium截图
+Playwright截图
+插入 Word 报告
+四、完整自动化架构（推荐）
+自动化测试报告系统一般这样做：
+
+Python Script
+      │
+      │ 调用 API
+      ▼
+GitLab Pipeline
+      │
+      │ 返回 pipeline URL
+      ▼
+获取 Job URL
+      │
+      ▼
+Playwright / Selenium
+截图
+      │
+      ▼
+写入 Word 模板
+(docxtpl)
+      │
+      ▼
+自动生成 Test Report
+最后生成：
+
+Test_Report_2026-03-27.docx
+里面有：
+pipeline URL
+job截图
+metrics
+结果分析
+五、GitLab CI 变量示例
+你的 .gitlab-ci.yml：
+YAML
+load-test:
+  script:
+    - echo "duration=$TEST_DURATION"
+    - echo "type=$TEST_TYPE"
+运行 pipeline 时传入：
+
+TEST_DURATION=5
+TEST_TYPE=load
+六、如果你要做“聊天触发测试”
+你之前说的：
+聊天框输入：先运行5分钟负载测试
+可以变成：
+
+AI agent
+   ↓
+Python
+   ↓
+GitLab API
+   ↓
+Pipeline
+AI只需要解析一句话：
+
+run load test 5 minutes
+转成 variables：
+
+TEST_TYPE=load
+TEST_DURATION=5
+七、给你一个完整脚本（推荐直接用）
+Python
+import requests
+
+GITLAB_URL = "https://gitlab.com/api/v4"
+PROJECT_ID = "123456"
+TOKEN = "xxxx"
+
+def run_pipeline(duration):
+
+    url = f"{GITLAB_URL}/projects/{PROJECT_ID}/pipeline"
+
+    payload = {
+        "ref": "main",
+        "variables": [
+            {"key": "TEST_DURATION", "value": str(duration)}
+        ]
+    }
+
+    headers = {"PRIVATE-TOKEN": TOKEN}
+
+    r = requests.post(url, headers=headers, json=payload)
+
+    pipeline = r.json()
+
+    print("Pipeline URL:", pipeline["web_url"])
+
+    return pipeline["id"]
+
+run_pipeline(5)
+💡 我可以再给你一个更完整的方案：
+AI自动测试系统（很多公司内部在做）
+功能：
+1️⃣ 聊天输入测试
+2️⃣ 自动触发 GitLab pipeline
+3️⃣ 自动截图 Dashboard
+4️⃣ 自动生成 Word Test Report
+我可以直接给你一套 完整架构 + 代码（300行左右）。
+基本你一晚上就能搭出来。
