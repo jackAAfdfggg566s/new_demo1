@@ -1,0 +1,229 @@
+可以实现，而且现在很多团队都这么做：用脚本 + Word 模板自动生成测试报告。你的需求本质上是 3 个步骤：
+1️⃣ 准备 Word 模板（占位符）
+2️⃣ 调用不同 pipeline 获取结果并截图
+3️⃣ 自动替换模板里的文字 + 插入截图生成报告
+我给你一个比较实用的实现架构（很适合你现在 GitLab pipeline + 脚本的环境）。
+一、整体架构（推荐）
+
+GitLab Pipeline
+      │
+      │ 调用
+      ▼
+Python Report Script
+      │
+      ├── 调用 Pipeline API
+      ├── 获取结果数据
+      ├── 自动截图
+      │
+      ▼
+Word Template (.docx)
+      │
+      ├── 替换变量
+      ├── 插入截图
+      ▼
+Final Test Report.docx
+最终效果：
+
+test-report.docx
+自动生成。
+二、Word 模板写法（关键）
+你的 Word 模板里放 变量占位符
+例如：
+
+Test Report
+
+Test Name: {{test_name}}
+
+Test Duration: {{duration}}
+
+Result: {{result}}
+
+Screenshot:
+
+{{screenshot_tls}}
+三、Python 自动替换模板
+最常用库：
+
+pip install docxtpl
+pip install python-docx
+示例代码：
+Python
+from docxtpl import DocxTemplate, InlineImage
+from docx.shared import Cm
+
+doc = DocxTemplate("template.docx")
+
+context = {
+    "test_name": "TLS connectivity test",
+    "duration": "5 minutes",
+    "result": "PASS",
+    "screenshot_tls": InlineImage(doc, "tls.png", width=Cm(12))
+}
+
+doc.render(context)
+doc.save("final_report.docx")
+生成结果：
+Word 自动变成：
+
+Test Name: TLS connectivity test
+Test Duration: 5 minutes
+Result: PASS
+[截图]
+四、自动截图（非常重要）
+如果你的 pipeline 有网页或 dashboard，可以自动截图。
+常用方法：
+方法1 selenium
+
+pip install selenium
+示例：
+Python
+from selenium import webdriver
+
+driver = webdriver.Chrome()
+
+driver.get("https://dashboard-url")
+
+driver.save_screenshot("dashboard.png")
+
+driver.quit()
+方法2 playwright（更推荐）
+
+pip install playwright
+playwright install
+示例：
+Python
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page()
+
+    page.goto("https://dashboard-url")
+
+    page.screenshot(path="dashboard.png")
+
+    browser.close()
+五、调用 GitLab pipeline 获取数据
+可以直接调用 API：
+
+curl https://gitlab.com/api/v4/projects/:id/pipelines
+Python 例子：
+Python
+import requests
+
+url = "https://gitlab.com/api/v4/projects/123/pipelines"
+
+headers = {"PRIVATE-TOKEN": "token"}
+
+res = requests.get(url, headers=headers)
+
+data = res.json()
+然后填入 Word：
+
+duration
+status
+job logs
+六、自动生成报告 Pipeline
+GitLab pipeline：
+
+run tests
+     │
+     ▼
+collect results
+     │
+     ▼
+python generate_report.py
+     │
+     ▼
+upload artifact
+.gitlab-ci.yml
+YAML
+generate_report:
+  stage: report
+  script:
+    - pip install docxtpl playwright
+    - python generate_report.py
+  artifacts:
+    paths:
+      - report.docx
+七、最终效果
+你只需要在聊天或者 pipeline 触发：
+
+run failover test
+自动流程：
+
+运行测试
+↓
+获取结果
+↓
+截图 dashboard
+↓
+自动生成 Word 报告
+↓
+上传 artifact
+整个过程 完全自动化。
+八、进阶（你可能最需要）
+结合 AI 自动写分析：
+让 AI 自动生成：
+
+Observation
+Analysis
+Conclusion
+例如：
+
+Observation:
+TLS handshake completed successfully.
+
+Analysis:
+OpenSSL command output matched browser TLS handshake parameters.
+
+Conclusion:
+TLS connectivity verified.
+自动写进 Word。
+九、和你现在的环境结合（非常适合）
+你现在已经有：
+GitLab pipeline
+shell script
+AWS / EKS failover test
+TLS test
+其实只需要加一层：
+
+AI Agent
+     │
+     ▼
+调用 pipeline
+     │
+     ▼
+自动截图
+     │
+     ▼
+自动生成 Word Report
+基本就是 自动测试报告系统。
+十、我可以给你一个完整方案（非常适合你的）
+可以帮你做一个：
+AI 自动生成测试报告系统
+功能：
+聊天触发测试
+自动运行 pipeline
+自动截图
+自动生成 Word
+自动写 observation analysis
+架构大概：
+
+ChatGPT / Slack
+       │
+       ▼
+Python AI Agent
+       │
+       ├── trigger pipeline
+       ├── collect logs
+       ├── take screenshots
+       └── generate report
+代码大概 200 行就能实现。
+如果你愿意，我可以直接给你一套 完整可运行 demo，包括：
+✔ Word 模板
+✔ Python 自动生成报告脚本
+✔ GitLab pipeline
+✔ 自动截图
+基本复制就能用。
+（这个方案很多公司测试团队在用）
