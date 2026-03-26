@@ -1,0 +1,212 @@
+你这个需求其实是 CI 自动生成测试报告 + 自动插入截图 + 多 pipeline 提供证据。在你现在用的 GitLab pipeline 体系里，一般有 3 种成熟做法，从简单到高级：
+方案一：最简单（Markdown 自动报告）
+适合：快速实现
+思路
+准备一个 报告模板
+pipeline 运行测试
+自动截图
+把截图 + 结果填进模板
+生成 .md 或 .html 报告
+示例模板 report_template.md
+Markdown
+# Test Report
+
+## Test Name
+TLS Connectivity Test
+
+## Observation
+{{observation}}
+
+## Result
+{{result}}
+
+## Evidence
+
+### Command Output
+{{command_output}}
+
+### Screenshot
+![evidence]({{screenshot}})
+pipeline脚本
+Bash
+OBS="TLS handshake success"
+RESULT="PASS"
+
+SCREENSHOT="tls.png"
+
+sed -e "s/{{observation}}/$OBS/" \
+    -e "s/{{result}}/$RESULT/" \
+    -e "s/{{screenshot}}/$SCREENSHOT/" \
+    report_template.md > report.md
+然后在 pipeline artifact 输出：
+YAML
+artifacts:
+  paths:
+    - report.md
+    - tls.png
+优点
+简单
+不需要新工具
+GitLab直接查看
+方案二：自动截图 + HTML报告（推荐）
+适合：需要截图、图表
+可以用：
+Allure Report
+pytest
+Playwright
+例子：
+自动截图
+Python
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page()
+    page.goto("https://example.com")
+    page.screenshot(path="evidence.png")
+Allure 自动报告
+生成报告
+Bash
+allure generate results -o report
+pipeline artifact
+YAML
+artifacts:
+  paths:
+    - report
+报告会自动有：
+test result
+screenshot
+step logs
+timeline
+效果类似：
+
+Test Report
+ ├─ Test Case
+ │   ├─ Step1 PASS
+ │   ├─ Step2 PASS
+ │   └─ Screenshot
+方案三：AI 自动写报告（最接近你之前说的）
+适合：自动分析日志 + 自动生成 report
+思路：
+
+pipeline logs
+     ↓
+截图
+     ↓
+AI分析
+     ↓
+生成报告
+例如 Python 脚本：
+Python
+import openai
+
+log = open("test.log").read()
+
+prompt = f"""
+Generate a test report.
+
+Log:
+{log}
+
+Include:
+- observation
+- analysis
+- result
+"""
+
+resp = openai.ChatCompletion.create(
+    model="gpt-4",
+    messages=[{"role":"user","content":prompt}]
+)
+
+print(resp["choices"][0]["message"]["content"])
+最后生成
+
+test_report.md
+方案四：多个 pipeline 贡献截图（你说的重点）
+结构可以这样：
+
+pipeline A
+   └ screenshot1.png
+
+pipeline B
+   └ screenshot2.png
+
+pipeline C
+   └ screenshot3.png
+
+final-report pipeline
+   └ 汇总生成 report
+GitLab 可以用
+
+needs:
+dependencies:
+artifacts
+例子
+YAML
+report:
+  stage: report
+  needs:
+    - pipelineA
+    - pipelineB
+脚本：
+Bash
+cp artifactsA/*.png report/
+cp artifactsB/*.png report/
+然后生成报告。
+一个比较完整的架构（推荐）
+
+GitLab Pipeline
+      │
+      │
+Test Job
+ ├─ run test
+ ├─ save logs
+ ├─ take screenshot
+ └─ artifacts
+      │
+      ▼
+Report Job
+ ├─ collect artifacts
+ ├─ fill template
+ ├─ AI summary
+ └─ generate HTML report
+最终输出：
+
+report.html
+ ├ Observation
+ ├ Analysis
+ ├ Result
+ └ Evidence
+     ├ screenshot1
+     ├ screenshot2
+💡 结合你之前说的场景（TLS、EKS failover、SQL test）
+最推荐你的是：
+GitLab + Python + Markdown report
+优点：
+pipeline容易接入
+自动截图
+自动总结
+可版本化
+如果你愿意，我可以给你一套 完整可用的方案（大概20行代码）：
+GitLab pipeline 自动生成这样的测试报告：
+
+Test: TLS connectivity
+
+Observation
+TLS handshake successful.
+
+Evidence
+[screenshot]
+
+Analysis
+The openssl output matches browser TLS handshake.
+
+Result
+PASS
+甚至还能做到：
+在 GitLab Chat 里输入
+
+run tls test
+自动运行 pipeline 并生成报告。
+我可以把 完整架构图 + demo pipeline 给你。
