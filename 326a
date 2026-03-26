@@ -1,0 +1,160 @@
+要实现 “自动运行 pipeline → 收集结果 → 截图 → 自动生成测试报告”，一般有 3 种成熟方案，从简单到高级。我结合你现在的环境（你在用 GitLab pipeline + 脚本自动测试）给你一个比较实用的架构。
+一、推荐架构（最实用）
+流程如下：
+
+触发 pipeline
+      ↓
+运行测试脚本
+      ↓
+自动截图 / 保存日志
+      ↓
+AI / 脚本整理结果
+      ↓
+生成报告 (HTML / PDF / Markdown)
+      ↓
+上传 GitLab artifact
+二、关键技术组件
+1 自动运行 pipeline
+可以通过：
+定时运行
+API触发
+ChatOps触发
+例如 GitLab API：
+
+POST /projects/:id/trigger/pipeline
+2 自动截图
+如果测试是网页或UI，可以用：
+浏览器自动截图
+工具：
+Playwright
+Selenium
+Python示例：
+Python
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page()
+    page.goto("https://example.com")
+    page.screenshot(path="result.png")
+    browser.close()
+pipeline运行后会生成截图。
+3 自动生成报告
+方式1（最简单）
+生成 Markdown 报告
+
+# Test Report
+
+## Test Case 1
+Status: PASS
+
+![screenshot](screenshots/test1.png)
+
+## Test Case 2
+Status: FAIL
+然后转 PDF / HTML。
+工具：
+Allure Report
+pytest-html
+4 pipeline中保存报告
+在 GitLab pipeline
+YAML
+test:
+  script:
+    - python run_test.py
+    - python generate_report.py
+  artifacts:
+    paths:
+      - report/
+      - screenshots/
+pipeline结束后：
+GitLab 页面就能直接下载报告。
+三、AI 自动生成分析报告（高级）
+你之前问过 AI agent 调 pipeline，这里可以这样做：
+
+AI Agent
+   ↓
+触发 pipeline
+   ↓
+读取日志 + 截图
+   ↓
+生成分析报告
+例如 Python：
+
+pipeline logs
+screenshots
+metrics
+发给 AI：
+
+Please generate a test report based on:
+- logs
+- screenshots
+- expected result
+自动生成：
+
+Observation
+Analysis
+Conclusion
+四、完整自动化架构（推荐）
+
+GitLab pipeline
+     │
+     ├─ run test script
+     │
+     ├─ capture screenshots
+     │
+     ├─ save logs
+     │
+     ├─ generate report (Python)
+     │
+     └─ upload artifacts
+报告结构：
+
+report/
+ ├─ report.html
+ ├─ screenshots/
+ │    ├─ step1.png
+ │    └─ step2.png
+ └─ logs/
+五、如果想做到“聊天触发 + 自动报告”
+可以做成这样：
+
+ChatGPT / Slack
+     ↓
+AI agent
+     ↓
+trigger pipeline
+     ↓
+pipeline run
+     ↓
+generate report
+     ↓
+AI总结
+例如你在聊天框说：
+
+run kafka disconnect test for 5 minutes
+AI：
+1 触发 pipeline
+2 运行测试
+3 自动生成报告
+六、最简单可落地方案（我建议你先做这个）
+只需要 3个脚本
+
+run_test.sh
+capture_screenshot.py
+generate_report.py
+pipeline:
+
+test
+  ↓
+screenshot
+  ↓
+generate report
+💡 如果你愿意，我可以直接给你一个完整模板：
+“GitLab pipeline + 自动截图 + 自动生成 test report” 的完整示例
+包含：
+pipeline yaml
+python截图脚本
+自动生成报告脚本
+AI分析模板
+你基本 复制就能跑。
