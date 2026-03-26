@@ -1,0 +1,149 @@
+可以解决，你这种情况其实很常见：URL 是 pipeline 运行后动态生成的。一般有 3 种比较成熟的方法，不一定要提前知道地址。
+方法一：从 Pipeline 输出里获取 URL（最常见）
+很多 pipeline 在运行时都会 打印访问地址，例如：
+
+Test environment ready
+Dashboard URL: https://test-env-123.example.com
+你的脚本可以 解析 pipeline log，提取 URL。
+示例
+获取 job log：
+Bash
+curl --header "PRIVATE-TOKEN: $TOKEN" \
+"https://gitlab.com/api/v4/projects/<project_id>/jobs/<job_id>/trace"
+然后解析：
+Python
+import re
+
+log = open("job.log").read()
+
+url = re.search(r'https://[^\s]+', log).group()
+
+print(url)
+得到：
+
+https://test-env-123.example.com
+然后截图：
+Python
+page.goto(url)
+page.screenshot(path="result.png")
+流程：
+
+run pipeline
+   ↓
+获取 job log
+   ↓
+解析 URL
+   ↓
+访问网页截图
+这是 最常用方式。
+方法二：直接从 GitLab API 获取 Environment URL（更标准）
+如果 pipeline 使用 GitLab environment（很多 CI/CD 都有），可以直接查 API。
+获取 environments：
+
+GET /projects/:id/environments
+示例：
+Bash
+curl --header "PRIVATE-TOKEN: $TOKEN" \
+"https://gitlab.com/api/v4/projects/123/environments"
+返回：
+JSON
+[
+  {
+    "name": "review/test-123",
+    "external_url": "https://test-env-123.example.com"
+  }
+]
+脚本直接读取：
+Python
+url = data[0]["external_url"]
+然后截图。
+优点：
+不用解析 log
+更稳定
+方法三：通过 Pipeline Artifact 获取地址
+有些 pipeline 会生成一个文件，例如：
+
+env.json
+内容：
+JSON
+{
+  "url": "https://test-env-123.example.com"
+}
+你可以直接下载 artifact：
+Bash
+curl --header "PRIVATE-TOKEN: $TOKEN" \
+"https://gitlab.com/api/v4/projects/<id>/jobs/<job_id>/artifacts/env.json"
+然后：
+Python
+import json
+
+data = json.load(open("env.json"))
+url = data["url"]
+方法四（很多测试团队用）：让 pipeline 主动输出 URL
+你可以让 pipeline 主动输出机器可读的结果。
+例如：
+pipeline 最后一步：
+Bash
+echo "REPORT_URL=https://test-env-123.example.com"
+脚本解析：
+Python
+url = re.search(r'REPORT_URL=(.*)', log).group(1)
+最推荐的架构
+
+trigger pipeline
+        │
+        ▼
+等待 pipeline 完成
+        │
+        ▼
+获取 job log / artifact
+        │
+        ▼
+提取 URL
+        │
+        ▼
+Playwright 自动截图
+        │
+        ▼
+OCR / 解析数据
+        │
+        ▼
+生成 Word 报告
+实际公司里的做法（很关键）
+很多团队不会 OCR，而是 直接抓网页数据：
+Python
+value = page.locator("#latency").inner_text()
+这样：
+不需要 OCR
+更准确
+更稳定
+其实你现在已经有了 80% 条件
+因为你已经有：
+GitLab pipeline
+自动测试脚本
+Dashboard / 结果页面
+只差一个 Python automation agent：
+大概 200-300 行代码就能实现：
+
+自动运行测试
+自动截图
+自动收集数据
+自动生成报告
+如果你愿意，我可以给你一个 完整方案（很多公司测试团队正在用）：
+AI 自动生成测试报告系统
+可以做到：
+你只需要在聊天框说：
+
+run eks failover test and generate report
+系统自动：
+
+运行 pipeline
+↓
+获取结果 URL
+↓
+截图 dashboard
+↓
+解析数据
+↓
+生成 Word 测试报告
+整个过程 全自动。
