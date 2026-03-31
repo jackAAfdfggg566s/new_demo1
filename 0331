@@ -1,0 +1,104 @@
+从你截图里可以看到 其实不是一个错误，而是 3 个不同问题叠在一起。关键是这一行命令：
+Bash
+sshpass -p 'xxx' ssh ... \
+"PGPASSWORD='xxx' psql -h $RDS_ENDPOINT -U bancsreadonlyuser -p 5432 -d postgres -t -A -F"," \
+-c \"select businessdt from bancsggopr.syp_glbldata\" | xargs
+日志里的几个报错分别代表不同原因：
+1️⃣ 第一个报错
+
+psql: warning: extra command-line argument "$" ignored
+这个说明 shell 解析参数出问题了。
+最常见原因：
+repo B 的 pipeline shell 不一样
+quoting 被解析不同
+例如：
+repo A runner 可能是
+
+bash
+repo B runner 可能是
+
+sh
+sh 对 \" 和 $ 解析不同。
+解决
+把 SQL 直接用单引号包住：
+Bash
+-c "select businessdt from bancsggopr.syp_glbldata"
+不要再转义。
+2️⃣ 第二个报错
+
+could not initiate GSSAPI security context
+Server not found in Kerberos database
+这是 Kerberos / GSSAPI 认证尝试。
+通常是 PGSSLMODE / GSSENCMODE 环境变量导致。
+你上面有：
+
+PGGSSENCMODE=disable
+PGSSLMODE=require
+但注意：
+你只是写了变量
+没有 export
+所以 ssh 里的 psql 未必生效。
+建议写：
+Bash
+export PGGSSENCMODE=disable
+export PGSSLMODE=require
+3️⃣ 最关键的错误
+
+FATAL: password authentication failed for user "bancsreadonlyuser"
+说明：
+repo B 实际连接 RDS 失败
+可能原因：
+① runner IP 不一样
+repo A runner IP
+repo B runner IP
+不同。
+RDS security group 可能只允许：
+
+repo A runner
+你日志里看到：
+
+no pg_hba.conf entry for host "10.74.15.48"
+说明数据库拒绝了这个 IP。
+4️⃣ 为什么 repo A 正常 repo B 不正常
+最可能三个原因：
+原因
+概率
+runner 不一样
+⭐⭐⭐⭐⭐
+ssh host 不一样
+⭐⭐⭐
+shell 不一样
+⭐⭐⭐
+很多公司：
+
+repo A -> runner group A
+repo B -> runner group B
+IP 完全不同。
+5️⃣ 你可以立刻验证
+在 repo B pipeline 加一行：
+Bash
+curl ifconfig.me
+或者
+Bash
+hostname -i
+看看 IP。
+然后和 repo A 对比。
+6️⃣ 另外你的命令有点危险
+建议改成更稳定版本：
+Bash
+result=$(sshpass -p 'xxx' ssh -o StrictHostKeyChecking=no svc_chessr_nft@$MI_HOST_IP \
+"export PGPASSWORD='xxx'; \
+psql -h $RDS_ENDPOINT -U bancsreadonlyuser -p 5432 -d postgres \
+-c \"select businessdt from bancsggopr.syp_glbldata\" -t -A" | xargs)
+避免 quoting 解析问题。
+⭐ 我其实看出一个更可疑的点
+你这里：
+
+-F","
+但日志里出现：
+
+extra command-line argument "$"
+说明 shell 把参数拆坏了。
+repo B runner shell 和 repo A 不一样的概率非常高。
+✅ 如果你愿意，你可以把 repo A 和 repo B pipeline yaml 发出来。
+我可以帮你 定位 100% 根因（基本 30 秒能看出来）。
