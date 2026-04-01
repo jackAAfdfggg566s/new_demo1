@@ -1,0 +1,168 @@
+下面给你一套 完整可用的实验思路 + 示例模板，用于对 Amazon RDS Global Database 做故障演练，借助 AWS Fault Injection Simulator 模拟一段时间的数据库不可达或区域故障。这个方案比较接近生产团队常用的 Chaos Engineering 流程。
+一、实验目标（示例）
+常见测试目标例如：
+应用连接 RDS Global DB primary 时
+模拟 数据库网络不可达 10 分钟
+验证应用是否：
+自动重试
+自动切换
+报警是否触发
+二、总体架构思路
+
+Application
+    │
+    │
+    ▼
+Primary RDS instance
+    │
+    │ Global replication
+    ▼
+Secondary Region cluster
+FIS 做的事情：
+
+FIS
+ │
+ ▼
+Block RDS ENI network
+(10 minutes)
+效果：
+
+App → connection timeout
+DB → still running
+Replication → 正常
+三、准备步骤
+1 获取 RDS ENI
+RDS 网络阻断是针对 ENI。
+Bash
+aws rds describe-db-instances \
+  --db-instance-identifier mydb \
+  --query 'DBInstances[0].DBSubnetGroup.Subnets[*].SubnetIdentifier'
+获取 ENI：
+Bash
+aws ec2 describe-network-interfaces \
+  --filters Name=description,Values="RDSNetworkInterface*" \
+  --query 'NetworkInterfaces[*].NetworkInterfaceId'
+记录：
+
+eni-xxxx
+2 创建 FIS target
+target 类型：
+
+aws:ec2:network-interface
+例如：
+
+resourceType: aws:ec2:network-interface
+resourceArns:
+ - arn:aws:ec2:region:account:network-interface/eni-xxxx
+四、FIS 实验模板（示例 JSON）
+JSON
+{
+  "description": "Block RDS connectivity for 10 minutes",
+  "targets": {
+    "rds-eni": {
+      "resourceType": "aws:ec2:network-interface",
+      "resourceArns": [
+        "arn:aws:ec2:ap-southeast-2:123456789012:network-interface/eni-xxxx"
+      ]
+    }
+  },
+  "actions": {
+    "block-db": {
+      "actionId": "aws:network:disrupt-connectivity",
+      "parameters": {
+        "duration": "PT10M"
+      },
+      "targets": {
+        "NetworkInterfaces": "rds-eni"
+      }
+    }
+  },
+  "stopConditions": [
+    {
+      "source": "none"
+    }
+  ]
+}
+运行后：
+
+10分钟内
+App → DB 连接失败
+DB → 正常
+五、如果想测试 Global DB failover
+你也可以做 跨区域 DR 测试。
+命令：
+Bash
+aws rds failover-global-cluster \
+  --global-cluster-identifier my-global-db
+效果：
+
+Region A primary
+      ↓
+Region B promoted
+应用应该：
+
+自动切换 endpoint
+六、企业常见 Chaos Test 组合
+生产环境通常做 三种实验：
+1 DB 网络断开
+
+FIS network disruption
+测试：
+
+retry
+connection pool
+timeout
+2 DB reboot
+
+aws:rds:reboot-db-instances
+测试：
+
+短时间 outage
+3 Region failover
+
+failover-global-cluster
+测试：
+
+跨 region DR
+七、结合你之前提到的 EKS
+如果你的应用在 Amazon Elastic Kubernetes Service：
+建议测试：
+
+EKS pod
+   │
+   │  DB blocked
+   ▼
+RDS global DB
+观察：
+pod retry
+connection pool
+circuit breaker
+八、生产建议
+真实环境建议：
+
+duration = 5m
+不要太长。
+同时加：
+
+CloudWatch alarm stop condition
+如果业务异常自动停止实验。
+九、非常重要的一点
+RDS Global DB 不能真正 stop。
+AWS 设计是：
+
+always running
+所以 Chaos Test 都是：
+
+network
+failover
+reboot
+✅ 总结
+模拟 RDS Global DB 停止最接近的方法：
+1️⃣ FIS 网络阻断（推荐）
+2️⃣ RDS reboot
+3️⃣ Global DB failover
+如果你愿意，我可以再给你一套 自动化脚本（AWS CLI + Bash），可以：
+自动找到 RDS ENI
+自动生成 FIS template
+自动启动实验
+整个过程 30 秒创建 Chaos Test，很多平台团队都这么做。
