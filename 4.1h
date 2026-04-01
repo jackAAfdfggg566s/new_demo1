@@ -1,0 +1,136 @@
+在 不能联网、只能访问 Nexus 的环境里安装 Hugging Face Transformers，确实会遇到很多依赖（torch、numpy、tokenizers 等）。
+一个个试版本是最笨的方法，其实有更好的办法。下面给你几个企业里常用的做法，从最好到一般。
+方法一（最推荐）：用 pip download 一次性下载所有依赖
+在 一台能上网的机器上：
+Bash
+pip download transformers==5.3.0 -d wheels
+它会自动下载：
+
+transformers
+tokenizers
+huggingface-hub
+numpy
+requests
+safetensors
+tqdm
+packaging
+pyyaml
+filelock
+regex
+全部 .whl 会在 wheels/ 目录。
+然后：
+1️⃣ 把 wheels 上传到 Sonatype Nexus Repository
+2️⃣ 在公司机器安装：
+Bash
+pip install --no-index --find-links=./wheels transformers
+或者指向 Nexus：
+Bash
+pip install transformers --index-url http://nexus/repository/pypi/simple
+优点：
+自动解决依赖
+不需要手动试版本
+方法二：生成 requirements（企业常用）
+在有网机器：
+Bash
+pip install transformers==5.3.0
+然后：
+Bash
+pip freeze > requirements.txt
+得到：
+
+transformers==5.3.0
+huggingface-hub==0.x.x
+tokenizers==0.x.x
+numpy==1.x.x
+...
+再下载：
+Bash
+pip download -r requirements.txt -d wheels
+上传到 Nexus。
+安装：
+Bash
+pip install -r requirements.txt
+方法三：用 pip-tools 自动锁版本（更专业）
+安装：
+Bash
+pip install pip-tools
+创建：
+
+requirements.in
+内容：
+
+transformers==5.3.0
+生成锁版本：
+Bash
+pip-compile
+生成：
+
+requirements.txt
+然后：
+Bash
+pip download -r requirements.txt
+优点：
+自动锁定依赖版本
+企业 CI 常用
+方法四：让 Nexus 自动代理 PyPI（最省事）
+如果公司允许，可以让 Nexus 配置：
+
+proxy repository -> pypi.org
+这样 pip 会自动下载依赖。
+安装：
+Bash
+pip install transformers \
+  --index-url http://nexus/repository/pypi/simple
+Nexus 会缓存所有依赖。
+实际企业推荐流程
+最稳定的流程是：
+
+有网机器
+   ↓
+pip download transformers
+   ↓
+上传 Nexus
+   ↓
+内网 pip install
+Transformers 主要依赖（给你参考）
+常见依赖：
+
+transformers
+tokenizers
+huggingface-hub
+numpy
+requests
+tqdm
+safetensors
+regex
+pyyaml
+packaging
+filelock
+如果有 torch 还会多：
+
+torch
+sympy
+networkx
+jinja2
+给你一个非常实用的小技巧
+如果你想 一次打包整个 AI 环境（很多 DevOps 团队这么干）：
+Bash
+pip download \
+  transformers \
+  torch \
+  langchain \
+  -d ai_wheels
+然后把整个 ai_wheels 上传 Nexus。
+以后直接：
+Bash
+pip install --no-index --find-links ai_wheels transformers
+✅ 总结
+不要一个个试版本，用：
+推荐顺序
+1️⃣ pip download transformers（最简单）
+2️⃣ pip freeze + pip download
+3️⃣ pip-compile 锁版本
+4️⃣ Nexus proxy PyPI
+💡如果你愿意，我可以给你一条 专门适合内网环境的命令：
+一次性下载 Transformers + LangChain + Agent 所有依赖（约40个包），
+上传 Nexus 后 100%能在离线环境跑 AI Agent。
