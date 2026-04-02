@@ -1,0 +1,104 @@
+下面给你一个 完整的 sh 脚本思路：
+功能：
+根据 **Amazon RDS Proxy name 获取所有 subnet
+查询每个 subnet 的 AZ
+找出 ap-southeast-2a 的 subnet
+把这些 subnet 写入 AWS Fault Injection Service JSON 里的 target
+示例脚本
+Bash
+#!/bin/bash
+set -euo pipefail
+
+PROXY_NAME="your-proxy-name"
+TARGET_AZ="ap-southeast-2a"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+echo "Getting subnets from RDS Proxy..."
+
+subnets=$(aws rds describe-db-proxies \
+  --db-proxy-name "$PROXY_NAME" \
+  --query "DBProxies[0].VpcSubnetIds" \
+  --output text)
+
+echo "All subnets:"
+echo "$subnets"
+
+target_subnets=()
+
+for subnet in $subnets
+do
+    az=$(aws ec2 describe-subnets \
+      --subnet-ids "$subnet" \
+      --query "Subnets[0].AvailabilityZone" \
+      --output text)
+
+    echo "$subnet -> $az"
+
+    if [[ "$az" == "$TARGET_AZ" ]]; then
+        target_subnets+=("$subnet")
+    fi
+done
+
+echo "Subnets in $TARGET_AZ:"
+echo "${target_subnets[@]}"
+
+# 生成 FIS target JSON
+json_subnets=""
+
+for subnet in "${target_subnets[@]}"
+do
+    arn="arn:aws:ec2:*:${ACCOUNT_ID}:subnet/${subnet}"
+
+    if [[ -z "$json_subnets" ]]; then
+        json_subnets="\"$arn\""
+    else
+        json_subnets="$json_subnets, \"$arn\""
+    fi
+done
+
+echo "Generated subnet ARN list:"
+echo "$json_subnets"
+
+# 替换 FIS json
+sed "s|SUBNET_ARNS|$json_subnets|g" fis-template.json > fis-template-final.json
+
+echo "Done. Output file:"
+echo "fis-template-final.json"
+示例 FIS JSON 模板
+fis-template.json
+JSON
+{
+  "targets": {
+    "SubnetTarget": {
+      "resourceType": "aws:ec2:subnet",
+      "resourceArns": [
+        SUBNET_ARNS
+      ],
+      "selectionMode": "ALL"
+    }
+  }
+}
+脚本执行后会生成：
+fis-template-final.json
+JSON
+"resourceArns": [
+ "arn:aws:ec2:*:123456789012:subnet/subnet-aaa",
+ "arn:aws:ec2:*:123456789012:subnet/subnet-bbb"
+]
+运行方式
+Bash
+chmod +x generate_fis_subnet.sh
+./generate_fis_subnet.sh
+优化版（更少 API 调用）
+其实可以 一次查所有 subnet AZ，速度会快很多：
+Bash
+aws ec2 describe-subnets \
+  --subnet-ids $subnets \
+  --query "Subnets[?AvailabilityZone=='ap-southeast-2a'].SubnetId"
+💡 如果你愿意，我可以给你一个更高级版本脚本（大约40行）：
+自动识别 所有 AZ
+自动生成 多个 FIS target（replaced1 replaced2 replaced3）
+解决你之前遇到的
+target > 5 报错
+json 双引号 问题
+这个版本会更适合你现在的 AZ failover 实验。
