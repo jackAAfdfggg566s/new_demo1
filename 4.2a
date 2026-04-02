@@ -1,0 +1,51 @@
+你可以用 Amazon Web Services CLI 查看 Amazon RDS Proxy 使用的 subnet，步骤一般是先查 Proxy，再看它的 VpcSubnetIds。
+1️⃣ 查看 RDS Proxy 基本信息
+Bash
+aws rds describe-db-proxies \
+  --db-proxy-name <proxy-name>
+输出里会有类似：
+JSON
+{
+  "DBProxies": [
+    {
+      "DBProxyName": "my-proxy",
+      "VpcId": "vpc-xxxx",
+      "VpcSubnetIds": [
+        "subnet-aaa",
+        "subnet-bbb",
+        "subnet-ccc"
+      ]
+    }
+  ]
+}
+VpcSubnetIds 就是 proxy 使用的 subnet。
+2️⃣ 只打印 subnet（常用）
+如果只想直接看到 subnet：
+Bash
+aws rds describe-db-proxies \
+  --db-proxy-name <proxy-name> \
+  --query "DBProxies[0].VpcSubnetIds" \
+  --output text
+输出示例：
+
+subnet-aaa subnet-bbb subnet-ccc
+3️⃣ 再查看 subnet 详细信息
+如果你想看 AZ / CIDR / 名字：
+Bash
+aws ec2 describe-subnets \
+  --subnet-ids subnet-aaa subnet-bbb subnet-ccc
+4️⃣ 一条命令直接查 AZ（实用）
+很多做 AZ failover / FIS 实验 时会用：
+Bash
+aws ec2 describe-subnets \
+  --subnet-ids $(aws rds describe-db-proxies \
+  --db-proxy-name <proxy-name> \
+  --query "DBProxies[0].VpcSubnetIds" \
+  --output text) \
+  --query "Subnets[].AvailabilityZone"
+✅ 总结
+RDS Proxy subnet 在：
+
+describe-db-proxies
+   └── VpcSubnetIds
+如果你是为了 做 FIS / AZ failover 实验（你之前在做这个），我可以再给你一段 脚本自动判断 proxy 在哪些 AZ，这样可以直接做 单 AZ 故障注入。
