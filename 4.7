@@ -1,0 +1,91 @@
+在用 Amazon Web Services 的 AWS Fault Injection Simulator (FIS) 做 Amazon EKS node failover 实验时，如果想只针对带某个 tag 的 node**，需要把 tag 条件写在 FIS template 的 target 里。
+核心是：
+FIS 实际上是 按 EC2 实例做故障注入（EKS node 本质是 EC2），所以 tag 也是 EC2 tag。
+一、FIS template 加 tag 的方法（推荐）
+在 targets 里增加 resourceTags。
+示例 JSON
+JSON
+{
+  "targets": {
+    "eksNodes": {
+      "resourceType": "aws:ec2:instance",
+      "resourceTags": {
+        "eks-nodegroup": "blue"
+      },
+      "selectionMode": "ALL"
+    }
+  },
+  "actions": {
+    "terminateInstances": {
+      "actionId": "aws:ec2:terminate-instances",
+      "targets": {
+        "Instances": "eksNodes"
+      }
+    }
+  }
+}
+意思是：
+只选择 tag：
+
+eks-nodegroup = blue
+的 EC2 instance（也就是 EKS node）。
+二、如果是按 AZ failover（更真实）
+你可能是想模拟 AZ 故障，比如只打某个 nodegroup。
+可以这样：
+JSON
+"resourceTags": {
+  "eks:nodegroup-name": "nodegroup-a"
+}
+EKS node 默认有这个 tag：
+
+eks:nodegroup-name
+三、如何查看 node 的 tag
+先用 CLI 看 node 对应的 EC2：
+Bash
+kubectl get nodes -o wide
+找到 instance id
+然后：
+Bash
+aws ec2 describe-tags --filters Name=resource-id,Values=i-xxxxx
+四、常用的 EKS node tag
+一般 node 都有：
+
+eks:cluster-name
+eks:nodegroup-name
+kubernetes.io/cluster/<cluster-name>
+所以最常用的是：
+JSON
+"resourceTags": {
+  "eks:cluster-name": "my-cluster"
+}
+或者
+JSON
+"resourceTags": {
+  "eks:nodegroup-name": "ng1"
+}
+五、如果你想做 EKS Node failover 推荐配置
+推荐 target：
+JSON
+"targets": {
+  "eksNodes": {
+    "resourceType": "aws:ec2:instance",
+    "resourceTags": {
+      "eks:nodegroup-name": "ng1"
+    },
+    "selectionMode": "COUNT(1)"
+  }
+}
+这样每次只 kill 1 台 node。
+六、很多人踩的坑
+FIS 不能直接用 EKS node label：
+❌ 不行
+
+node-role.kubernetes.io/worker
+因为那是 k8s label，不是 EC2 tag。
+必须是 EC2 tag。
+💡 如果你愿意，我可以给你一套 完整可用的 EKS Node Failover FIS Template（生产常用版），包括：
+terminate node
+ASG 自动补 node
+Pod failover
+只影响某 AZ
+基本是 AWS 官方 chaos engineering 的标准模板。
