@@ -1,0 +1,76 @@
+如果你 只能连 Nexus，依赖很多，正确做法是让 pip 自动解析依赖，而不是一个个装。只要 Nexus 是 PyPI proxy，一条命令就可以。
+一、最简单一条命令（推荐）
+Bash
+pip install flask -i http://nexus.company.com/repository/pypi/simple --trusted-host nexus.company.com
+pip 会自动：
+下载 Flask
+自动解析依赖
+自动安装所有依赖
+例如会自动装：
+
+Werkzeug
+Jinja2
+itsdangerous
+click
+MarkupSafe
+你 不需要手动管依赖。
+二、企业最常用方法（requirements.txt）
+创建文件：
+
+requirements.txt
+内容：
+
+flask
+然后执行：
+Bash
+pip install -r requirements.txt -i http://nexus.company.com/repository/pypi/simple --trusted-host nexus.company.com
+以后只需要维护这个文件。
+三、如果 Nexus 不是 proxy（很多公司是这样）
+可以在 外网机器 一次性把所有依赖下载：
+Bash
+pip download flask -d packages
+会自动下载：
+
+Flask
+Werkzeug
+Jinja2
+click
+itsdangerous
+MarkupSafe
+然后把 packages 目录拷贝到公司机器：
+Bash
+pip install --no-index --find-links=packages flask
+pip 仍然会 自动解析依赖。
+四、最稳企业级方案（推荐）
+先下载所有依赖：
+Bash
+pip download -r requirements.txt -d packages
+内网安装：
+Bash
+pip install --no-index --find-links=packages -r requirements.txt
+优点：
+不用联网
+不依赖 Nexus
+依赖一次解决
+五、检查 pip 是否正确走 Nexus
+运行：
+Bash
+pip config list
+如果看到：
+
+global.index-url='http://nexus.company.com/repository/pypi/simple'
+说明以后：
+Bash
+pip install flask
+就自动走 Nexus。
+💡 公司内网最常见问题
+如果出现：
+
+No matching distribution found
+说明：
+1️⃣ Nexus 没代理 PyPI
+2️⃣ Python版本太旧
+3️⃣ Nexus里没有这个包
+如果你愿意，我可以再给你一个 公司内网神器命令：
+👉 一条命令把 Flask + 所有依赖打包成离线安装包（几十个依赖一次解决）
+很多公司 AI / Flask / Transformers 都用这个方法。
