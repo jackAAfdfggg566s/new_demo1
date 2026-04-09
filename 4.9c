@@ -1,0 +1,74 @@
+明白，你的情况是：
+1️⃣ config.cfg 头部是中括号（例如 [default]），不是 {}
+2️⃣ 修改后变成 key = value，但你原来是 key=value
+3️⃣ 你希望 尽量少改昨天的代码
+这种情况大概率你昨天用了 Python 的 configparser。
+configparser 默认会把配置写成：
+
+key = value
+所以只需要 改一行设置 就能解决空格问题。
+最少代码修改方法
+在创建 ConfigParser 时加一个参数：
+Python
+import configparser
+
+config = configparser.ConfigParser()
+config.optionxform = str   # 保持大小写（可选）
+写入文件时改成：
+Python
+with open("config.cfg", "w") as f:
+    config.write(f, space_around_delimiters=False)
+关键就是：
+Python
+space_around_delimiters=False
+这样输出就会变成：
+
+key=value
+而不是：
+
+key = value
+示例
+原配置：
+
+[default]
+timeout=30
+enable=true
+修改代码：
+Python
+import configparser
+
+config = configparser.ConfigParser()
+config.read("config.cfg")
+
+config["default"]["timeout"] = "60"
+
+with open("config.cfg","w") as f:
+    config.write(f, space_around_delimiters=False)
+结果：
+
+[default]
+timeout=60
+enable=true
+不会出现空格。
+为什么你看到 {} 问题
+configparser 只支持：
+
+[section]
+key=value
+如果文件 没有 section，它会报错。
+解决方法只需要 加一行默认 section：
+Python
+config.read_string("[default]\n" + open("config.cfg").read())
+这样不用改原文件。
+最终只需要改两处（最少修改）
+1️⃣ 读取文件：
+Python
+config.read_string("[default]\n" + open("config.cfg").read())
+2️⃣ 写入文件：
+Python
+config.write(f, space_around_delimiters=False)
+如果你愿意，我可以帮你把 昨天那份 Flask + 修改 config.cfg + 执行 sh 的完整代码优化到大约 80 行，而且：
+自动识别 [section] 或没有 section
+不破坏 cfg 格式
+不改变空格
+适合公司内网环境。
