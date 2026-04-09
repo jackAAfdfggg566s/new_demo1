@@ -1,0 +1,161 @@
+你说的 config.cfg 看起来是 类似 key=value 的配置文件，不是 JSON，所以会出现两个问题：
+1️⃣ 文件头没有 {}（不是 JSON 格式）
+2️⃣ 修改后 = 两边多了空格
+解决思路是：不要把 cfg 当 JSON 处理，而是按文本行修改。
+下面给你一个 适配 cfg 文件的稳方法。
+一、示例 config.cfg
+例如：
+INI
+host=10.1.1.1
+port=8080
+enable=true
+timeout=30
+二、Python 修改 cfg（不会改变格式）
+Python
+def update_config(file_path, key, value):
+
+    lines = []
+
+    with open(file_path, "r") as f:
+        for line in f:
+
+            if line.strip().startswith(key + "="):
+                lines.append(f"{key}={value}\n")
+            else:
+                lines.append(line)
+
+    with open(file_path, "w") as f:
+        f.writelines(lines)
+
+
+update_config("config.cfg", "timeout", "60")
+修改后：
+INI
+host=10.1.1.1
+port=8080
+enable=true
+timeout=60
+特点：
+✔ 不需要 {}
+✔ 不会增加空格
+✔ 保持原文件格式
+三、支持多参数修改（推荐）
+Python
+def update_config(file_path, updates):
+
+    lines = []
+
+    with open(file_path, "r") as f:
+        for line in f:
+
+            stripped = line.strip()
+
+            if "=" in stripped:
+                key = stripped.split("=")[0]
+
+                if key in updates:
+                    line = f"{key}={updates[key]}\n"
+
+            lines.append(line)
+
+    with open(file_path, "w") as f:
+        f.writelines(lines)
+
+
+update_config("config.cfg", {
+    "timeout": "60",
+    "enable": "false"
+})
+四、如果 key 不存在自动新增
+Python
+def update_config(file_path, updates):
+
+    found = set()
+    lines = []
+
+    with open(file_path) as f:
+        for line in f:
+
+            if "=" in line:
+                key = line.split("=")[0].strip()
+
+                if key in updates:
+                    line = f"{key}={updates[key]}\n"
+                    found.add(key)
+
+            lines.append(line)
+
+    for key, value in updates.items():
+        if key not in found:
+            lines.append(f"{key}={value}\n")
+
+    with open(file_path, "w") as f:
+        f.writelines(lines)
+五、Flask网页调用示例（结合你昨天的方案）
+Python
+from flask import Flask, request
+
+app = Flask(__name__)
+
+@app.route("/update_config")
+
+def update():
+
+    key = request.args.get("key")
+    value = request.args.get("value")
+
+    update_config("/home/app/config.cfg", {key:value})
+
+    return "config updated"
+
+app.run(host="0.0.0.0", port=5000)
+访问：
+
+http://server:5000/update_config?key=timeout&value=60
+六、为什么你之前会出现 {} 和空格
+很可能昨天代码用了：
+Python
+json.load()
+json.dump()
+或者：
+Python
+configparser
+这些都会把格式变成：
+INI
+key = value
+而不是：
+
+key=value
+七、企业环境推荐写法（最稳）
+用 正则精准替换：
+Python
+import re
+
+def update_cfg(file, key, value):
+
+    with open(file) as f:
+        text = f.read()
+
+    text = re.sub(rf"^{key}=.*", f"{key}={value}", text, flags=re.M)
+
+    with open(file,"w") as f:
+        f.write(text)
+不会改变任何其他格式。
+✅ 总结
+你的 cfg 文件应该：
+不当 JSON 处理
+按行替换 key=value
+手动控制 = 格式
+这样：
+
+key=value
+不会变成：
+
+key = value
+如果你愿意，我可以帮你把 昨天那套完整系统升级一下：
+网页聊天框 →
+AI识别指令 →
+自动修改 config.cfg →
+执行远程 sh →
+触发 GitLab pipeline
+一套 公司自动化运维工具（200行 Python）。很多团队都在用这种。
