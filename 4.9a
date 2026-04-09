@@ -1,0 +1,101 @@
+ssl.SSLZeroReturnError 在公司内网环境调用 GitLab API 很常见，通常是 SSL证书或公司代理问题。你可以按下面顺序排查。
+一、最简单测试（确认是不是证书问题）
+如果你 Python 用的是 requests：
+Python
+import requests
+
+url = "https://gitlab.company.com/api/v4/projects/123/pipeline"
+
+r = requests.get(url, verify=False)
+print(r.status_code)
+如果 加了 verify=False 就成功，说明问题是：
+👉 公司 GitLab 使用的是内部 CA 证书
+二、推荐正确解决方案（使用公司CA证书）
+公司一般会有一个：
+
+company-ca.crt
+调用时指定证书：
+Python
+import requests
+
+url = "https://gitlab.company.com/api/v4/projects/123/pipeline"
+
+r = requests.get(
+    url,
+    headers={"PRIVATE-TOKEN": "xxxxx"},
+    verify="/path/company-ca.crt"
+)
+
+print(r.json())
+三、临时解决方案（不安全）
+如果只是测试：
+Python
+requests.post(url, headers=headers, json=data, verify=False)
+并关闭警告：
+Python
+import urllib3
+urllib3.disable_warnings()
+四、企业环境常见原因
+1️⃣ 公司 SSL inspection
+很多公司网络会：
+
+Browser → 公司代理 → GitLab
+代理会重新签发证书。
+解决：
+把 公司 root CA 加入 Python。
+2️⃣ Python 没信任系统证书
+Linux 可以：
+Bash
+pip install certifi
+代码：
+Python
+import certifi
+
+requests.get(url, verify=certifi.where())
+3️⃣ GitLab 使用自签证书
+直接把证书下载：
+Bash
+openssl s_client -connect gitlab.company.com:443 -showcerts
+保存为：
+
+gitlab.crt
+然后：
+Python
+verify="gitlab.crt"
+五、调试 SSL 的好办法
+先用 curl 看：
+Bash
+curl -v https://gitlab.company.com
+如果 curl 也报：
+
+SSL certificate problem
+那就是 证书问题。
+六、你调用 GitLab pipeline 的标准代码
+Python
+import requests
+
+url = "https://gitlab.company.com/api/v4/projects/123/trigger/pipeline"
+
+data = {
+    "token": "trigger_token",
+    "ref": "main"
+}
+
+r = requests.post(url, data=data, verify=False)
+
+print(r.json())
+七、公司环境最稳方案
+设置环境变量：
+Bash
+export REQUESTS_CA_BUNDLE=/path/company-ca.crt
+以后 Python 所有 requests 都自动信任。
+✅ 总结
+ssl.SSLZeroReturnError 99%是：
+公司代理拦截 SSL
+GitLab 自签证书
+Python 不信任公司 CA
+最简单测试：
+Python
+verify=False
+如果成功，再配置公司 CA。
+如果你愿意，把 完整 Python 报错 或 调用 GitLab pipeline 的代码 发出来，我可以帮你 精准定位是哪种 SSL 问题（公司环境通常有 3 种典型模式）。
