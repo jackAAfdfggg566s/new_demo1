@@ -1,0 +1,119 @@
+有的 👍，但要先讲清楚一点：
+
+playwright install chromium 不是 pip 安装，它是下载浏览器二进制文件（~100–200MB+）
+
+所以在公司内网 + Nexus 的情况下，不能用 pip proxy 直接解决，必须用“浏览器源代理 / 离线包 / 镜像”。
+
+🧠 你现在的问题本质
+
+你已经解决了：
+
+✔ pip 依赖（通过 Nexus）
+
+现在卡的是：
+
+❌ Playwright Chromium 浏览器下载
+
+🚀 解决方案（按推荐顺序）
+🥇 方案1（最推荐）👉 用 Playwright 官方镜像源代理
+
+如果公司允许 HTTP proxy：
+
+PLAYWRIGHT_DOWNLOAD_HOST=https://npm.taobao.org/mirrors/playwright python -m playwright install chromium
+
+或者：
+
+PLAYWRIGHT_DOWNLOAD_HOST=https://playwright.azureedge.net python -m playwright install chromium
+🥈 方案2 👉 内网 Nexus + 手动缓存（企业常用）
+
+如果你们 Nexus 有 file repo：
+
+Step 1：在能联网机器下载
+python -m playwright install chromium
+Step 2：找到浏览器缓存目录
+
+Linux：
+
+~/.cache/ms-playwright/
+
+Windows：
+
+C:\Users\<user>\AppData\Local\ms-playwright
+
+里面会有：
+
+chromium-xxxxx/
+firefox-xxxxx/
+webkit-xxxxx/
+Step 3：打包上传 Nexus（或内网文件服务器）
+tar -czf playwright-browsers.tar.gz ~/.cache/ms-playwright
+Step 4：内网机器解压
+mkdir -p ~/.cache/ms-playwright
+tar -xzf playwright-browsers.tar.gz -C ~/.cache/ms-playwright
+Step 5：设置环境变量
+export PLAYWRIGHT_BROWSERS_PATH=~/.cache/ms-playwright
+🥉 方案3 👉 用 pip + skip install browsers（半方案）
+pip install playwright -i http://nexus/repository/pypi/simple
+
+然后：
+
+python -m playwright install --with-deps chromium
+
+⚠️ 但在内网通常还是会失败（因为要下载浏览器）
+
+🥇 方案4（最稳企业方案）👉 直接用离线 Chromium
+
+如果你们安全限制很强：
+
+👉 直接用系统 chromium
+
+sudo apt install chromium-browser
+
+然后代码：
+
+browser = p.chromium.launch(
+    executable_path="/usr/bin/chromium",
+    headless=True
+)
+🚨 你这个场景（结合你之前 pipeline + Flask）
+
+我给你最推荐方案👇
+
+✅ 最佳企业方案（你应该用这个）
+✔ 一次下载 → 内网复用
+外网机器：
+  playwright install chromium
+        ↓
+打包 ~/.cache/ms-playwright
+        ↓
+上传 Nexus / artifact
+        ↓
+内网机器解压
+        ↓
+设置 PLAYWRIGHT_BROWSERS_PATH
+🧠 一句话总结
+方法	是否推荐
+pip proxy	❌ 不解决浏览器
+playwright install	❌ 内网会失败
+手动缓存搬运	✅ 最稳
+系统 chromium	✅ 次优方案
+🔥 如果你想再进阶（我可以帮你）
+
+你现在已经在做：
+
+GitLab pipeline
+自动截图
+Flask API
+
+我可以帮你升级成👇：
+
+🚀 内网完整自动化平台
+pipeline → 自动截图
+自动上传 Nexus
+自动生成 HTML 报告
+浏览器零依赖（纯 HTTP）
+
+只要你说一句👇
+👉 “我要纯内网无浏览器方案”
+
+我可以帮你改成完全不依赖 playwright 下载浏览器的版本 🚀
