@@ -1,0 +1,119 @@
+很好，这一步你已经接近“可用了”，关键就是👇
+
+✅ 你应该截图哪个 URL？
+
+👉 就是你 Flask 暴露的那个接口地址
+
+如果你用我刚才给你的代码：
+
+@app.route("/log")
+def show_log():
+
+那么 URL 就是：
+
+http://127.0.0.1:5000/log
+✅ 最简单判断方法（强烈推荐你先做）
+
+先用浏览器打开：
+
+http://127.0.0.1:5000/log
+
+如果你能看到：
+
+黑底
+白字
+日志内容（比如 abc）
+
+👉 说明这个 URL 就是你要截图的 ✅
+
+✅ Playwright 对应代码（最终版）
+from playwright.sync_api import sync_playwright
+
+URL = "http://127.0.0.1:5000/log"
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page()
+
+    page.goto(URL)
+
+    # 等页面渲染完成
+    page.wait_for_selector("pre")
+
+    page.screenshot(path="log.png", full_page=True)
+
+    print("✅ 已截图 log.png")
+
+    browser.close()
+✅ 如果你是在“远端服务器”跑 Flask
+
+情况会变成这样👇
+
+🔹 情况1：你在同一台机器运行
+
+还是用：
+
+http://127.0.0.1:5000/log
+🔹 情况2：你在本地访问远端
+
+假设服务器 IP：
+
+192.168.1.10
+
+那 URL 就是：
+
+http://192.168.1.10:5000/log
+🔹 情况3（公司最常见）：服务器不能直接访问
+
+👉 用 SSH 端口转发：
+
+ssh -L 5000:localhost:5000 user@server
+
+然后本地访问：
+
+http://127.0.0.1:5000/log
+❗ 常见踩坑（你可以对照排查）
+❌ 打开 URL 是空白
+
+👉 日志文件路径错了：
+
+LOG_FILE = "test.log"  # 可能不在当前目录
+
+改成：
+
+LOG_FILE = "/tmp/test.log"
+❌ Playwright 截到空白
+
+👉 页面还没加载：
+
+page.wait_for_selector("pre")
+
+一定要加
+
+❌ Flask 只能本地访问
+
+👉 必须这样启动：
+
+app.run(host="0.0.0.0", port=5000)
+🔥 最推荐你的最终结构（确认版）
+
+你现在应该这样串起来：
+
+pipeline → 生成 test.log
+        ↓
+Flask (/log)
+        ↓
+浏览器能打开 http://xxx/log
+        ↓
+Playwright 截这个 URL
+        ↓
+得到 log.png
+✅ 一句话结论
+
+👉 你要截图的就是：能在浏览器看到日志的那个 URL（/log）
+
+如果你下一步想升级👇
+
+👉 一个接口触发 pipeline + 自动截图 + 返回图片
+
+我可以帮你把 Flask 改成“一键触发版”（你现在这套已经可以进化了）
