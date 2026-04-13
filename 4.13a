@@ -1,0 +1,221 @@
+你这段思路已经是对的了，我帮你整理成可直接跑的完整代码（4种方案全部补全），你可以直接选一个用 👇
+
+✅ 方案1：Playwright 登录态复用（完整代码）
+🔹 第一步：手动登录一次，保存 session
+# save_login_state.py
+from playwright.sync_api import sync_playwright
+
+GITLAB_URL = "https://gitlab.com"
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False)  # 必须False，手动登录
+    context = browser.new_context()
+
+    page = context.new_page()
+    page.goto(f"{GITLAB_URL}/users/sign_in")
+
+    input("👉 请在浏览器完成登录（SSO/MFA），完成后按回车...")
+
+    # 保存登录态
+    context.storage_state(path="state.json")
+
+    print("✅ 登录状态已保存到 state.json")
+
+    browser.close()
+🔹 第二步：用登录态截图
+# screenshot_gitlab.py
+from playwright.sync_api import sync_playwright
+
+PIPELINE_URL = "https://gitlab.com/你的项目/-/pipelines"
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+
+    # 加载登录态
+    context = browser.new_context(storage_state="state.json")
+    page = context.new_page()
+
+    page.goto(PIPELINE_URL)
+
+    # 等待页面加载
+    page.wait_for_timeout(5000)
+
+    page.screenshot(path="pipeline.png", full_page=True)
+
+    print("✅ 截图完成 pipeline.png")
+
+    browser.close()
+✅ 方案2：日志文件 → 图片（推荐，最稳）
+🔹 方法2.1：Python 转图片（完整可用）
+# log_to_image.py
+from PIL import Image, ImageDraw, ImageFont
+
+LOG_FILE = "test.log"
+OUTPUT_IMG = "output.png"
+
+# 读取日志
+with open(LOG_FILE, "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+# 图片参数
+font_size = 16
+line_height = font_size + 4
+img_width = 1200
+img_height = line_height * len(lines) + 20
+
+# 创建图片
+img = Image.new("RGB", (img_width, img_height), color="black")
+draw = ImageDraw.Draw(img)
+
+# 字体（Linux 可用默认）
+try:
+    font = ImageFont.truetype("DejaVuSansMono.ttf", font_size)
+except:
+    font = ImageFont.load_default()
+
+# 写入文字
+y = 10
+for line in lines:
+    draw.text((10, y), line.strip(), fill="white", font=font)
+    y += line_height
+
+# 保存
+img.save(OUTPUT_IMG)
+
+print(f"✅ 已生成图片: {OUTPUT_IMG}")
+🔹 方法2.2：Shell（ImageMagick）
+# 安装（如果没有）
+# sudo apt install imagemagick
+
+convert -background black -fill white -font Courier \
+-pointsize 14 text:test.log output.png
+
+echo "✅ 生成 output.png"
+✅ 方案3：SSH 拉日志 → 本地生成图片
+# ssh_log_to_image.py
+import paramiko
+from PIL import Image, ImageDraw, ImageFont
+
+HOST = "your_server_ip"
+USER = "your_user"
+PASSWORD = "your_password"
+REMOTE_LOG = "/tmp/test.log"
+
+# 连接SSH
+ssh = paramiko.SSHClient()
+ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+ssh.connect(HOST, username=USER, password=PASSWORD)
+
+stdin, stdout, stderr = ssh.exec_command(f"cat {REMOTE_LOG}")
+content = stdout.read().decode()
+
+ssh.close()
+
+# 转图片
+lines = content.split("\n")
+
+font_size = 16
+line_height = font_size + 4
+img_width = 1200
+img_height = line_height * len(lines) + 20
+
+img = Image.new("RGB", (img_width, img_height), color="black")
+draw = ImageDraw.Draw(img)
+
+try:
+    font = ImageFont.truetype("DejaVuSansMono.ttf", font_size)
+except:
+    font = ImageFont.load_default()
+
+y = 10
+for line in lines:
+    draw.text((10, y), line, fill="white", font=font)
+    y += line_height
+
+img.save("ssh_log.png")
+
+print("✅ ssh_log.png 已生成")
+✅ 方案4（🔥最推荐）：Flask + Playwright（企业环境最佳）
+🔹 Flask 服务（展示日志）
+# app.py
+from flask import Flask, Response
+
+app = Flask(__name__)
+
+LOG_FILE = "test.log"
+
+@app.route("/log")
+def show_log():
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    html = f"""
+    <html>
+    <body style="background:black;color:white;font-family:monospace;">
+    <pre>{content}</pre>
+    </body>
+    </html>
+    """
+    return Response(html, mimetype="text/html")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+
+启动：
+
+python app.py
+🔹 Playwright 截你自己的页面
+# screenshot_local_page.py
+from playwright.sync_api import sync_playwright
+
+URL = "http://127.0.0.1:5000/log"
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page()
+
+    page.goto(URL)
+    page.wait_for_timeout(2000)
+
+    page.screenshot(path="log.png", full_page=True)
+
+    print("✅ log.png 已生成")
+
+    browser.close()
+🔥 最终推荐架构（适合你公司内网）
+
+结合你现在的需求（GitLab + pipeline + 内网）：
+
+GitLab pipeline
+    ↓
+远端服务器生成 log.txt
+    ↓
+Flask 提供 /log
+    ↓
+Playwright 截图
+    ↓
+生成报告图片
+⚠ 关键建议（非常重要）
+
+👉 不要再死磕 GitLab UI 截图，原因：
+
+SSO / MFA 验证
+cookie 过期
+内网限制
+UI 经常变
+
+👉 本质上 GitLab 是“反自动化”的
+
+✅ 如果你下一步要升级
+
+我可以帮你做这一套（直接落地）：
+
+输入一句话 👉 触发 pipeline
+自动 SSH 执行脚本
+自动抓日志
+自动生成图片
+自动生成报告（HTML / PDF）
+
+👉 完全适配你“公司内网 + 无外网”环境
+
+直接说你现在想走哪一条（2 / 4 最推荐），我可以帮你改成“一键自动化版本”。
