@@ -1,0 +1,182 @@
+下面给你一份可直接运行的完整版本（单文件版），满足你这几个点：
+✅ 从 log endpoint 拉取日志
+✅ 真实浏览器渲染（不是假 HTML 拼图）
+✅ 按关键字定位（ERROR / FAIL 等）
+✅ Playwright 截图
+✅ 不依赖 GitLab / 登录
+✅ 内网可用
+🚀 完整代码（推荐版本：单文件）
+Python
+# log_screenshot.py
+
+import requests
+import threading
+import time
+from flask import Flask, Response
+from playwright.sync_api import sync_playwright
+
+# =========================
+# 配置区
+# =========================
+LOG_URL = "http://your-endpoint/log"   # 改成你的 log endpoint
+KEYWORD = "ERROR"                       # 关键字
+OUTPUT_FILE = "log.png"
+PORT = 9999
+
+app = Flask(__name__)
+HTML_CONTENT = ""
+
+
+# =========================
+# 1. 拉取日志（真实 endpoint）
+# =========================
+def fetch_log(url):
+    r = requests.get(url, timeout=30)
+    if r.status_code != 200:
+        raise Exception(f"Failed to fetch log: {r.status_code} {r.text}")
+    return r.text
+
+
+# =========================
+# 2. 转换为“浏览器友好页面”
+# =========================
+def build_html(log_text):
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body {{
+    margin: 0;
+    background: #0d1117;
+    color: #c9d1d9;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas;
+    padding: 20px;
+}}
+
+pre {{
+    white-space: pre-wrap;
+    font-size: 13px;
+    line-height: 1.5;
+}}
+
+mark {{
+    background: yellow;
+    color: black;
+    padding: 0 2px;
+}}
+</style>
+</head>
+<body>
+<pre id="log">{log_text}</pre>
+
+<script>
+function highlight(keyword) {{
+    const pre = document.getElementById("log");
+    const text = pre.innerHTML;
+    pre.innerHTML = text.replaceAll(keyword, `<mark>${{keyword}}</mark>`);
+}}
+
+highlight("{KEYWORD}");
+</script>
+
+</body>
+</html>
+"""
+
+
+# =========================
+# 3. 本地 Web Server（提供真实页面）
+# =========================
+@app.route("/")
+def index():
+    return Response(HTML_CONTENT, mimetype="text/html")
+
+
+def start_server():
+    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+
+
+# =========================
+# 4. Playwright 截图（真实浏览器）
+# =========================
+def screenshot(url, output):
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        page.goto(url)
+        page.wait_for_timeout(2000)
+
+        # 滚动到中间（避免只截顶部）
+        page.evaluate("window.scrollTo(0, document.body.scrollHeight / 3)")
+
+        page.screenshot(path=output, full_page=True)
+
+        browser.close()
+
+
+# =========================
+# 5. 主流程
+# =========================
+def main():
+    global HTML_CONTENT
+
+    print("[1] Fetching log...")
+    log_text = fetch_log(LOG_URL)
+
+    print("[2] Building HTML page...")
+    HTML_CONTENT = build_html(log_text)
+
+    print("[3] Starting local server...")
+    server_thread = threading.Thread(target=start_server, daemon=True)
+    server_thread.start()
+
+    time.sleep(1)  # 等 server 启动
+
+    print("[4] Taking screenshot...")
+    screenshot(f"http://127.0.0.1:{PORT}", OUTPUT_FILE)
+
+    print(f"[DONE] Saved -> {OUTPUT_FILE}")
+
+
+if __name__ == "__main__":
+    main()
+🚀 安装依赖
+Bash
+pip install flask requests playwright
+playwright install chromium
+🚀 运行
+Bash
+python log_screenshot.py
+📸 输出结果
+
+log.png
+效果是：
+✔ 真实浏览器渲染页面
+✔ log 等宽字体
+✔ ERROR 高亮黄色
+✔ 可整页长截图
+✔ 和你手动打开网页截图一致
+🔥 这个方案为什么“正确”
+你之前的问题本质是：
+方案
+问题
+GitLab截图
+登录 / SSO / 验证
+本地文本截图
+不真实
+Playwright直接log
+没 UI
+✔ 现在这个方案是：
+👉 “数据来自 endpoint”
+👉 “页面是浏览器真实渲染”
+👉 “截图是 Playwright 真 DOM”
+🚀 如果你下一步想升级，我可以帮你做：
+1️⃣ 只截 ERROR 区块（不是整页）
+2️⃣ 自动识别多个 ERROR 分段截图
+3️⃣ 输出 PDF（SRE 报告）
+4️⃣ 接 Slack / 飞书机器人
+5️⃣ 支持 Loki / ELK / CloudWatch
+直接说一句就行 👍
