@@ -1,0 +1,168 @@
+你这个需求可以理解为：
+
+👉 在日志/页面中找到某个“关键字”，然后只截取它下面那一段（或对应区域）
+
+我给你两种最实用方案（直接能用）👇
+
+✅ 方案A（推荐）：Playwright 按“关键字元素”定位再截图
+
+如果你现在是用 Flask 展示日志（<pre>），可以直接在页面里找文字位置，然后截“局部”。
+
+🔹 Flask 页面稍微改一下（关键）
+
+给日志每一行加 <div>，方便定位：
+
+# app.py（改进版）
+from flask import Flask, Response
+
+app = Flask(__name__)
+
+LOG_FILE = "test.log"
+
+@app.route("/log")
+def show_log():
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    html_lines = "".join([f'<div class="line">{l}</div>' for l in lines])
+
+    html = f"""
+    <html>
+    <body style="background:black;color:white;font-family:monospace;">
+    {html_lines}
+    </body>
+    </html>
+    """
+    return Response(html, mimetype="text/html")
+
+app.run(host="0.0.0.0", port=5000)
+🔹 Playwright：找到关键字并截图“下面区域”
+# screenshot_keyword.py
+from playwright.sync_api import sync_playwright
+
+URL = "http://127.0.0.1:5000/log"
+KEYWORD = "ERROR"   # 你要找的关键字
+
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page()
+
+    page.goto(URL)
+    page.wait_for_selector(".line")
+
+    # 找到包含关键字的行
+    locator = page.locator(f".line:has-text('{KEYWORD}')").first
+
+    if locator.count() == 0:
+        print("❌ 没找到关键字")
+        browser.close()
+        exit()
+
+    # 滚动到该行
+    locator.scroll_into_view_if_needed()
+
+    # 获取位置
+    box = locator.bounding_box()
+
+    # 截取“关键字下面”的区域（往下多截一些）
+    clip = {
+        "x": box["x"],
+        "y": box["y"],
+        "width": 1000,
+        "height": 400   # 👈 控制往下截多少
+    }
+
+    page.screenshot(path="keyword.png", clip=clip)
+
+    print("✅ 已截图 keyword.png")
+
+    browser.close()
+✅ 效果
+
+如果日志是：
+
+step1 ok
+step2 ok
+ERROR: something wrong
+detail line1
+detail line2
+
+👉 最终截图会是：
+
+ERROR: something wrong
+detail line1
+detail line2
+✅ 方案B（不用浏览器）：纯Python截“关键字下面内容”
+
+如果你不想用 Playwright，其实更简单👇
+
+🔹 直接提取关键字下面内容
+# extract_keyword.py
+KEYWORD = "ERROR"
+OUTPUT_LINES = 10  # 往下取多少行
+
+with open("test.log", "r", encoding="utf-8") as f:
+    lines = f.readlines()
+
+result = []
+capture = False
+count = 0
+
+for line in lines:
+    if KEYWORD in line:
+        capture = True
+
+    if capture:
+        result.append(line)
+        count += 1
+
+    if count >= OUTPUT_LINES:
+        break
+
+# 写入新文件
+with open("filtered.log", "w") as f:
+    f.writelines(result)
+
+print("✅ 已生成 filtered.log")
+🔹 再转图片（接你之前代码）
+# 再调用你之前的 log_to_image_safe.py
+🔥 两种方案怎么选？
+场景	推荐
+你已经在用 Flask + Playwright	✅ 方案A
+只想处理日志文件	✅ 方案B（更简单更快）
+要做自动报告（带截图效果）	✅ 方案A
+⚠ 关键细节（你很可能会踩）
+❗ 1. 关键字多次出现
+locator = page.locator(...).first
+
+👉 只取第一个
+👉 你也可以 .nth(1) 取第二个
+
+❗ 2. 截图高度不够
+"height": 400
+
+👉 可以调大，比如：
+
+"height": 800
+❗ 3. 中文关键字
+KEYWORD = "失败"
+
+👉 Playwright 完全支持 ✅
+
+✅ 最终一句话
+
+👉 你要做的本质是：定位关键字 → 控制截图区域
+
+🚀 如果你要再升级（我可以帮你）
+
+可以做到👇
+
+自动识别 ERROR / FAIL
+每个错误都截图
+拼成一张报告图（类似测试报告）
+自动发 Slack / 邮件
+
+直接说一句：
+👉 “
+做成自动报告”
+我帮你一步到位 👍
