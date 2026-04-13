@@ -1,0 +1,202 @@
+你这个上下文我帮你对齐一下：你昨天问的是
+👉 “通过网页修改远程机器 B 的 config 文件 + 触发执行 sh 脚本”
+我给了你 方案2（Web + API 控制远端机器），并拆成了：
+2.1：远端机器 B 提供 API（Flask）
+2.2：本地/网页端调用 API
+2.3：修改 config 文件逻辑
+2.4：执行远程 shell 脚本
+下面我把 2.1 ~ 2.4 全部给你完整可运行代码（最少依赖，适合内网环境）👇
+✅ 2.1 远端机器 B：Flask 服务（核心）
+在 机器 B 上运行
+Python
+# server.py
+from flask import Flask, request, jsonify
+import subprocess
+import os
+
+app = Flask(__name__)
+
+CONFIG_PATH = "/home/user/config.cfg"
+SCRIPT_PATH = "/home/user/run.sh"
+
+@app.route("/update_config", methods=["POST"])
+def update_config():
+    data = request.json
+    key = data.get("key")
+    value = data.get("value")
+
+    if not key:
+        return jsonify({"error": "key required"}), 400
+
+    update_config_file(CONFIG_PATH, key, value)
+
+    return jsonify({"status": "config updated"})
+
+
+@app.route("/run_script", methods=["POST"])
+def run_script():
+    try:
+        result = subprocess.run(
+            ["bash", SCRIPT_PATH],
+            capture_output=True,
+            text=True
+        )
+
+        return jsonify({
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def update_config_file(path, key, value):
+    lines = []
+
+    if os.path.exists(path):
+        with open(path, "r") as f:
+            lines = f.readlines()
+
+    updated = False
+    new_lines = []
+
+    for line in lines:
+        if line.strip().startswith(f"{key}="):
+            new_lines.append(f"{key}={value}\n")
+            updated = True
+        else:
+            new_lines.append(line)
+
+    if not updated:
+        new_lines.append(f"{key}={value}\n")
+
+    with open(path, "w") as f:
+        f.writelines(new_lines)
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+✅ 2.2 本地/网页端调用 API（Python client）
+Python
+# client.py
+import requests
+
+SERVER = "http://<机器B_IP>:5000"
+
+def update_config(key, value):
+    r = requests.post(
+        f"{SERVER}/update_config",
+        json={"key": key, "value": value}
+    )
+    print(r.json())
+
+
+def run_script():
+    r = requests.post(f"{SERVER}/run_script")
+    print("STDOUT:\n", r.json().get("stdout"))
+    print("STDERR:\n", r.json().get("stderr"))
+
+
+if __name__ == "__main__":
+    update_config("env", "prod")
+    run_script()
+✅ 2.3 网页版本（前端页面）
+你可以直接放在 Flask 或 Nginx 静态页面
+HTML
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Remote Control</title>
+</head>
+<body>
+
+<h2>Update Config</h2>
+<input id="key" placeholder="key">
+<input id="value" placeholder="value">
+<button onclick="updateConfig()">Update</button>
+
+<h2>Run Script</h2>
+<button onclick="runScript()">Run</button>
+
+<pre id="output"></pre>
+
+<script>
+const SERVER = "http://<机器B_IP>:5000";
+
+function updateConfig() {
+    const key = document.getElementById("key").value;
+    const value = document.getElementById("value").value;
+
+    fetch(SERVER + "/update_config", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({key, value})
+    })
+    .then(r => r.json())
+    .then(d => alert(JSON.stringify(d)));
+}
+
+function runScript() {
+    fetch(SERVER + "/run_script", {method: "POST"})
+    .then(r => r.json())
+    .then(d => {
+        document.getElementById("output").innerText =
+            "STDOUT:\n" + d.stdout + "\n\nSTDERR:\n" + d.stderr;
+    });
+}
+</script>
+
+</body>
+</html>
+✅ 2.4 远端 shell 脚本（机器 B）
+Bash
+# /home/user/run.sh
+#!/bin/bash
+
+echo "Running script..."
+date
+
+# 示例逻辑
+echo "Current config:"
+cat /home/user/config.cfg
+
+echo "Done"
+记得加权限：
+Bash
+chmod +x /home/user/run.sh
+✅ 运行步骤（最关键）
+1️⃣ 机器 B 启动服务
+Bash
+pip install flask
+python server.py
+2️⃣ 本地测试
+Bash
+python client.py
+3️⃣ 浏览器访问
+
+http://<机器B_IP>:5000   （如果你挂了前端）
+⚠️ 企业内网常见坑（你之前遇到的）
+❌ permission denied
+👉 shell 没执行权限
+✔ chmod +x run.sh
+❌ 需要输入密码
+👉 不要用 ssh，直接 API（本方案已解决）
+❌ SSL error
+👉 用 http 内网，不要 https
+❌ 端口访问不到
+👉 开放 5000 或改成公司允许端口（比如 8080）
+🚀 可升级（下一步我可以帮你）
+如果你要更智能👇
+👉 输入一句话自动执行
+比如：
+
+run fix gw pod failover ASX nft02
+我可以帮你升级成：
+LLM 解析指令
+自动调用：
+update_config
+run_script
+GitLab pipeline
+如果你下一步想做👇直接说：
