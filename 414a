@@ -1,0 +1,149 @@
+好，这里给你一套完整可运行的方案2（Flask + 远端机器B + HTML + Playwright截图），完全符合你现在的架构：
+👉 流程
+
+请求 → Flask(A)
+        ↓
+   SSH 到 B 执行 SQL → 生成 HTML
+        ↓
+   SCP 拉回 HTML
+        ↓
+   Playwright 截图
+        ↓
+   返回图片 / 保存报告
+✅ 一、目录结构（在机器A）
+
+project/
+ ├── app.py
+ ├── screenshot/
+ ├── temp/
+✅ 二、Flask完整代码（核心）
+Python
+from flask import Flask, jsonify, send_file
+import subprocess
+import os
+from playwright.sync_api import sync_playwright
+import time
+
+app = Flask(__name__)
+
+# 配置
+REMOTE_HOST = "user@machine_b"
+REMOTE_HTML = "/tmp/result.html"
+LOCAL_HTML = "temp/result.html"
+SCREENSHOT_PATH = "screenshot/result.png"
+
+SQL = """
+SELECT * FROM your_table LIMIT 20;
+"""
+
+def run_remote_sql():
+    """在B执行SQL并生成HTML"""
+    cmd = f"""
+    ssh {REMOTE_HOST} '
+    mysql -uuser -ppassword -e "{SQL}" --html > {REMOTE_HTML}
+    '
+    """
+    subprocess.run(cmd, shell=True, check=True)
+
+def fetch_html():
+    """从B拉HTML到A"""
+    cmd = f"scp {REMOTE_HOST}:{REMOTE_HTML} {LOCAL_HTML}"
+    subprocess.run(cmd, shell=True, check=True)
+
+def take_screenshot():
+    """Playwright截图"""
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+
+        file_path = "file://" + os.path.abspath(LOCAL_HTML)
+        page.goto(file_path)
+
+        # 等待页面加载
+        time.sleep(1)
+
+        page.screenshot(path=SCREENSHOT_PATH, full_page=True)
+        browser.close()
+
+@app.route("/run_and_capture", methods=["GET"])
+def run_and_capture():
+    try:
+        # 1. 远端执行SQL
+        run_remote_sql()
+
+        # 2. 拉HTML
+        fetch_html()
+
+        # 3. 截图
+        take_screenshot()
+
+        return send_file(SCREENSHOT_PATH, mimetype='image/png')
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    os.makedirs("temp", exist_ok=True)
+    os.makedirs("screenshot", exist_ok=True)
+    app.run(host="0.0.0.0", port=5000)
+✅ 三、调用方式
+浏览器访问：
+
+http://机器A:5000/run_and_capture
+返回： 👉 一张数据库查询截图（PNG）
+✅ 四、机器B要求（无需Python）
+只要有：
+✔ mysql client
+✔ 能执行 SQL
+✔ 能写文件
+✅ 五、关键优化（强烈建议）
+🔐 1. 免密码SSH
+Bash
+ssh-keygen
+ssh-copy-id user@machine_b
+🔐 2. MySQL免密码
+在 B：
+Bash
+vi ~/.my.cnf
+INI
+[client]
+user=user
+password=password
+权限：
+Bash
+chmod 600 ~/.my.cnf
+👉 然后SQL可以改为：
+Bash
+mysql -e "SELECT ..."
+🎨 3. HTML美化（推荐！）
+把 SQL 输出包一层样式（更像报告截图）：
+修改远端命令：
+Bash
+ssh user@machine_b '
+echo "<html><head>
+<style>
+table {border-collapse: collapse;}
+td, th {border: 1px solid black; padding: 8px;}
+</style>
+</head><body>" > /tmp/result.html
+
+mysql -e "SELECT * FROM your_table LIMIT 20;" --html >> /tmp/result.html
+
+echo "</body></html>" >> /tmp/result.html
+'
+✅ 六、最终效果
+你会得到：
+✔ 标准表格截图
+✔ 可直接插入Word报告
+✔ 自动化触发（Flask API）
+✔ 不依赖B安装Python
+🚀 可以再升级（如果你下一步要做）
+我可以帮你加：
+✅ �⁠关键字高亮（比如 ERROR 标红）
+✅ �⁠多SQL → 多截图
+✅ �⁠自动生成 Word 报告（python-docx）
+✅ �⁠对接你 GitLab pipeline
+如果你下一步是这个👇
+👉 “�⁠截图后自动写 Word 报告”
+我可以直接给你一套企业级测试报告自动生成代码。
