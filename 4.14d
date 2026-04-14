@@ -1,0 +1,139 @@
+你这个需求本质是：
+👉 从 FIS / FIX 协议报文里，把 tag 55（Symbol）重复的去重
+我给你一套完整可用的 Python 脚本（适配真实生产日志），并考虑几种常见情况：
+✅ 一、先说明一下 55 是什么
+在 FIX Protocol 中：
+55 = Symbol（证券代码）
+一条报文可能像这样：
+
+8=FIX.4.4|9=112|35=D|55=APPL|54=1|38=100|
+或者（真实情况）：
+
+8=FIX.4.49=11235=D55=APPL55=APPL54=1
+👉 你要做的是：
+同一条报文里，多个 55= 只保留一个
+✅ 二、最常见需求（单条报文内去重）
+✔ 输入
+
+8=FIX.4.4|55=APPL|54=1|55=APPL|38=100|
+✔ 输出
+
+8=FIX.4.4|55=APPL|54=1|38=100|
+✅ 三、完整Python代码（推荐版）
+Python
+import re
+
+def deduplicate_tag_55(line, delimiter='|'):
+    """
+    对单行 FIX/FIS 报文去重 tag 55
+    """
+    parts = line.strip().split(delimiter)
+    seen_55 = False
+    new_parts = []
+
+    for part in parts:
+        if part.startswith("55="):
+            if not seen_55:
+                new_parts.append(part)
+                seen_55 = True
+            # 后面的55全部丢弃
+        else:
+            if part:  # 避免空字符串
+                new_parts.append(part)
+
+    return delimiter.join(new_parts)
+
+
+def process_file(input_file, output_file, delimiter='|'):
+    with open(input_file, 'r', encoding='utf-8') as f_in, \
+         open(output_file, 'w', encoding='utf-8') as f_out:
+
+        for line in f_in:
+            new_line = deduplicate_tag_55(line, delimiter)
+            f_out.write(new_line + "\n")
+
+
+if __name__ == "__main__":
+    input_file = "fis.log"
+    output_file = "fis_clean.log"
+
+    process_file(input_file, output_file)
+    print("处理完成 ✅")
+✅ 四、如果你的分隔符是 SOH（真实生产环境）
+FIX 常见分隔符是：
+
+\x01
+👉 改一行就行：
+Python
+delimiter = '\x01'
+调用：
+Python
+process_file("fis.log", "fis_clean.log", delimiter='\x01')
+✅ 五、升级版（更智能）
+👉 有些情况你可能要：
+✔ 1. 保留“最后一个55”
+Python
+def deduplicate_keep_last(line, delimiter='|'):
+    parts = line.strip().split(delimiter)
+
+    last_55 = None
+    for part in parts:
+        if part.startswith("55="):
+            last_55 = part
+
+    new_parts = []
+    added_55 = False
+
+    for part in parts:
+        if part.startswith("55="):
+            if not added_55:
+                new_parts.append(last_55)
+                added_55 = True
+        else:
+            if part:
+                new_parts.append(part)
+
+    return delimiter.join(new_parts)
+✔ 2. 整个文件去重（跨报文）
+👉 只保留不同 Symbol
+Python
+seen_symbols = set()
+
+def dedup_across_lines(line, delimiter='|'):
+    parts = line.strip().split(delimiter)
+
+    symbol = None
+    for part in parts:
+        if part.startswith("55="):
+            symbol = part
+            break
+
+    if symbol in seen_symbols:
+        return None
+    else:
+        seen_symbols.add(symbol)
+        return line
+✅ 六、常见坑（你很可能会遇到）
+❗ 1. 分隔符不是 |
+✔ 用 hex 看：
+Bash
+cat fis.log | xxd
+如果看到：
+
+01
+👉 就是 \x01
+❗ 2. 报文一行多个 message
+👉 需要先拆包（可以再问我，我给你解析器）
+❗ 3. 日志里有时间戳
+
+2026-04-14 10:00:00 8=FIX.4.4|55=APPL|...
+👉 需要先提取 FIX 部分
+🚀 如果你下一步要做更高级的（推荐）
+我可以帮你扩展：
+✅ �⁠按 tag 任意去重（不仅55）
+✅ �⁠FIX 报文解析成 JSON
+✅ �⁠自动校验（比如 9= body length）
+✅ �⁠按条件过滤（比如只保留 35=D）
+✅ �⁠直接生成 Excel / 报告
+如果你给我一段真实 fis 文件样例（哪怕脱敏），
+我可以�⁠帮你做一版完全贴合你生产环境的脚本（一步到位） 👍
