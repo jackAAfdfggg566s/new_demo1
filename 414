@@ -1,0 +1,130 @@
+可以做到，而且不需要在机器 B 安装 Python。核心思路是：
+👉 在 跳板机 A 执行截图逻辑，机器 B 只负责“执行查询并输出结果”。
+我给你几个可落地方案（从简单到专业）：
+✅ 方案1：SSH + 查询输出 + A端截图（推荐 👍）
+👉 最稳、最通用
+思路
+A 通过 ssh 登录 B
+在 B 执行数据库查询（mysql / psql / sqlplus 等）
+把结果输出成文本
+A 捕获输出 → 转成图片（截图）
+🔧 示例（MySQL）
+在 A 上写 Python（只在 A 用）
+Python
+import subprocess
+from PIL import Image, ImageDraw, ImageFont
+
+# 1. 远程执行SQL
+ssh_cmd = """
+ssh user@machine_b '
+mysql -uuser -ppassword -e "
+SELECT * FROM your_table LIMIT 10;
+"
+'
+"""
+
+result = subprocess.getoutput(ssh_cmd)
+
+# 2. 转成图片
+lines = result.split("\n")
+width = 1200
+line_height = 20
+height = line_height * len(lines) + 20
+
+img = Image.new("RGB", (width, height), "white")
+draw = ImageDraw.Draw(img)
+
+y = 10
+for line in lines:
+    draw.text((10, y), line, fill="black")
+    y += line_height
+
+img.save("db_result.png")
+✅ 优点
+B 不需要安装任何新工具
+不需要 GUI
+可自动化（CI/CD、测试报告）
+✅ 方案2：B输出HTML → A截图（更美观 ⭐）
+👉 推荐用于测试报告 / Word截图
+在 B 上执行
+Bash
+mysql -uuser -ppassword -e "
+SELECT * FROM your_table
+" --html > /tmp/result.html
+A 拉文件 + 用浏览器截图（Playwright）
+Python
+from playwright.sync_api import sync_playwright
+import subprocess
+
+# 1. 拉文件
+subprocess.run("scp user@machine_b:/tmp/result.html .", shell=True)
+
+# 2. 截图
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page()
+    page.goto("file://" + "/your/path/result.html")
+    page.screenshot(path="result.png", full_page=True)
+    browser.close()
+✅ 优点
+表格格式清晰
+更像真实“截图”
+适合自动生成 Word 报告
+✅ 方案3：终端截图（模拟真实日志截图）
+👉 如果你要的是“像服务器界面截图”
+在 A 执行：
+Bash
+ssh user@machine_b "mysql -uuser -ppassword -e 'SELECT * FROM table;'" > output.txt
+然后用 Python / ImageMagick：
+Bash
+convert -background black -fill white \
+-font Courier -pointsize 14 \
+label:@output.txt output.png
+✅ 效果
+黑底终端风格
+很像真实服务器截图（适合报告）
+🚀 推荐架构（你这个场景最优解）
+
+[机器A]  (有Python/Playwright)
+   |
+   | ssh
+   v
+[机器B]  (只能跑SQL)
+   |
+   └── 输出结果（text/html）
+   |
+[机器A]
+   ├── 拉取结果
+   ├── 渲染
+   └── 截图 → 用于Word报告
+⚠️ 关键问题解决
+❗ B不能装Python怎么办？
+✔ 完全没问题
+👉 只用：
+mysql / psql（已有）
+shell（已有）
+❗ 需要密码怎么办？
+建议用：
+Bash
+ssh-keygen
+ssh-copy-id user@machine_b
+数据库：
+Bash
+~/.my.cnf
+🎯 最推荐你用的组合
+👉（结合你之前自动报告需求）
+✔ B：
+执行 SQL → 输出 HTML
+✔ A：
+scp 拉文件
+Playwright 截图
+插入 Word
+👍 如果你要，我可以帮你做一套完整自动化
+包括：
+✅ 调用远端 SQL
+✅ 自动截图
+✅ 自动写 Word 测试报告
+✅ 插入截图 + 标题
+直接变成你现在 pipeline 的一部分。
+只要你说一句：
+👉 “要整套自动报告代码”
