@@ -1,0 +1,99 @@
+可以的，这个需求其实就是三件事同时做：
+Bash
+psql 输出 → 终端显示
+         → 保存原始 log
+         → 转成 HTML（给后面截图用）
+关键是：tee + 再“复制一份流”去转 HTML
+✅ 最简单可落地方案（推荐）
+直接在 pipeline 里一条命令搞定：
+Bash
+LOG_FILE="psql_$(date +%Y%m%d_%H%M%S).log"
+HTML_FILE="${LOG_FILE%.log}.html"
+
+psql -f xxx.sql 2>&1 | tee "$LOG_FILE" | python3 log_to_html.py "$HTML_FILE"
+👉 结果：
+控制台有输出 ✅
+有 .log 文件 ✅
+同时生成 .html ✅
+✅ log_to_html.py（核心脚本）
+这个脚本从 stdin 读内容，写成 HTML：
+Python
+import sys
+from html import escape
+
+output_file = sys.argv[1]
+
+content = sys.stdin.read()
+
+html = f"""
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body {{ font-family: monospace; background: #111; color: #eee; }}
+pre {{ white-space: pre-wrap; word-wrap: break-word; }}
+</style>
+</head>
+<body>
+<pre>
+{escape(content)}
+</pre>
+</body>
+</html>
+"""
+
+with open(output_file, "w") as f:
+    f.write(html)
+✅ pipeline 传给下一步（一样做）
+YAML
+artifacts:
+  paths:
+    - "*.log"
+    - "*.html"
+    - log_name.txt
+✅ 下一步 Python 直接截图 HTML（你之前的代码不用改）
+Python
+capture("psql_xxx.html", "screenshots/log.png")
+👉 比从 text 转 HTML 更干净
+🚀 更优雅写法（推荐你长期用）
+用 tee 分流两份（避免 Python 吃掉 stdout）：
+Bash
+psql -f xxx.sql 2>&1 | tee "$LOG_FILE" >(python3 log_to_html.py "$HTML_FILE")
+👉 这是 bash 的 process substitution
+效果：
+一份 → tee → 终端 + log
+一份 → python → html
+⚠️ 注意（公司环境很关键）
+❗ 如果报错：
+Bash
+syntax error near >
+👉 说明 shell 不是 bash（可能是 sh）
+解决：
+YAML
+script:
+  - bash -c 'psql -f xxx.sql 2>&1 | tee "$LOG_FILE" >(python3 log_to_html.py "$HTML_FILE")'
+✅ 如果你想“更结构化 HTML”（推荐升级）
+psql 自带 HTML 输出，其实更好：
+Bash
+psql -f xxx.sql --html > result.html
+👉 但缺点：
+❌ 没终端输出
+❌ 不好混日志
+🚀 最推荐组合（生产级）
+Bash
+LOG_FILE="psql_$(date +%Y%m%d_%H%M%S).log"
+HTML_FILE="${LOG_FILE%.log}.html"
+
+psql -f xxx.sql 2>&1 | tee "$LOG_FILE" >(python3 log_to_html.py "$HTML_FILE")
+
+echo $HTML_FILE > html_name.txt
+🧠 一句话总结
+👉 tee 解决“输出 + 保存”
+👉 | python 把流转 HTML
+👉 >(...) 可以不影响终端输出再分流一份
+👇 下一步你可以做的优化（很值）
+如果你是做测试报告，我建议你升级成：
+✅ SQL 表格 → HTML <table>（不是 <pre>）
+✅ 自动高亮 PASS / FAIL
+✅ Word 直接嵌表格（不是截图）
+如果你把一段 psql 实际输出贴出来，我可以帮你做到： 👉 �⁠自动识别表格 → 生成漂亮 HTML + Word 报告（接近人工写的）
