@@ -1,0 +1,104 @@
+你现在的情况，本质是：
+GitLab pipeline 通过 SSH 调远程机器 → 执行 .sh → .sh 里跑 psql → 查询结束了但 pipeline 没“正确结束”。
+这个通常不是 GitLab 的问题，而是 shell / psql 进程没有“正常退出”或 exit code 没传回来。
+我直接说关键点，不绕弯：
+一、最常见原因（90%在这里）
+1️⃣ psql 没退出（卡在交互模式）
+如果你是这样写：
+Bash
+psql -h xxx -U xxx -d xxx
+那它会进入交互模式 → pipeline 永远不会结束
+✅ 正确写法：
+Bash
+psql -h xxx -U xxx -d xxx -c "SELECT * FROM table;"
+或者：
+Bash
+psql -h xxx -U xxx -d xxx -f query.sql
+2️⃣ .sh 没有显式退出
+GitLab 依赖 exit code 判断 job 是否结束
+👉 在你的 .sh 最后一定要加：
+Bash
+echo "query finished"
+exit 0
+如果不写，有些情况下 SSH session 不会正确关闭
+3️⃣ SSH 没断开（关键）
+如果 pipeline 是这样调用：
+Bash
+ssh user@host "sh run.sh"
+但远端脚本里有：
+后台进程（&）
+没关闭的 stdin
+tail / watch / while true
+👉 SSH 会一直等 → pipeline 卡住
+二、推荐的标准写法（稳定版）
+GitLab pipeline 中：
+YAML
+script:
+  - ssh -o StrictHostKeyChecking=no user@host "bash /path/run.sh"
+run.sh（关键模板）
+Bash
+#!/bin/bash
+
+set -e   # 有错直接退出
+set -o pipefail
+
+echo "start psql..."
+
+psql -h xxx -U xxx -d xxx -c "
+SELECT * FROM your_table;
+"
+
+echo "psql finished"
+
+exit 0
+三、如果你还要“记录输出 + 控制结束”
+你之前说用了 tee，这里给你正确组合：
+Bash
+psql -h xxx -U xxx -d xxx -f query.sql | tee output.log
+
+echo "done"
+exit 0
+四、如果 pipeline 还是不结束（进阶排查）
+你可以加这几行定位：
+Bash
+echo "before psql"
+date
+
+psql ...
+
+echo "after psql"
+date
+如果你发现：
+有 "before"
+没有 "after"
+👉 说明 psql 没退出
+五、最容易忽略的坑（你很可能踩了）
+⚠️ .sh 里调用了 python / 其他脚本
+比如：
+Bash
+python test.py
+但 test.py 里：
+有 Flask
+有 server
+有 while True
+👉 这会让 pipeline 永远不结束
+六、终极兜底（强制结束）
+如果你只是想“执行完查询就结束，不管其他”
+可以在 pipeline 用：
+Bash
+ssh user@host "bash /path/run.sh; exit"
+或者：
+Bash
+ssh user@host "timeout 60 bash /path/run.sh"
+七、你这个场景最可能的结论
+结合你之前说的情况：
+“能看到打印，但是结束不了”
+👉 高概率是：
+psql 进入交互模式 ❌
+或脚本没 exit ❌
+或 SSH session 没关闭 ❌
+如果你愿意，可以直接把这两段发我
+我可以帮你精准定位（基本一眼能看出来）：
+1️⃣ GitLab pipeline 的 script
+2️⃣ 远端 .sh 完整内容
+我可以帮你改成一版“100%会自动结束”的版本。
