@@ -1,0 +1,112 @@
+你这个需求的关键矛盾是：
+👉 既要把远端 .sh 的所有日志完整打印到 pipeline
+👉 又要 从这些日志里“安全地提取文件名”传给下一步
+如果处理不好，就会出现：
+日志丢失 ❌
+文件名解析错误 ❌
+pipeline 卡住 ❌
+✅ 最稳方案（推荐）：标记 + tee 保留输出
+核心思路：
+👉 用“标记行”传递文件名
+👉 用 tee 保证日志完整输出
+✅ 一、远端 .sh（标准写法）
+Bash
+#!/bin/bash
+set -e
+
+FILE_NAME="query_$(date +%Y%m%d_%H%M%S).html"
+FILE_PATH="/tmp/$FILE_NAME"
+
+echo "start query..."
+
+psql -h xxx -U xxx -d xxx -f query.sql \
+  --pset=format=html \
+  -o "$FILE_PATH"
+
+echo "query done"
+
+# ✅ 用唯一标记输出（关键！）
+echo "__RESULT_FILE__=$FILE_PATH"
+👉 注意：
+正常日志照常 echo
+只有一行带特殊标记
+✅ 二、GitLab pipeline（同时做到两件事）
+YAML
+script:
+  - |
+    ssh user@host "bash /path/run.sh" | tee full.log
+
+  # ✅ 从完整日志里提取文件名
+  - FILE_PATH=$(grep "__RESULT_FILE__" full.log | tail -n1 | cut -d= -f2)
+
+  - echo "parsed file path: $FILE_PATH"
+✅ 三、传给“另一台机器”的脚本
+YAML
+- ssh user@machineB "python3 run_screenshot.py '$FILE_PATH'"
+✅ 四、如果机器B需要访问这个文件
+⚠️ 这里有个关键问题你必须确认：
+👉 machineB 能不能访问 /tmp/xxx.html？
+情况1：❌ 不能访问（最常见）
+那你必须先 scp：
+YAML
+- scp user@machineA:$FILE_PATH ./result.html
+  - scp result.html user@machineB:/tmp/
+
+  - ssh user@machineB "python3 run_screenshot.py /tmp/result.html"
+情况2：✅ 共用存储（NFS / S3 / NAS）
+那可以直接传路径（你现在的做法）
+✅ 五、为什么这个方案稳？
+✔ 日志完整保留
+Bash
+ssh ... | tee full.log
+👉 pipeline UI 能看到
+👉 文件也有完整记录
+✔ 文件名解析不受干扰
+Bash
+grep "__RESULT_FILE__"
+👉 不怕：
+psql 输出
+debug 日志
+多行 echo
+✔ 支持多个文件（扩展性）
+以后你可以这样：
+Bash
+echo "__RESULT_FILE__=/tmp/a.html"
+echo "__RESULT_FILE__=/tmp/b.html"
+pipeline：
+Bash
+grep "__RESULT_FILE__" full.log
+🚨 你当前方案容易踩的坑
+❌ 用 tail -n 1
+Bash
+FILE_PATH=$(ssh ... | tail -n 1)
+问题：
+只要多一行日志 → 直接错 ❌
+❌ 在 .sh 里混合输出
+Bash
+echo "file is /tmp/a.html"
+👉 pipeline 无法稳定解析
+❌ SSH 嵌套调用不转义
+YAML
+ssh A "ssh B python xxx $FILE_PATH"
+👉 很容易变量不生效
+✔ 正确：
+YAML
+ssh B "python xxx '$FILE_PATH'"
+✅ 六、再进阶（更优雅）
+如果你想更“工程化”，可以直接输出 JSON：
+.sh
+Bash
+echo "{\"file\":\"$FILE_PATH\"}"
+pipeline
+Bash
+FILE_PATH=$(ssh ... | tee log | jq -r '.file')
+👉 但前提：日志必须干净（否则 jq 会报错）
+✅ 总结一句话
+👉 用 tee 保日志，用标记行传参数，用 grep 提取变量
+这是你这个“多机器 + pipeline + 日志 + 参数传递”场景最稳的做法。
+如果你下一步要做：
+👉 多个 HTML → 批量截图
+👉 自动生成 Word 测试报告
+👉 pipeline 自动归档 + 分类
+我可以帮你把整套流程做成“一键测试报告系统”。
