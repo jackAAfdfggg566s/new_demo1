@@ -1,0 +1,107 @@
+你这个需求可以拆成三步，本质是**“远端生成文件 → 把文件名传回 pipeline → 再用 python 处理”**。关键点在于：GitLab 只能拿到 stdout，所以文件名必须通过 stdout 传回来。
+我给你一套稳定可用的方案（你这个场景最适合这种方式）：
+✅ 一、远端 .sh：生成 HTML + 输出文件名
+核心思路：最后一行只输出文件名（或路径）
+Bash
+#!/bin/bash
+set -e
+
+FILE_NAME="query_$(date +%Y%m%d_%H%M%S).html"
+FILE_PATH="/tmp/$FILE_NAME"
+
+echo "start query..."
+
+psql -h xxx -U xxx -d xxx -f query.sql > "$FILE_PATH"
+
+echo "query done"
+
+# ⚠️ 关键：只输出文件路径（给 pipeline 用）
+echo "$FILE_PATH"
+✅ 二、GitLab pipeline：接收这个文件名
+YAML
+script:
+  - FILE_PATH=$(ssh user@host "bash /path/run.sh" | tail -n 1)
+  - echo "remote file: $FILE_PATH"
+👉 tail -n 1 很关键，避免前面的日志干扰
+✅ 三、把远端文件拉回 pipeline 机器
+YAML
+- scp user@host:$FILE_PATH ./result.html
+✅ 四、调用 Python 截图
+比如你用 playwright：
+Python
+from playwright.sync_api import sync_playwright
+
+def screenshot(html_file, output_png):
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        page = browser.new_page()
+        page.goto(f"file://{html_file}")
+        page.screenshot(path=output_png, full_page=True)
+        browser.close()
+
+screenshot("result.html", "result.png")
+pipeline 继续：
+YAML
+- python screenshot.py
+✅ 五、把截图作为 pipeline artifact
+YAML
+artifacts:
+  paths:
+    - result.png
+🚨 你现在可能踩的坑（重点）
+❌ 问题1：stdout 被污染
+如果你的 .sh 这样：
+Bash
+echo "file is $FILE_PATH"
+👉 pipeline 拿到的是：
+
+file is /tmp/xxx.html
+就会解析失败
+✔ 必须只输出纯路径：
+Bash
+echo "$FILE_PATH"
+❌ 问题2：psql 输出不是 HTML
+默认 psql 是文本
+👉 如果你要 HTML：
+Bash
+psql -h xxx -U xxx -d xxx -f query.sql \
+  --pset=format=html \
+  -o "$FILE_PATH"
+❌ 问题3：Playwright 打不开文件
+必须用：
+Python
+page.goto("file:///absolute/path/result.html")
+不是相对路径
+✅ 六、进阶优化（推荐你用）
+如果你不想用 tail -n 1（更稳）
+👉 用“标记法”：
+.sh
+Bash
+echo "OUTPUT_FILE=$FILE_PATH"
+pipeline
+YAML
+- OUTPUT=$(ssh user@host "bash /path/run.sh")
+- FILE_PATH=$(echo "$OUTPUT" | grep OUTPUT_FILE | cut -d= -f2)
+👉 这种方式在日志很多时更安全
+✅ 最终流程图（你现在的链路）
+
+GitLab pipeline
+   ↓
+ssh 远端机器
+   ↓
+run.sh 执行 psql → 生成 html
+   ↓
+stdout 返回 文件路径
+   ↓
+pipeline 解析路径
+   ↓
+scp 下载 html
+   ↓
+python 截图
+   ↓
+artifact 保存 png
+如果你下一步想再优化（比如）：
+❓ 不落地 html，直接截图
+❓ 多个查询批量截图
+❓ 自动插入 Word 测试报告
+我可以帮你把整套 pipeline + python 做成“一键报告生成”。
