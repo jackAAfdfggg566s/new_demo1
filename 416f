@@ -1,0 +1,209 @@
+好，这里给你一套完整可落地的方案1（Playwright + AWS SSO session），适配你现在的 pipeline + 远端截图 + 报告系统。
+我会分成 3 个部分：
+🎯 总体流程
+Plain text
+本地（一次性）
+  ↓
+保存 AWS SSO 登录 session（aws_state.json）
+  ↓
+放到 GitLab / 远端机器
+  ↓
+pipeline 运行
+  ↓
+Playwright 复用 session
+  ↓
+直接打开 AWS Dashboard
+  ↓
+截图 PNG
+🧩 一、初始化脚本（只做一次）
+👉 在你本地机器运行（必须能打开浏览器）
+✅ save_session.py
+Python
+from playwright.sync_api import sync_playwright
+
+STATE_FILE = "aws_state.json"
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=False)  # 必须 False
+    context = browser.new_context()
+
+    page = context.new_page()
+
+    # 打开 AWS Access Portal / Console
+    page.goto("https://console.aws.amazon.com/")
+
+    print("👉 请在浏览器中完成 AWS SSO 登录（包括 MFA）")
+    input("👉 登录完成后按回车继续...")
+
+    # 保存 session
+    context.storage_state(path=STATE_FILE)
+
+    browser.close()
+
+print(f"✅ Session 已保存到 {STATE_FILE}")
+▶️ 执行
+Bash
+pip install playwright
+playwright install chromium
+
+python save_session.py
+完成后会生成：
+Plain text
+aws_state.json
+📦 二、截图脚本（pipeline 用）
+✅ aws_screenshot.py
+Python
+from playwright.sync_api import sync_playwright
+import sys
+import os
+
+# 参数
+AWS_URL = sys.argv[1]
+OUTPUT = sys.argv[2]
+STATE_FILE = "aws_state.json"
+
+print(f"URL: {AWS_URL}")
+print(f"OUTPUT: {OUTPUT}")
+
+if not os.path.exists(STATE_FILE):
+    print("❌ aws_state.json 不存在")
+    exit(1)
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(
+        headless=True,
+        args=["--no-sandbox", "--disable-dev-shm-usage"]
+    )
+
+    context = browser.new_context(
+        storage_state=STATE_FILE
+    )
+
+    page = context.new_page()
+
+    print("👉 打开 AWS 页面...")
+    page.goto(AWS_URL)
+
+    # 等待页面加载（关键）
+    page.wait_for_timeout(10000)
+
+    # 等 widget（CloudWatch 常见）
+    try:
+        page.wait_for_selector("canvas", timeout=15000)
+    except:
+        print("⚠️ 没检测到 canvas，继续")
+
+    # 滚动触发渲染
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.wait_for_timeout(3000)
+
+    # 截图
+    page.screenshot(path=OUTPUT, full_page=True)
+
+    browser.close()
+
+print(f"✅ 截图完成: {OUTPUT}")
+🧪 三、本地测试
+Bash
+python aws_screenshot.py \
+"https://ap-southeast-2.console.aws.amazon.com/cloudwatch/home#dashboards:name=your-dashboard" \
+"/tmp/aws.png"
+⚙️ 四、GitLab Pipeline 示例
+✅ .gitlab-ci.yml
+YAML
+image: python:3.10
+
+stages:
+  - screenshot
+
+before_script:
+  - pip install playwright
+  - playwright install chromium
+
+  # 写入 session 文件
+  - echo "$AWS_STATE_JSON" > aws_state.json
+
+screenshot:
+  stage: screenshot
+  script:
+    - python aws_screenshot.py \
+        "https://ap-southeast-2.console.aws.amazon.com/cloudwatch/home#dashboards:name=your-dashboard" \
+        "aws.png"
+
+    - ls -l aws.png
+
+  artifacts:
+    paths:
+      - aws.png
+🔐 五、GitLab 变量配置（关键）
+去：
+Plain text
+GitLab → Settings → CI/CD → Variables
+新增：
+Plain text
+KEY: AWS_STATE_JSON
+VALUE: (粘贴 aws_state.json 内容)
+✔ 勾选：
+Masked
+Protected
+🚨 六、最容易失败的点（你一定会遇到）
+❌ 1️⃣ session 过期
+表现：
+Plain text
+跳回 login 页面
+✔ 解决：
+Bash
+重新运行 save_session.py
+❌ 2️⃣ dashboard 加载不完整
+✔ 加：
+Python
+page.wait_for_timeout(10000)
+或：
+Python
+page.wait_for_selector("canvas")
+❌ 3️⃣ URL 不完整
+必须用完整 URL：
+Plain text
+https://ap-southeast-2.console.aws.amazon.com/cloudwatch/home#dashboards:name=xxx
+❌ 4️⃣ 公司 SSO 限制设备
+有些公司：
+限制 IP
+限制设备
+👉 pipeline 机器可能被拦
+🧠 七、推荐你升级（重要）
+你现在可以这样扩展：
+Python
+pages = {
+    "cpu": "...dashboard1...",
+    "memory": "...dashboard2...",
+    "rds": "...dashboard3..."
+}
+
+for name, url in pages.items():
+    screenshot(url, f"{name}.png")
+🎯 八、结合你整体系统
+最终你可以做到：
+Plain text
+DB → HTML → PNG
+AWS → Playwright → PNG
+        ↓
+pipeline 汇总
+        ↓
+Python → Word 报告
+        ↓
+Email
+✔ 最后一条关键建议
+👉 这个方案适合：
+demo
+测试报告
+中小规模自动化
+👉 如果你要长期稳定运行（每天跑）：
+🔥 建议逐步迁移到：CloudWatch API + Python画图
+🚀 如果你下一步要做
+我可以帮你继续升级：
+多 dashboard 自动截图
+自动刷新 SSO session
+Word 报告模板（带目录 + 标红）
+一键 pipeline 全流程
+只要你说一句：
+👉 “继续做自动报告系统”
