@@ -1,0 +1,152 @@
+可以，这个用 Flask 做一个简单 endpoint 很适合你现在的 pipeline + 日志查看/截图场景。
+不过先说一句重要的👇
+👉 不能直接按用户传的 filename 原样读取（有安全风险）
+必须限制目录，否则会被读系统文件（路径穿越漏洞）。
+🎯 一、最简单可用版本（安全版）
+✅ Flask endpoint：/log?filename=xxx
+Python
+from flask import Flask, request, abort, send_file
+import os
+
+app = Flask(__name__)
+
+# 只允许访问这个目录
+BASE_DIR = "/tmp/logs"
+
+@app.route("/log")
+def get_log():
+    filename = request.args.get("filename")
+
+    if not filename:
+        return "missing filename", 400
+
+    # 防止 ../../ 这种攻击
+    safe_name = os.path.basename(filename)
+
+    file_path = os.path.join(BASE_DIR, safe_name)
+
+    if not os.path.exists(file_path):
+        return "file not found", 404
+
+    # 方式1：直接返回文件（下载/浏览）
+    return send_file(file_path, mimetype="text/plain")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+🧪 调用方式
+Bash
+curl "http://machineB:5000/log?filename=test.log"
+浏览器：
+Plain text
+http://machineB:5000/log?filename=test.log
+🧠 二、如果你要“网页展示 + 截图”（推荐你用这个）
+👉 你后面要 Playwright 截图的话，建议返回 HTML，而不是纯文本
+✅ HTML版本（适合截图）
+Python
+from flask import Flask, request
+import os
+
+app = Flask(__name__)
+
+BASE_DIR = "/tmp/logs"
+
+@app.route("/log")
+def get_log():
+    filename = request.args.get("filename")
+
+    if not filename:
+        return "missing filename", 400
+
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(BASE_DIR, safe_name)
+
+    if not os.path.exists(file_path):
+        return "file not found", 404
+
+    with open(file_path, "r") as f:
+        content = f.read()
+
+    # HTML 包装（关键）
+    html = f"""
+    <html>
+    <head>
+    <style>
+    body {{
+        background: black;
+        color: #00ff00;
+        font-family: monospace;
+        padding: 20px;
+    }}
+    </style>
+    </head>
+    <body>
+    <pre>{content}</pre>
+    </body>
+    </html>
+    """
+
+    return html
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+🚀 三、结合你的截图系统（关键）
+你现在可以这样用：
+✔ Playwright 截图这个 endpoint
+Python
+page.goto("http://machineB:5000/log?filename=rpo.log")
+page.screenshot(path="rpo.png", full_page=True)
+🎯 四、进阶（你后面肯定会用）
+✔ 1️⃣ 支持关键字高亮
+Python
+keyword = request.args.get("kw", "")
+
+content = content.replace(
+    keyword,
+    f"<span style='color:red'>{keyword}</span>"
+)
+✔ 2️⃣ 只显示最后 N 行（日志很大）
+Python
+lines = content.splitlines()[-100:]
+content = "\n".join(lines)
+✔ 3️⃣ 自动滚动到底部（截图更好看）
+HTML
+<script>
+window.scrollTo(0, document.body.scrollHeight);
+</script>
+🚨 五、你现在这个架构的最佳用法
+结合你之前所有需求👇
+Plain text
+sh 脚本 → 生成 log 文件
+        ↓
+Flask /log endpoint
+        ↓
+Playwright 打开 URL
+        ↓
+截图 PNG
+        ↓
+pipeline 拉回
+        ↓
+生成报告
+⚠️ 六、一定要避免的坑
+❌ 直接用用户传的路径
+Python
+file_path = request.args.get("filename")
+👉 会被访问：
+Plain text
+/etc/passwd
+❌ 没限制目录
+必须：
+Python
+BASE_DIR = "/tmp/logs"
+🎯 一句话总结
+👉 Flask endpoint 用来“把 log 变成网页”，再用 Playwright 截图是最优解
+🚀 如果你下一步要升级
+我可以帮你做一个：
+👉 “日志 → 自动高亮 → 自动截图 → 自动报告系统”
+包括：
+错误自动标红
+成功/失败分块
+多日志汇总一张报告
+自动插入 Word
+你只要说一句：
+👉 “�⁠做日志截图增强版”
