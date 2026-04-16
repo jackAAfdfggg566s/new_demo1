@@ -1,0 +1,152 @@
+这个问题你已经走到“自动化测试编排”的核心了：如何把多步骤（DB查询 + AWS截图 + 多脚本）归到同一个测试报告里。
+关键答案一句话：
+👉 用“统一 Test Context ID（测试上下文ID）”做贯穿，而不是靠 pipeline/脚本猜。
+🎯 一、核心设计思想（非常重要）
+你现在的问题本质是：
+Plain text
+DB查询 pipeline
+AWS截图 pipeline
+其他脚本 pipeline
+👉 它们是“分散执行”的
+但你需要：
+Plain text
+同一个测试 = 同一个报告
+✅ 解决方案：统一 Test ID（唯一主键）
+👉 每一次测试生成一个 ID
+例如：
+Plain text
+TEST_ID=20260416_abc123
+或者：
+Plain text
+TEST_ID=db_failover_case_001
+🧠 二、这个 ID 要贯穿所有步骤
+🟦 1️⃣ pipeline 入口生成 ID
+YAML
+script:
+  - TEST_ID="db_test_$(date +%s)"
+  - echo $TEST_ID > test_id.txt
+或者随机：
+Bash
+TEST_ID=$(uuidgen)
+🟦 2️⃣ 传给所有远端脚本
+YAML
+- ssh user@machineA "bash run_db.sh $TEST_ID"
+- ssh user@machineB "bash aws_screenshot.sh $TEST_ID"
+🟦 3️⃣ 远端脚本统一写文件
+DB脚本：
+Bash
+TEST_ID=$1
+
+FILE="/tmp/${TEST_ID}_db.html"
+
+psql ... -o $FILE
+
+echo $FILE
+AWS截图脚本：
+Bash
+TEST_ID=$1
+
+FILE="/tmp/${TEST_ID}_aws.png"
+
+python screenshot.py ... $FILE
+
+echo $FILE
+🧩 三、统一“产物结构”（关键）
+所有测试产物统一命名：
+Plain text
+/tmp/TEST_ID_db.html
+/tmp/TEST_ID_aws.png
+/tmp/TEST_ID_api.png
+👉 这样 pipeline 不用猜
+📦 四、pipeline 汇总逻辑
+YAML
+script:
+  - TEST_ID=$(cat test_id.txt)
+
+  - scp user@machineA:/tmp/${TEST_ID}_db.html .
+  - scp user@machineB:/tmp/${TEST_ID}_aws.png .
+
+  - ls -l
+📄 五、Python 自动生成报告（核心）
+Python
+from docx import Document
+from docx.shared import Inches
+import sys
+
+test_id = sys.argv[1]
+
+doc = Document()
+doc.add_heading(f'Test Report: {test_id}', 0)
+
+doc.add_heading('DB Result', level=1)
+doc.add_picture(f'{test_id}_db.html.png', width=Inches(6))
+
+doc.add_heading('AWS Status', level=1)
+doc.add_picture(f'{test_id}_aws.png', width=Inches(6))
+
+doc.save(f'{test_id}_report.docx')
+📬 六、邮件发送也绑定 TEST_ID
+Python
+filename = f"{test_id}_report.docx"
+🧠 七、如果你有“多个 pipeline”（重点升级）
+你可以有三种模式：
+✔ 方案1（推荐）：一个 pipeline orchestrator
+Plain text
+GitLab pipeline（主）
+   ↓
+调用 A / B / C
+   ↓
+统一收集
+   ↓
+生成报告
+✔ 方案2：共享存储（更工程化）
+所有脚本写到：
+Plain text
+s3://bucket/test_id/
+或：
+Plain text
+/shared/test_id/
+👉 pipeline 只负责“拉取”
+✔ 方案3：数据库记录（高级）
+SQL
+test_case table:
+  test_id
+  status
+  artifact_path
+👉 适合大规模测试系统
+🚨 八、你现在最大问题（关键点）
+你现在是：
+Plain text
+脚本1：DB
+脚本2：AWS
+脚本3：截图
+❌ 没有“共同标识”
+🎯 九、正确设计一句话总结
+👉 所有测试产物必须绑定同一个 TEST_ID（唯一主键）
+🚀 十、推荐你最终架构（最实用）
+Plain text
+GitLab pipeline
+    ↓
+生成 TEST_ID
+    ↓
+并行执行：
+    ├── DB pipeline（带 TEST_ID）
+    ├── AWS pipeline（带 TEST_ID）
+    ├── screenshot pipeline（带 TEST_ID）
+    ↓
+统一 scp / s3 拉取
+    ↓
+Python 生成 Word
+    ↓
+邮件发送
+💡 如果你要继续升级（很关键）
+我可以帮你把这个系统升级成：
+✔ 自动测试编排系统（类似 mini CI test framework）
+YAML 定义测试步骤
+自动分发任务到不同机器
+自动汇总 report
+自动失败重跑
+自动邮件 + dashboard
+只要你说一句：
+👉 “我要统一测试框架”
+我可以帮你直接设计一套可以复用到所有 pipeline 的架构模板。
