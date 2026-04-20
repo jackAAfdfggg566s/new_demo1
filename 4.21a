@@ -1,0 +1,101 @@
+明白了，你这个不是“自由组合”的 cluster / namespace，而是：
+环境1 → 固定：clusterA + namespaceA
+环境2 → 固定：clusterB + namespaceB
+👉 本质是 一组参数绑定在一起切换，而不是两个独立变量。
+✅ 正确做法：用“一个变量 + 映射”
+在 Amazon CloudWatch 里，最佳实践是：
+👉 只用一个下拉（env）
+👉 在每个 widget 里做“条件映射”
+🧠 核心思路（重点）
+CloudWatch 不支持变量拆分（比如 env → cluster + namespace 自动解析）
+所以你要这样做：
+👉 用 ${env}
+👉 在 query 里“写死映射逻辑”
+✅ 方案（可用）
+1️⃣ 定义变量
+JSON
+"variables": [
+  {
+    "type": "property",
+    "id": "env",
+    "label": "Environment",
+    "inputType": "select",
+    "values": [
+      { "label": "env1", "value": "env1" },
+      { "label": "env2", "value": "env2" }
+    ],
+    "defaultValue": "env1"
+  }
+]
+2️⃣ Logs 写法（推荐 👍）
+假设：
+env1 → clusterA / nsA
+env2 → clusterB / nsB
+SQL
+SOURCE '/aws/containerinsights/clusterA/application',
+       '/aws/containerinsights/clusterB/application'
+| filter (
+    ('${env}' = 'env1' and kubernetes.cluster_name = 'clusterA' and kubernetes.namespace_name = 'nsA')
+    or
+    ('${env}' = 'env2' and kubernetes.cluster_name = 'clusterB' and kubernetes.namespace_name = 'nsB')
+)
+| fields @timestamp, @message
+| sort @timestamp desc
+👉 关键点：
+所有 cluster 都写进 SOURCE
+用 ${env} 控制 filter
+3️⃣ Metrics 写法（稍麻烦）
+CloudWatch metrics 不能写 if / else，所以要这样：
+JSON
+{
+  "metrics": [
+    [
+      "ContainerInsights", "pod_cpu_utilization",
+      "ClusterName", "clusterA",
+      "Namespace", "nsA",
+      { "id": "m1", "visible": false }
+    ],
+    [
+      "ContainerInsights", "pod_cpu_utilization",
+      "ClusterName", "clusterB",
+      "Namespace", "nsB",
+      { "id": "m2", "visible": false }
+    ]
+  ],
+  "view": "timeSeries",
+  "stat": "Average",
+  "region": "ap-southeast-2",
+  "title": "CPU",
+  "period": 300
+}
+然后加 expression：
+JSON
+[
+  { "expression": "IF('${env}'='env1', m1, m2)", "label": "CPU Usage" }
+]
+👉 这样只显示当前环境的数据
+✅ 更简单（我更推荐）
+如果你不想写复杂 expression：
+👉 直接用两个 widget + 控制可见性（逻辑简单）
+但 CloudWatch dashboard 目前不支持真正的 widget show/hide
+所以一般还是用上面 expression 方案
+⚠️ 现实建议（很重要）
+说实话，如果你这种：
+👉 “一对一环境映射”
+在 CloudWatch 里会写得比较绕 😅
+🚀 更优雅方案（如果允许）
+如果你后面复杂度会上来，建议：
+👉 用 Grafana
+原因：
+支持变量映射（env → cluster / namespace）
+支持联动变量
+query 更灵活
+dashboard 更干净
+✅ 总结一句话
+你的需求在 CloudWatch 的正确实现方式是：
+👉 一个 env 变量 + query 里写映射逻辑（filter 或 IF）
+如果你把你现在的：
+一个 metrics widget JSON
+或
+一个 logs query
+贴出来，我可以帮你直接改成“env 切换版”，而且帮你优化到最简写法（避免以后维护痛苦）。
