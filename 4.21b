@@ -1,0 +1,157 @@
+下面给你一个可直接用的完整 CloudWatch Dashboard JSON 模板（已按你这个场景设计）：
+👉 一个下拉 env
+👉 env1 / env2 分别映射不同的 cluster + namespace
+👉 同时包含 Logs + Metrics 示例
+适用于 Amazon CloudWatch
+✅ ✅ 完整 Dashboard JSON（可直接导入）
+JSON
+{
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 8,
+      "properties": {
+        "title": "Application Logs",
+        "region": "ap-southeast-2",
+        "query": "SOURCE '/aws/containerinsights/clusterA/application', '/aws/containerinsights/clusterB/application'\n| filter (\n    ('${env}' = 'env1' and kubernetes.cluster_name = 'clusterA' and kubernetes.namespace_name = 'nsA')\n    or\n    ('${env}' = 'env2' and kubernetes.cluster_name = 'clusterB' and kubernetes.namespace_name = 'nsB')\n)\n| fields @timestamp, kubernetes.pod_name, @message\n| sort @timestamp desc\n| limit 100"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 8,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Pod CPU Utilization",
+        "region": "ap-southeast-2",
+        "view": "timeSeries",
+        "stat": "Average",
+        "period": 300,
+        "metrics": [
+          [
+            "ContainerInsights",
+            "pod_cpu_utilization",
+            "ClusterName",
+            "clusterA",
+            "Namespace",
+            "nsA",
+            { "id": "m1", "visible": false }
+          ],
+          [
+            "ContainerInsights",
+            "pod_cpu_utilization",
+            "ClusterName",
+            "clusterB",
+            "Namespace",
+            "nsB",
+            { "id": "m2", "visible": false }
+          ],
+          [
+            {
+              "expression": "IF('${env}'='env1', m1, m2)",
+              "label": "CPU Usage",
+              "id": "e1"
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 8,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "title": "Pod Memory Utilization",
+        "region": "ap-southeast-2",
+        "view": "timeSeries",
+        "stat": "Average",
+        "period": 300,
+        "metrics": [
+          [
+            "ContainerInsights",
+            "pod_memory_utilization",
+            "ClusterName",
+            "clusterA",
+            "Namespace",
+            "nsA",
+            { "id": "m1", "visible": false }
+          ],
+          [
+            "ContainerInsights",
+            "pod_memory_utilization",
+            "ClusterName",
+            "clusterB",
+            "Namespace",
+            "nsB",
+            { "id": "m2", "visible": false }
+          ],
+          [
+            {
+              "expression": "IF('${env}'='env1', m1, m2)",
+              "label": "Memory Usage",
+              "id": "e1"
+            }
+          ]
+        ]
+      }
+    }
+  ],
+  "variables": [
+    {
+      "type": "property",
+      "id": "env",
+      "label": "Environment",
+      "inputType": "select",
+      "visible": true,
+      "values": [
+        { "label": "Environment 1", "value": "env1" },
+        { "label": "Environment 2", "value": "env2" }
+      ],
+      "defaultValue": "env1"
+    }
+  ]
+}
+🔧 你需要改的地方（很重要）
+把这几项替换成你自己的：
+1️⃣ Cluster 名
+Plain text
+clusterA → 你的 env1 cluster
+clusterB → 你的 env2 cluster
+2️⃣ Namespace
+Plain text
+nsA → env1 namespace
+nsB → env2 namespace
+3️⃣ Log Group（如果不一样）
+默认是 Container Insights：
+Plain text
+/aws/containerinsights/<cluster>/application
+如果你不是这个路径，要改：
+SQL
+SOURCE '你的log group'
+✅ 最终效果
+你会得到：
+👉 Dashboard 顶部一个下拉框：
+Environment 1
+Environment 2
+👉 切换后：
+Logs 自动切 cluster + namespace
+CPU / Memory 图自动切
+⚠️ 关键理解（帮你避免后面踩坑）
+CloudWatch 本质限制：
+❌ 不能：
+env → 自动拆成 cluster / namespace
+✅ 只能：
+手动在 query 里写映射（你现在这个方案）
+🚀 如果你下一步要优化
+可以再升级：
+�⁠加一个 pod 下拉
+�⁠加 container 下拉
+或�⁠做 error rate / latency 图
+如果你愿意，把你现有 dashboard JSON贴一小段（比如一个 widget），我可以帮你：
+👉 直接改成你生产可用版本（包括命名、结构优化、避免后期维护爆炸）
