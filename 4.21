@@ -1,0 +1,80 @@
+可以做到，而且这是 AWS 里比较标准的做法 👍——你不用维护 4 份 dashboard，可以合并成 1 个 dashboard + 下拉变量切换环境/日志组。
+你现在说的 AWS dashboard（JSON），大概率是 Amazon CloudWatch 的 Dashboard。它支持 变量（variables）+ 动态查询。
+✅ 推荐方案：用 Dashboard Variables（下拉框切环境）
+1️⃣ 定义变量（environment / log group）
+在 dashboard JSON 里加 variables：
+JSON
+"variables": [
+  {
+    "type": "property",
+    "property": "region",
+    "inputType": "select",
+    "id": "env",
+    "label": "Environment",
+    "visible": true,
+    "values": [
+      { "label": "dev", "value": "dev" },
+      { "label": "uat", "value": "uat" }
+    ],
+    "defaultValue": "dev"
+  }
+]
+👉 这个会在 dashboard 顶部生成一个下拉框（dev / uat）
+2️⃣ 在 widget 里引用变量
+比如你现在有两个 log group：
+/app/dev/log
+/app/uat/log
+可以改成：
+JSON
+{
+  "type": "log",
+  "properties": {
+    "query": "SOURCE '/app/${env}/log' | fields @timestamp, @message | sort @timestamp desc"
+  }
+}
+👉 ${env} 会根据下拉框自动替换
+3️⃣ 多 log group 场景（两个日志组）
+如果你有两个日志组，比如：
+/app/dev/log1
+/app/dev/log2
+可以写：
+SQL
+SOURCE '/app/${env}/log1', '/app/${env}/log2'
+✅ 进阶：一个变量控制多个资源
+如果环境和 log group 不是简单拼接关系，可以用 映射变量：
+JSON
+{
+  "type": "property",
+  "id": "logGroup",
+  "label": "Log Group",
+  "inputType": "select",
+  "values": [
+    { "label": "DEV", "value": "/app/dev/log" },
+    { "label": "UAT", "value": "/app/uat/log" }
+  ]
+}
+然后：
+SQL
+SOURCE '${logGroup}'
+✅ 最终效果
+你现在 4 个 dashboard：
+dev + log1
+dev + log2
+uat + log1
+uat + log2
+👉 可以变成：
+👉 1 个 dashboard + 下拉选择 env 👉 自动切换所有 widget
+⚠️ 注意点（容易踩坑）
+${变量} 只能在支持的字段里用（log query、metrics、alarm）
+log widget 必须用 SOURCE 写法（不是 console 选 log group）
+有时候 UI 不支持变量，只能直接改 JSON
+变量名区分大小写
+🚀 如果你想再进一步优化
+你还可以做到：
+一个下拉选 env
+一个下拉选 service
+自动拼：/app/${env}/${service}/log
+甚至：
+切换 region
+切换 account（跨账号需要 IAM 配合）
+如果你愿意，可以把你现在的 dashboard JSON 发我一段（脱敏即可），我可以帮你直接改成支持下拉切换的版本。
