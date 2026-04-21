@@ -1,0 +1,126 @@
+明白，你现在是三件事要一起切：
+👉 env + log type → 决定 log group
+👉 同时 namespace 也要跟着变（不是用户选）
+也就是：
+env
+type
+log group
+namespace
+env1
+app
+/log/env1/app
+ns-a
+env1
+infra
+/log/env1/infra
+ns-b
+env2
+app
+/log/env2/app
+ns-c
+env2
+infra
+/log/env2/infra
+ns-d
+👉 namespace 不是变量，而是“跟 env+type 绑定”
+✅ ✅ 完整 JSON（包含 namespace 自动切换）
+适用于 Amazon CloudWatch
+JSON
+{
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 8,
+      "properties": {
+        "title": "Logs (Env + Type + Namespace Auto Switch)",
+        "region": "ap-southeast-2",
+        "query": "SOURCE '/log/env1/app', '/log/env1/infra', '/log/env2/app', '/log/env2/infra'\n| filter (\n    ('${env}'='env1' and '${type}'='app' and @log='/log/env1/app' and kubernetes.namespace_name='ns-a') or\n    ('${env}'='env1' and '${type}'='infra' and @log='/log/env1/infra' and kubernetes.namespace_name='ns-b') or\n    ('${env}'='env2' and '${type}'='app' and @log='/log/env2/app' and kubernetes.namespace_name='ns-c') or\n    ('${env}'='env2' and '${type}'='infra' and @log='/log/env2/infra' and kubernetes.namespace_name='ns-d')\n)\n| fields @timestamp, @log, kubernetes.namespace_name, kubernetes.pod_name, @message\n| sort @timestamp desc\n| limit 100"
+      }
+    }
+  ],
+  "variables": [
+    {
+      "type": "property",
+      "id": "env",
+      "label": "Environment",
+      "inputType": "select",
+      "visible": true,
+      "values": [
+        { "label": "Env1", "value": "env1" },
+        { "label": "Env2", "value": "env2" }
+      ],
+      "defaultValue": "env1"
+    },
+    {
+      "type": "property",
+      "id": "type",
+      "label": "Log Type",
+      "inputType": "select",
+      "visible": true,
+      "values": [
+        { "label": "Application", "value": "app" },
+        { "label": "Infrastructure", "value": "infra" }
+      ],
+      "defaultValue": "app"
+    }
+  ]
+}
+✅ 🔥 这个方案做到了什么
+✔ 用两个下拉：
+env
+type
+✔ 自动完成：
+切 log group（通过 @log）
+切 namespace（通过 filter 写死映射）
+👉 用户完全不用关心 namespace
+🧠 关键设计（你以后维护会用到）
+1️⃣ namespace 不作为变量
+因为：
+👉 它和 env + type 是绑定关系
+👉 不能独立选（否则会错）
+2️⃣ 用“组合条件”控制
+SQL
+(env + type) → log group + namespace
+👉 你其实是在 Logs Insights 里写了一个“小路由表”
+⚠️ 可以优化（很有用）
+现在写法有点长（4个 OR）
+👉 可以优化成更干净版本👇
+🚀 优化版（减少 OR）
+SQL
+SOURCE '/log/env1/app', '/log/env1/infra', '/log/env2/app', '/log/env2/infra'
+| filter @log = concat('/log/', '${env}', '/', '${type}')
+| filter (
+    ('${env}'='env1' and '${type}'='app' and kubernetes.namespace_name='ns-a') or
+    ('${env}'='env1' and '${type}'='infra' and kubernetes.namespace_name='ns-b') or
+    ('${env}'='env2' and '${type}'='app' and kubernetes.namespace_name='ns-c') or
+    ('${env}'='env2' and '${type}'='infra' and kubernetes.namespace_name='ns-d')
+)
+👉 log group 自动拼
+👉 namespace 单独控制
+🚀 再进阶（更优雅）
+如果你后面组合越来越多（比如 10+ env）：
+👉 建议：
+✔ 用一个变量直接映射所有信息
+JSON
+{
+  "id": "target",
+  "values": [
+    { "label": "env1-app", "value": "/log/env1/app|ns-a" },
+    { "label": "env2-infra", "value": "/log/env2/infra|ns-d" }
+  ]
+}
+⚠️ 但问题：
+👉 CloudWatch 不能 split 字符串
+所以这个方法理论好，但实际不太好用
+✅ 总结一句话
+你的场景标准解法就是：
+👉 env + type 变量 → 在 query 里手动映射 log group + namespace
+如果你把你真实的：
+log group 名
+namespace 名
+当前 query
+发我，我可以帮你👇
+👉 压缩成最短可维护版本（避免以后你自己都看不懂 😄）
