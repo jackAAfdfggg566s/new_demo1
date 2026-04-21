@@ -1,0 +1,102 @@
+好，这次我给你一个最贴合你需求、结构也最干净的完整 JSON：
+👉 只有 一个下拉框（env）
+👉 每个 env 绑定自己的 log group + namespace
+👉 用户只选环境，其它全部自动切换
+👉 用于 Amazon CloudWatch Logs Insights
+✅ ✅ 最推荐方案（一个变量控制一切）
+🎯 场景
+env
+log group
+namespace
+env1
+/log/env1/app
+ns-a
+env2
+/log/env2/app
+ns-b
+🔥 完整 Dashboard JSON
+JSON
+{
+  "widgets": [
+    {
+      "type": "log",
+      "x": 0,
+      "y": 0,
+      "width": 24,
+      "height": 8,
+      "properties": {
+        "title": "Logs by Environment",
+        "region": "ap-southeast-2",
+        "query": "SOURCE '/log/env1/app', '/log/env2/app'\n| filter (\n    ('${env}'='env1' and @log='/log/env1/app' and kubernetes.namespace_name='ns-a') or\n    ('${env}'='env2' and @log='/log/env2/app' and kubernetes.namespace_name='ns-b')\n)\n| fields @timestamp, @log, kubernetes.namespace_name, kubernetes.pod_name, @message\n| sort @timestamp desc\n| limit 100"
+      }
+    }
+  ],
+  "variables": [
+    {
+      "type": "property",
+      "id": "env",
+      "label": "Environment",
+      "inputType": "select",
+      "visible": true,
+      "values": [
+        { "label": "Env1", "value": "env1" },
+        { "label": "Env2", "value": "env2" }
+      ],
+      "defaultValue": "env1"
+    }
+  ]
+}
+✅ 使用说明（你只需要改3个地方）
+1️⃣ log group
+Plain text
+/log/env1/app → 你的环境1 log group
+/log/env2/app → 你的环境2 log group
+2️⃣ namespace
+Plain text
+ns-a → env1 namespace
+ns-b → env2 namespace
+3️⃣ region（如果不是悉尼）
+Plain text
+ap-southeast-2 → 改成你的 region
+✅ 效果
+顶部一个下拉：
+Env1
+Env2
+切换后：
+✔ 自动换 log group
+✔ 自动换 namespace
+✔ 查询逻辑完全一致
+🧠 为什么这样写（关键理解）
+CloudWatch Logs Insights 限制：
+❌ 不能：
+SQL
+SOURCE '${env}'   ← 不可靠 / 基本不支持
+✅ 必须：
+SQL
+SOURCE '所有可能的 log group'
++ filter 控制
+⚠️ 可选优化（更简洁写法）
+如果你的 log group 是规则命名（强烈建议）：
+Plain text
+/log/${env}/app
+可以这样写：
+SQL
+SOURCE '/log/env1/app', '/log/env2/app'
+| filter @log = concat('/log/', '${env}', '/app')
+| filter (
+    ('${env}'='env1' and kubernetes.namespace_name='ns-a') or
+    ('${env}'='env2' and kubernetes.namespace_name='ns-b')
+)
+👉 少写一半 OR
+🚀 如果你后面还要扩展（建议）
+可以继续加：
+pod 下拉
+keyword 搜索
+error filter
+✅ 总结一句话
+👉 一个 env 下拉 + query 里映射 log group 和 namespace = 标准解法
+如果你把你真实的：
+log group 名
+namespace 名
+发我，我可以帮你👇
+👉 改成“零重复、最短版本”（比现在再精简一半）
