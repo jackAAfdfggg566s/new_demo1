@@ -1,0 +1,174 @@
+好，方案1（trigger 跨 repo）我给你拆成可直接用 + 可扩展 + 避坑版，基本照着抄就能跑。
+基于 GitLab 官方推荐方式 👇
+🧩 一、整体流程
+
+repo1 (PT测试)
+   ↓
+trigger
+   ↓
+repo2 (DB查询)
+✅ 二、repo1 完整配置（重点）
+.gitlab-ci.yml
+YAML
+stages:
+  - test
+  - trigger
+
+variables:
+  TARGET_ENV: "sit"
+  LOG_FILE: "pt.log"
+
+pt_test:
+  stage: test
+  script:
+    - echo "Running PT test..."
+    - echo "generate log" > $LOG_FILE
+
+trigger_repo2:
+  stage: trigger
+  needs:
+    - job: pt_test
+      artifacts: true
+  trigger:
+    project: group-name/repo2     # ⚠️ 必须完整路径
+    branch: main
+    strategy: depend              # ✅ 强依赖
+  variables:
+    ENV: $TARGET_ENV              # 传变量给 repo2
+    LOG_FILE: $LOG_FILE
+✅ 三、repo2 配置（接收 + 执行）
+.gitlab-ci.yml
+YAML
+stages:
+  - db
+
+db_query:
+  stage: db
+  script:
+    - echo "ENV is $ENV"
+    - echo "LOG_FILE is $LOG_FILE"
+    - echo "Running DB query..."
+🔥 四、核心机制讲清楚（你必须理解）
+1️⃣ trigger 做了什么？
+YAML
+trigger:
+  project: group-name/repo2
+👉 GitLab 会：
+自动创建 repo2 的 pipeline
+用 repo1 的上下文去触发
+2️⃣ strategy: depend（非常关键）
+YAML
+strategy: depend
+效果：
+repo2 状态
+repo1 结果
+成功
+成功
+失败
+❌ 失败
+运行中
+⏳ 等待
+👉 适合你这种“测试 → 校验 → 报告”链路
+3️⃣ 变量传递（你现在最需要）
+repo1：
+YAML
+variables:
+  ENV: $TARGET_ENV
+  LOG_FILE: $LOG_FILE
+repo2 直接用：
+Bash
+echo $ENV
+echo $LOG_FILE
+🧠 五、进阶（你这种自动化场景必用）
+✅ 1. 动态环境（多环境切换）
+repo1：
+YAML
+variables:
+  TARGET_ENV: "uat"   # sit / uat / prod
+repo2：
+YAML
+script:
+  - if [ "$ENV" = "prod" ]; then echo "prod db"; fi
+✅ 2. 只在成功时触发
+YAML
+trigger_repo2:
+  stage: trigger
+  needs: ["pt_test"]
+  rules:
+    - if: $CI_JOB_STATUS == "success"
+（一般 needs 已经保证顺序，不写也行）
+✅ 3. 多 repo 串联（链式）
+
+repo1 → repo2 → repo3
+repo2 再写：
+YAML
+trigger_repo3:
+  stage: next
+  trigger:
+    project: group-name/repo3
+    branch: main
+✅ 4. 传更多参数（很实用）
+YAML
+variables:
+  ENV: $TARGET_ENV
+  LOG_FILE: $LOG_FILE
+  NAMESPACE: "ns1"
+  CLUSTER: "clusterA"
+👉 你之前 dashboard / log group 场景可以直接带过去
+⚠️ 六、权限问题（90%的人卡这里）
+❗ 必须满足
+repo2 设置：
+路径：
+
+Settings → CI/CD → Token Access
+开启：
+✅ Allow CI_JOB_TOKEN
+repo2 允许被触发（关键）
+
+Settings → CI/CD → Pipeline triggers / permissions
+repo1 必须有权限访问 repo2
+👉 同一个 group 最简单
+🚨 七、常见坑（结合你实际情况）
+❌ 1. 写错 project
+YAML
+project: repo2   # ❌ 错
+✅ 正确：
+YAML
+project: group-name/repo2
+❌ 2. repo2 没 pipeline
+👉 必须有 .gitlab-ci.yml
+❌ 3. pipeline 卡住
+👉 多半是：
+YAML
+strategy: depend
+但 repo2 job 没结束 / 卡死
+❌ 4. 变量为空
+👉 注意 shell 写法：
+Bash
+echo "$ENV"   # ✅
+🚀 八、结合你当前系统（最优设计）
+你现在已经有：
+GitLab pipeline
+远程执行
+Python + log + 截图
+👉 推荐这样升级：
+repo1（PT）
+YAML
+生成 log → trigger repo2（带 log 文件名）
+repo2（DB）
+YAML
+读取 log → 查询 DB → 生成截图 → 输出报告
+🎯 如果你要更高级一点（我可以帮你）
+可以直接帮你做👇一整套：
+✅ �⁠repo1 + repo2 完整 CI 配置
+✅ �⁠自动传 log 文件（artifact 下载）
+✅ repo2 自动：
+下载 artifact
+DB 查询
+截图
+生成 Word
+甚至可以做到：
+👉 �⁠网页输入一句话 → 自动跑完整链路
+你下一步可以问我这个👇（我建议）：
+👉 “�⁠repo1 的 artifact 怎么传给 repo2 用？”
+这个是你现在系统最关键的一步，我可以给你完整代码（包括 curl 下载 artifact + Python 处理）。
