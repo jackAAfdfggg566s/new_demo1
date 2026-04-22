@@ -1,0 +1,138 @@
+你这个疑问很关键，其实很多人第一次用都会懵：
+👉 “我没在 repo1 里看到调用 repo2 的 job 名字？”
+先直接说结论：
+❗方案1（trigger）不会指定 repo2 的某个 job
+👉 它是 触发整个 repo2 的 pipeline 👉 然后由 repo2 自己决定跑哪些 job
+🧩 一、你以为的 vs 实际发生的
+❌ 你以为：
+YAML
+trigger repo2 的 db_query 这个 job
+✅ 实际是：
+YAML
+触发 repo2 的 pipeline（整套）
+然后 repo2：
+YAML
+stages:
+  - db
+
+db_query:   # 👈 这个 job 会自动执行
+✅ 二、完整最小可运行例子
+📦 repo1
+YAML
+stages:
+  - test
+  - trigger
+
+pt_test:
+  stage: test
+  script:
+    - echo "PT done"
+
+trigger_repo2:
+  stage: trigger
+  needs: ["pt_test"]
+  trigger:
+    project: my-group/repo2
+    branch: main
+    strategy: depend
+  variables:
+    ENV: "sit"
+📦 repo2
+YAML
+stages:
+  - db
+
+db_query:
+  stage: db
+  script:
+    - echo "Running DB query in repo2"
+    - echo "ENV=$ENV"
+🔥 三、那“调用哪个 job”怎么控制？
+👉 答案：在 repo2 里控制，而不是 repo1
+✅ 方法1：用 rules 控制 job 是否执行
+YAML
+db_query:
+  stage: db
+  rules:
+    - if: $ENV == "sit"
+  script:
+    - echo "run SIT DB query"
+✅ 方法2：用变量区分执行逻辑
+repo1：
+YAML
+variables:
+  JOB_TYPE: "db"
+repo2：
+YAML
+db_query:
+  script:
+    - if [ "$JOB_TYPE" = "db" ]; then echo "run db"; fi
+✅ 方法3：只跑某一个 job（推荐写法）
+YAML
+db_query:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "pipeline"   # 👈 只允许被trigger触发
+🧭 四、group name / repo name 怎么确认（重点）
+你只需要看 GitLab 页面 URL 👇
+✅ 示例
+如果你打开 repo2 页面是：
+Plain text
+https://gitlab.com/my-group/backend/repo2
+那么：
+YAML
+project: my-group/backend/repo2
+🔍 快速确认方法
+方法1（最简单）：
+看浏览器地址栏
+方法2：
+GitLab 页面左上角：
+Plain text
+Group / Subgroup / Project
+⚠️ 常见错误
+❌ 写成：
+YAML
+project: repo2
+❌ 写错层级：
+YAML
+project: backend/repo2   # 少了 group
+✅ 正确必须是完整路径：
+YAML
+project: my-group/backend/repo2
+🧠 五、你可以这样验证是否成功
+在 repo1 pipeline 里：
+你会看到：
+Plain text
+trigger_repo2
+   ↓
+Downstream pipeline
+   ↓
+repo2 pipeline 运行
+👉 GitLab UI 会显示一个“子 pipeline”
+🚀 六、结合你场景（给你一个更贴近的）
+你现在要的是：
+👉 repo1 跑 PT
+👉 repo2 跑 DB + 截图
+repo1
+YAML
+trigger_repo2:
+  trigger:
+    project: my-group/qa/db-check
+    branch: main
+    strategy: depend
+  variables:
+    LOG_FILE: "pt.log"
+    ENV: "uat"
+repo2
+YAML
+db_query:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+  script:
+    - echo "read log: $LOG_FILE"
+    - python query_and_screenshot.py
+🎯 最关键一句总结
+👉 repo1 触发的是 repo2 的 pipeline，不是某个 job
+👉 具体跑哪个 job，是 repo2 自己通过 rules 决定
+如果你下一步想打通你现在的系统，我建议你继续问：
+👉 “�⁠repo2 怎么下载 repo1 的 log artifact？”
+这个是你现在自动化链路的核心，我可以直接给你一套能跑的完整代码（含 Python + curl）。
