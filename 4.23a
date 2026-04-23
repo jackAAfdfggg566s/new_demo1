@@ -1,0 +1,180 @@
+先把关键点说清楚，避免你绕弯：
+👉 在 GitLab 里，repo1 触发 repo2 时，无法在 repo1 里指定 repo2 的“多个 job 顺序”
+👉 repo1 只能 触发 repo2 的整个 pipeline
+👉 顺序必须在 repo2 内部控制
+🧩 一、正确设计思路
+Plain text
+repo1
+  ↓ trigger
+repo2 pipeline
+  ↓
+job1 → job2 → job3（顺序在 repo2 控制）
+✅ 二、repo2 里实现“有顺序执行”的方法（推荐）
+✅ 方法1：用 stages（最简单、最标准）
+YAML
+stages:
+  - step1
+  - step2
+  - step3
+
+job1:
+  stage: step1
+  script:
+    - echo "step1"
+
+job2:
+  stage: step2
+  script:
+    - echo "step2"
+
+job3:
+  stage: step3
+  script:
+    - echo "step3"
+👉 执行顺序：
+Plain text
+job1 → job2 → job3
+✅ 方法2：用 needs（更精确控制）
+YAML
+stages:
+  - all
+
+job1:
+  stage: all
+  script:
+    - echo "job1"
+
+job2:
+  stage: all
+  needs: ["job1"]
+  script:
+    - echo "job2"
+
+job3:
+  stage: all
+  needs: ["job2"]
+  script:
+    - echo "job3"
+👉 优点：
+可以在同一个 stage 控制顺序
+更灵活（你做自动化很适合）
+✅ 方法3：混合（推荐你用）
+YAML
+stages:
+  - prepare
+  - run
+  - post
+
+prepare_job:
+  stage: prepare
+  script:
+    - echo "prepare"
+
+run_job:
+  stage: run
+  needs: ["prepare_job"]
+  script:
+    - echo "run test"
+
+post_job:
+  stage: post
+  needs: ["run_job"]
+  script:
+    - echo "db check / screenshot"
+🔥 三、repo1 怎么触发（完整）
+YAML
+trigger_repo2:
+  stage: trigger
+  trigger:
+    project: my-group/repo2
+    branch: main
+    strategy: depend   # 👈 等 repo2 全部完成
+  variables:
+    ENV: "sit"
+🧠 四、如果你只想“按条件跑部分 job”
+👉 用变量 + rules
+repo1 传变量
+YAML
+variables:
+  RUN_STEP: "db"
+repo2 控制执行
+YAML
+job_db:
+  rules:
+    - if: $RUN_STEP == "db"
+  script:
+    - echo "run db"
+
+job_other:
+  rules:
+    - if: $RUN_STEP == "other"
+  script:
+    - echo "run other"
+🚀 五、你这个场景（最佳实践）
+你之前描述的是：
+Plain text
+repo1: PT测试
+  ↓
+repo2:
+  job1: 解析log
+  job2: DB查询
+  job3: 截图
+推荐 repo2 写法：
+YAML
+stages:
+  - parse
+  - db
+  - report
+
+parse_log:
+  stage: parse
+  script:
+    - echo "parse log"
+
+db_query:
+  stage: db
+  needs: ["parse_log"]
+  script:
+    - echo "query db"
+
+screenshot:
+  stage: report
+  needs: ["db_query"]
+  script:
+    - echo "take screenshot"
+⚠️ 六、常见误区（你刚好踩到的）
+❌ 误区1：在 repo1 控制 job 顺序
+YAML
+trigger:
+  job: job1   # ❌ 不存在这种写法
+👉 GitLab 不支持
+❌ 误区2：以为 trigger 可以选 job
+👉 trigger 只能：
+Plain text
+触发 pipeline
+不能：
+Plain text
+指定 job
+❌ 误区3：多个 job 并发执行
+👉 如果你写：
+YAML
+stages:
+  - test
+
+job1:
+  stage: test
+
+job2:
+  stage: test
+👉 会并行执行（不是顺序）
+🎯 七、一句话总结
+👉 跨 repo 只负责“触发 pipeline”
+👉 job 顺序必须在 repo2 用 stages / needs 控制
+🚀 如果你要更高级（我建议你下一步）
+你现在已经接近完整自动化链路了，可以再升级👇
+👉 repo1 → repo2 → repo3（链式自动化）
+👉 repo2 根据变量动态执行不同 job
+👉 repo2 自动拉 repo1 artifact（你现在很需要这个）
+你可以继续问我👇
+👉 “�⁠repo2 怎么按顺序执行同时，还能拿 repo1 的 log artifact？”
+这个我可以给你一套完整生产级方案（你现在正好用得上）。
