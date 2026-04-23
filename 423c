@@ -1,0 +1,101 @@
+好，这里给你一个完整可用的代码：
+👉 按 *变量* 匹配规则（类似 shell 的 *$filename*）
+👉 找到图片 → 批量写入 Word（.docx）
+用 python-docx + glob
+✅ 完整代码（推荐直接用）
+Python
+import glob
+import os
+from docx import Document
+from docx.shared import Inches
+
+# 🔧 变量（匹配规则）
+keyword = "pt_test"   # 👈 对应 shell 的 *pt_test*
+
+# 🔧 图片目录
+image_dir = "./images"
+
+# 🔧 匹配图片（等价于：ls *pt_test*.png）
+pattern = os.path.join(image_dir, f"*{keyword}*.png")
+image_files = sorted(glob.glob(pattern))
+
+# 创建 Word
+doc = Document()
+doc.add_heading(f"Report - {keyword}", 1)
+
+if not image_files:
+    doc.add_paragraph("No images found.")
+else:
+    for i, img in enumerate(image_files, 1):
+        filename = os.path.basename(img)
+
+        # 添加标题
+        doc.add_paragraph(f"Figure {i}: {filename}")
+
+        # 插入图片
+        doc.add_picture(img, width=Inches(5))
+
+# 保存
+doc.save(f"{keyword}_report.docx")
+🧩 效果说明
+如果目录里有：
+Plain text
+images/
+  pt_test_1.png
+  pt_test_2.png
+  db_test_1.png
+👉 keyword = "pt_test" 时：
+只会插入：
+Plain text
+pt_test_1.png
+pt_test_2.png
+🚀 扩展（你实际很可能用到）
+✅ 1. 多格式图片
+Python
+image_files = []
+for ext in ["png", "jpg", "jpeg"]:
+    pattern = os.path.join(image_dir, f"*{keyword}*.{ext}")
+    image_files.extend(glob.glob(pattern))
+
+image_files = sorted(image_files)
+✅ 2. 递归子目录（更强）
+Python
+pattern = os.path.join(image_dir, f"**/*{keyword}*.png")
+image_files = sorted(glob.glob(pattern, recursive=True))
+✅ 3. 限制只取一个（类似 head -n 1）
+Python
+image_files = glob.glob(pattern)
+image_files = image_files[:1]
+✅ 4. 文件名做标题（更干净）
+Python
+name = os.path.splitext(os.path.basename(img))[0]
+doc.add_paragraph(f"Figure {i}: {name}")
+⚠️ 常见坑
+❌ 1. 匹配不到
+👉 打印 pattern：
+Python
+print(pattern)
+❌ 2. 路径错误（GitLab 常见）
+👉 加：
+Python
+import os
+print(os.getcwd())
+❌ 3. 图片太大
+Python
+doc.add_picture(img, width=Inches(4))
+🎯 一句话总结
+👉 shell：*$keyword* → Python：glob("*keyword*") → 写入 Word
+🚀 如果你要结合你整个系统（强烈建议）
+我可以帮你升级成👇一整套：
+👉 自动流程：
+
+GitLab pipeline
+   ↓
+远程生成图片（带规则命名）
+   ↓
+Python 自动匹配 *keyword*
+   ↓
+生成 Word 报告（带编号 + 标题）
+你可以直接说👇
+👉 “�⁠把这个接到 gitlab pipeline + 远程机器”
+我可以�⁠给你一套能直接跑的完整代码（你现在已经差最后一步了）。
