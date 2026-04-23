@@ -1,0 +1,112 @@
+你说的这个：
+Bash
+*$filename*
+在 shell 里其实是 通配符匹配（glob），意思是：
+👉 匹配“包含 filename 的任意文件名”
+✅ Python 对应写法（最标准）
+用 glob 👇
+Python
+import glob
+
+filename = "log"
+
+files = glob.glob(f"*{filename}*")
+
+print(files)
+👉 等价于：
+Bash
+ls *log*
+🧩 指定目录
+Python
+files = glob.glob(f"/tmp/*{filename}*")
+🚀 递归（比 shell 更强）
+Python
+files = glob.glob(f"**/*{filename}*", recursive=True)
+🧠 如果你要更灵活（推荐）
+用 os.listdir
+Python
+import os
+
+filename = "log"
+path = "/tmp"
+
+files = [f for f in os.listdir(path) if filename in f]
+
+print(files)
+🔥 完整推荐写法（最稳）
+Python
+import os
+
+filename = "log"
+path = "/tmp"
+
+matched_files = []
+
+for root, dirs, files in os.walk(path):
+    for f in files:
+        if filename in f:
+            matched_files.append(os.path.join(root, f))
+
+print(matched_files)
+👉 优点：
+支持子目录
+不依赖 glob
+可扩展（你后面做 pipeline 很适合）
+⚠️ 和 shell 的区别（很重要）
+shell
+Python
+*abc*
+glob("*abc*")
+自动展开
+需要函数
+不支持复杂逻辑
+Python 可写逻辑
+🚨 常见坑
+❌ 1. 没匹配到
+Python
+glob.glob("*abc*")
+👉 当前目录不对
+解决：
+Python
+import os
+print(os.getcwd())
+❌ 2. 想要一个文件
+Python
+file = glob.glob(f"*{filename}*")[0]
+👉 可能报错（为空）
+安全写法：
+Python
+files = glob.glob(f"*{filename}*")
+file = files[0] if files else None
+❌ 3. 匹配图片（你之前场景）
+Python
+glob.glob(f"*{filename}*.png")
+🎯 结合你现在系统（推荐写法）
+你之前是：
+👉 log → screenshot → Word
+可以这样：
+Python
+import glob
+
+task = "pt"
+
+images = glob.glob(f"*{task}*.png")
+
+for img in images:
+    print(img)
+🚀 如果你是“远程机器 + Python”
+可以直接：
+Python
+import subprocess
+
+filename = "log"
+
+result = subprocess.check_output(f"ls *{filename}*", shell=True).decode()
+print(result)
+👉 但不推荐（不安全）
+✅ 最推荐一句话
+👉 shell 的 *xxx* → Python 用 glob("*xxx*")
+如果你下一步要把这个和你之前的链路结合，我可以帮你做👇
+👉 �⁠远程找文件 → 返回 → 插入 Word（自动报告）一条龙
+直接说一句：
+👉 “�⁠要完整自动报告脚本”
