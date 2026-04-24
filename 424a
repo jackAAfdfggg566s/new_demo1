@@ -1,0 +1,128 @@
+好，这里给你一个完整可跑的“方案2（截关键字上下文）”代码，从加载日志 → 定位关键字 → 截上下文区域，一步到位。
+使用 Playwright
+✅ ✅ 完整 Python 代码（上下文截图版）
+Python
+from playwright.sync_api import sync_playwright
+
+URL = "http://your-log-page"   # 可以是 http://... 或 file:///...
+KEYWORD = "ERROR"
+OUTPUT = "context.png"
+
+# 上下扩展像素（可调）
+TOP_PADDING = 200
+BOTTOM_PADDING = 200
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page()
+
+    # 打开页面
+    page.goto(URL)
+
+    # 等页面加载（可根据情况调整）
+    page.wait_for_load_state("networkidle")
+
+    # 查找关键字
+    locator = page.locator(f"text={KEYWORD}")
+
+    if locator.count() == 0:
+        print(f"❌ Keyword '{KEYWORD}' not found")
+        browser.close()
+        exit(1)
+
+    # 取第一个匹配
+    element = locator.first
+
+    # 滚动到元素
+    element.scroll_into_view_if_needed()
+
+    # 获取元素位置
+    box = element.bounding_box()
+
+    if not box:
+        print("❌ Cannot get element position")
+        browser.close()
+        exit(1)
+
+    # 获取页面高度（防止越界）
+    page_height = page.evaluate("document.body.scrollHeight")
+
+    # 计算截图区域（上下扩展）
+    clip_y = max(0, box["y"] - TOP_PADDING)
+    clip_height = min(
+        page_height - clip_y,
+        box["height"] + TOP_PADDING + BOTTOM_PADDING
+    )
+
+    clip = {
+        "x": 0,   # 从最左开始（日志一般全宽）
+        "y": clip_y,
+        "width": page.viewport_size["width"],
+        "height": clip_height
+    }
+
+    # 截图
+    page.screenshot(path=OUTPUT, clip=clip)
+
+    print(f"✅ Screenshot saved to {OUTPUT}")
+
+    browser.close()
+✅ 使用方式
+1️⃣ 安装
+Bash
+pip install playwright
+playwright install chromium
+2️⃣ 改这两个参数
+Python
+URL = "http://your-log-page"
+KEYWORD = "ERROR"
+3️⃣ 运行
+Bash
+python screenshot.py
+✅ 支持的输入
+✔ 本地日志 HTML
+Python
+URL = "file:///home/ubuntu/log.html"
+✔ Flask endpoint（你之前场景）
+Python
+URL = "http://server/log?filename=xxx"
+⚠️ 常见问题（帮你提前避坑）
+❌ 截不到（返回空）
+👉 加延迟：
+Python
+page.wait_for_timeout(2000)
+❌ 页面懒加载（日志很长）
+👉 强制滚到底再回来：
+Python
+page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+page.wait_for_timeout(1000)
+element.scroll_into_view_if_needed()
+❌ 截图太小
+调大：
+Python
+TOP_PADDING = 400
+BOTTOM_PADDING = 400
+❌ 多个关键字
+改成：
+Python
+for i in range(locator.count()):
+    el = locator.nth(i)
+    el.scroll_into_view_if_needed()
+    el.screenshot(path=f"context_{i}.png")
+🚀 可选增强（推荐）
+✔ 高亮关键字（截图更清晰）
+Python
+page.evaluate(f"""
+() => {{
+  const elements = document.querySelectorAll("*");
+  elements.forEach(el => {{
+    if (el.innerText && el.innerText.includes("{KEYWORD}")) {{
+      el.style.background = "yellow";
+    }}
+  }});
+}}
+""")
+✅ 总结一句话
+👉 定位关键字 → 获取 bounding_box → 扩展上下 → clip screenshot
+如果你把你日志 HTML 结构贴出来（比如 <pre> 还是 <table>），我可以帮你再优化到：
+👉 精准定位整行（而不是只截一个单词） 👍
