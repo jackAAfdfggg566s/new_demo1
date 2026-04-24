@@ -1,0 +1,105 @@
+你这个点说得很关键 👍：
+👉 trigger job 不能写 script，但变量要从远程 sh 获取再传过去
+先直接说结论：
+👉 ❌ 一个 trigger job 里不能“先执行脚本再传变量”
+👉 ✅ 必须拆成 两个 job：先取值 → 再 trigger
+✅ ✅ 标准正确方案（GitLab 推荐）
+🎯 流程
+
+job1：ssh → 远程 sh → 获取变量 → 写入 dotenv
+job2：trigger → 使用变量
+🔥 完整示例（可直接用）
+1️⃣ 获取变量（从远程 sh）
+YAML
+get_vars:
+  stage: prepare
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache openssh-client
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh-keyscan -H $REMOTE_HOST >> ~/.ssh/known_hosts
+
+  script:
+    # 👉 远程返回：start|end
+    - RESULT=$(ssh -T user@host "sh /path/get_time.sh")
+
+    # 👉 拆分
+    - IFS="|" read START_TIME END_TIME <<< "$RESULT"
+
+    # 👉 写入 dotenv
+    - echo "START_TIME=$START_TIME" > result.env
+    - echo "END_TIME=$END_TIME" >> result.env
+
+  artifacts:
+    reports:
+      dotenv: result.env
+2️⃣ trigger 下一个 pipeline（传变量）
+YAML
+trigger_next:
+  stage: trigger
+  needs: [get_vars]   # 👈 必须
+
+  trigger:
+    project: your-group/your-project
+    branch: main
+
+  variables:
+    START_TIME: $START_TIME
+    END_TIME: $END_TIME
+✅ 关键点（非常重要）
+🔹 1. 为什么一定要两个 job？
+因为：
+👉 trigger: job 不允许有 script
+👉 所以不能：
+YAML
+trigger_job:
+  script: ... ❌
+  trigger: ...
+🔹 2. dotenv 是唯一“桥梁”
+YAML
+artifacts:
+  reports:
+    dotenv: result.env
+👉 GitLab 会自动把变量注入下一个 job
+🔹 3. needs 必须加
+YAML
+needs: [get_vars]
+否则：
+👉 trigger job 拿不到变量 ❌
+⚠️ 常见坑（你很容易踩）
+❌ 1. 变量是空的
+检查：
+Bash
+echo $START_TIME
+👉 如果空：
+ssh 没返回值
+或 read 拆分失败
+❌ 2. 时间有空格 → 解析错
+必须用：
+Bash
+echo "start|end"
+不要：
+Bash
+echo "$start $end"
+❌ 3. trigger 变量没传过去
+确认 downstream pipeline：
+YAML
+script:
+  - echo $START_TIME
+🚀 高级一点（你可能会用）
+✔ 直接让远程返回 dotenv（更简单）
+远程 sh：
+Bash
+echo "START_TIME=2026-04-21 09:00:00"
+echo "END_TIME=2026-04-21 10:00:00"
+CI：
+YAML
+script:
+  - ssh user@host "sh get_time.sh" > result.env
+👉 不需要 split，最稳 👍
+✅ 总结一句话
+👉 trigger job 不能跑脚本 → 必须前一个 job 用 dotenv 传变量
+如果你把你现在的 .gitlab-ci.yml（trigger 那段）贴出来，我可以帮你👇
+👉 改成“最少改动就能跑通”的版本（包括 SSH、变量、trigger 一次搞定 👍）
