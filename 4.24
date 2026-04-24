@@ -1,0 +1,64 @@
+明白了，你这个日志是类似 Gatling report（你写成 Glaring 😄），结尾通常会有：
+一段真正的结果（你要的）
+然后一个 Global Information 区块（你不要的）
+👉 目标就是：拿“Global Information 之前的最后一条有效记录”
+✅ ✅ 最稳方案（推荐）
+🔥 方法一：先截断，再取最后一行
+Bash
+sed '/Global Information/,$d' logfile.log | tac | grep -m1 -v '^$'
+✅ 如果你只要时间字段
+Bash
+sed '/Global Information/,$d' logfile.log \
+| tac \
+| grep -m1 -E '^[0-9]{4}-' \
+| awk '{print $1, $2}'
+🧠 解释一下（很关键）
+Bash
+sed '/Global Information/,$d'
+👉 从 Global Information 到文件末尾全部删除
+然后：
+Bash
+tac | grep -m1 -v '^$'
+👉 从“有效内容的底部”往上找第一条非空行
+✅ 方法二（更简单一点）
+如果你确定：
+👉 Global Information 前一行就是你要的
+Bash
+grep -B1 'Global Information' logfile.log | head -n1
+⚠️ 但这个有风险：
+如果中间有空行，就会错
+✅ 方法三（更精准：匹配格式）
+如果你真正想要的是“某种格式的结果行”（比如包含时间或关键字）：
+Bash
+sed '/Global Information/,$d' logfile.log \
+| grep -E '你的关键字或时间格式' \
+| tail -n 1
+🚀 示例（Gatling 常见）
+如果你要的是类似：
+Plain text
+2026-04-21 10:00:01 OK
+👉 可以：
+Bash
+sed '/Global Information/,$d' logfile.log \
+| grep -E '^[0-9]{4}-' \
+| tail -n 1
+⚠️ 常见坑
+❌ Global Information 有大小写/空格
+先确认：
+Bash
+grep -n "Global" logfile.log
+❌ Windows 换行符
+Bash
+cat -A logfile.log
+看到：
+
+^M
+👉 处理：
+Bash
+sed -i 's/\r$//' logfile.log
+✅ 最推荐一句（直接用）
+Bash
+sed '/Global Information/,$d' logfile.log | tac | grep -m1 -v '^$'
+✅ 总结一句话
+👉 先砍掉 Global Information，再从底部找最后一条有效日志
+如果你把日志最后 20 行贴出来，我可以帮你把命令再压缩成完全贴合你格式的一行版本（甚至直接帮你写进 GitLab pipeline 👍）。
