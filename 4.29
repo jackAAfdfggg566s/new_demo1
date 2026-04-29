@@ -1,0 +1,139 @@
+你这个需求本质是三步：
+1️⃣ 根据“关键字”模糊匹配子目录
+2️⃣ 遍历每个匹配到的子目录，拼出 URL
+3️⃣ 用截图工具（比如 Playwright）逐个截图
+我给你一个可直接用的完整思路 + 代码（Flask + Playwright）
+✅ 一、目录结构假设
+比如你现在是这样：
+
+/data/logs/
+    run_20260401_testA/
+        index.html
+    run_20260402_testB/
+        index.html
+    abc_20260403/
+        index.html
+访问 URL 是：
+
+http://server:5000/logs/<子目录>/index.html
+✅ 二、Flask 提供静态访问
+Python
+from flask import Flask, send_from_directory
+import os
+
+app = Flask(__name__)
+
+BASE_DIR = "/data/logs"
+
+@app.route('/logs/<path:filepath>')
+def serve_logs(filepath):
+    return send_from_directory(BASE_DIR, filepath)
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+✅ 三、模糊匹配子目录 + 生成 URL
+Python
+import os
+
+BASE_DIR = "/data/logs"
+BASE_URL = "http://127.0.0.1:5000/logs"
+
+def find_dirs(keyword):
+    matched = []
+    for name in os.listdir(BASE_DIR):
+        full_path = os.path.join(BASE_DIR, name)
+        if os.path.isdir(full_path) and keyword in name:
+            matched.append(name)
+    return matched
+
+
+def build_urls(keyword):
+    dirs = find_dirs(keyword)
+    urls = []
+    for d in dirs:
+        url = f"{BASE_URL}/{d}/index.html"
+        urls.append((d, url))
+    return urls
+✅ 四、Playwright 截图
+Python
+from playwright.sync_api import sync_playwright
+import os
+
+def screenshot_urls(urls, save_dir="screenshots"):
+    os.makedirs(save_dir, exist_ok=True)
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        results = []
+
+        for name, url in urls:
+            file_path = os.path.join(save_dir, f"{name}.png")
+            print(f"截图: {url}")
+
+            try:
+                page.goto(url, timeout=60000)
+                page.screenshot(path=file_path, full_page=True)
+                results.append(file_path)
+            except Exception as e:
+                print(f"失败: {url}, error={e}")
+
+        browser.close()
+
+    return results
+✅ 五、整合成一个函数（关键）
+Python
+def run_capture(keyword):
+    urls = build_urls(keyword)
+    if not urls:
+        print("没有匹配目录")
+        return []
+
+    return screenshot_urls(urls)
+✅ 六、如果你要做成 Flask API
+Python
+from flask import request, jsonify
+
+@app.route('/capture', methods=['GET'])
+def capture():
+    keyword = request.args.get("keyword")
+    if not keyword:
+        return jsonify({"error": "keyword required"}), 400
+
+    files = run_capture(keyword)
+
+    return jsonify({
+        "count": len(files),
+        "files": files
+    })
+✅ 七、调用方式
+浏览器：
+
+http://127.0.0.1:5000/capture?keyword=202604
+✅ 八、常见坑（你之前遇到的）
+❗1. 访问 URL 返回登录页
+👉 Playwright 需要登录态（之前你遇到过）
+解决：
+Python
+browser.new_context(storage_state="state.json")
+❗2. 页面没加载完截图
+Python
+page.goto(url, wait_until="networkidle")
+❗3. 子目录很多 → 并发优化
+�⁠可以改成 async（需要我可以给你升级版）
+✅ 九、进阶优化（推荐）
+✔ 只截包含关键字文件
+✔ 截图前滚动页面
+✔ 自动生成 HTML 报告
+✔ 失败重试
+🚀 如果你下一步要做
+你现在这个方案已经可以扩展成：
+👉 �⁠自动测试报告系统
+👉 �⁠GitLab pipeline 自动截图
+👉 �⁠Word / PDF 自动插图
+如果你告诉我👇
+👉 “日志页面长什么样（有关键字吗）”
+👉 “截图是整页还是某一块”
+我可以帮你再升级成：
+👉 �⁠精准定位关键字区域截图（不是整页）
