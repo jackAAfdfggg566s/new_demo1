@@ -1,0 +1,179 @@
+好，直接给你一套可以跑的完整工程代码（Flask + 模糊目录匹配 + Playwright截图 + API调用），你按这个结构放就能用。
+✅ 一、项目结构
+
+project/
+│
+├── app.py              # Flask 服务
+├── capture.py          # 截图逻辑
+├── config.py           # 配置
+├── requirements.txt
+└── screenshots/        # 输出目录（自动创建）
+✅ 二、config.py
+Python
+import os
+
+BASE_DIR = "/data/logs"   # 你的日志目录
+BASE_URL = "http://127.0.0.1:5000/logs"
+SCREENSHOT_DIR = os.path.join(os.getcwd(), "screenshots")
+✅ 三、capture.py（核心逻辑）
+Python
+import os
+from playwright.sync_api import sync_playwright
+from config import BASE_DIR, BASE_URL, SCREENSHOT_DIR
+
+
+def find_dirs(keyword):
+    matched = []
+    for name in os.listdir(BASE_DIR):
+        full_path = os.path.join(BASE_DIR, name)
+        if os.path.isdir(full_path) and keyword in name:
+            matched.append(name)
+    return matched
+
+
+def build_urls(keyword):
+    dirs = find_dirs(keyword)
+    urls = []
+    for d in dirs:
+        url = f"{BASE_URL}/{d}/index.html"
+        urls.append((d, url))
+    return urls
+
+
+def screenshot_urls(urls):
+    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+    results = []
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+
+        # 如果有登录问题，用这个
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 2000}
+        )
+        page = context.new_page()
+
+        for name, url in urls:
+            file_path = os.path.join(SCREENSHOT_DIR, f"{name}.png")
+            print(f"[INFO] capturing: {url}")
+
+            try:
+                page.goto(url, timeout=60000, wait_until="networkidle")
+                page.screenshot(path=file_path, full_page=True)
+
+                results.append({
+                    "name": name,
+                    "url": url,
+                    "file": file_path,
+                    "status": "success"
+                })
+
+            except Exception as e:
+                results.append({
+                    "name": name,
+                    "url": url,
+                    "error": str(e),
+                    "status": "fail"
+                })
+
+        browser.close()
+
+    return results
+
+
+def run_capture(keyword):
+    urls = build_urls(keyword)
+
+    if not urls:
+        return {
+            "count": 0,
+            "message": "no matched dirs",
+            "results": []
+        }
+
+    results = screenshot_urls(urls)
+
+    return {
+        "count": len(results),
+        "results": results
+    }
+✅ 四、app.py（Flask入口）
+Python
+from flask import Flask, send_from_directory, request, jsonify
+import os
+from config import BASE_DIR
+from capture import run_capture
+
+app = Flask(__name__)
+
+
+# 👉 提供静态文件访问
+@app.route('/logs/<path:filepath>')
+def serve_logs(filepath):
+    return send_from_directory(BASE_DIR, filepath)
+
+
+# 👉 截图接口
+@app.route('/capture', methods=['GET'])
+def capture():
+    keyword = request.args.get("keyword")
+
+    if not keyword:
+        return jsonify({"error": "keyword required"}), 400
+
+    result = run_capture(keyword)
+
+    return jsonify(result)
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+✅ 五、requirements.txt
+
+flask
+playwright
+安装：
+Bash
+pip install -r requirements.txt
+playwright install chromium
+✅ 六、启动
+Bash
+python app.py
+✅ 七、调用方式
+浏览器 or curl：
+
+http://127.0.0.1:5000/capture?keyword=202604
+返回示例：
+JSON
+{
+  "count": 2,
+  "results": [
+    {
+      "name": "run_20260401_testA",
+      "url": "http://127.0.0.1:5000/logs/run_20260401_testA/index.html",
+      "file": "screenshots/run_20260401_testA.png",
+      "status": "success"
+    }
+  ]
+}
+✅ 八、你这个方案已经能解决
+✔ 模糊匹配目录
+✔ 自动拼 URL
+✔ 批量截图
+✔ API 触发
+✔ 结果返回
+🚀 九、建议你下一步升级（很有用）
+如果你现在是在做自动化测试/报告，我建议你加这几个功能：
+1️⃣ 只截关键区域（不是整页）
+Python
+page.locator("text=ERROR").screenshot()
+2️⃣ 登录态复用（你之前卡住的点）
+Python
+context = browser.new_context(storage_state="state.json")
+3️⃣ 生成 HTML 报告（比看图片强）
+4️⃣ GitLab pipeline 自动调用
+如果你要，我可以帮你直接升级成👇
+👉 �⁠自动生成 Word/PDF 测试报告（带截图）
+👉 �⁠GitLab 一键出报告
+你现在这一步已经是核心骨架了 👍
