@@ -1,0 +1,156 @@
+好，这里给你一套最简但完整可运行代码：
+👉 只传 一个子目录名 + 一个文件名
+👉 自动拼 URL
+👉 用 Playwright 截图
+✅ 一、项目结构
+Plain text
+project/
+├── app.py
+├── capture.py
+├── config.py
+├── requirements.txt
+└── screenshots/
+✅ 二、config.py
+Python
+import os
+
+BASE_DIR = "/data/logs"   # 日志根目录（改成你的）
+BASE_URL = "http://127.0.0.1:5000/logs"
+SCREENSHOT_DIR = os.path.join(os.getcwd(), "screenshots")
+✅ 三、capture.py（核心）
+Python
+import os
+from playwright.sync_api import sync_playwright
+from config import BASE_DIR, BASE_URL, SCREENSHOT_DIR
+
+
+def build_url(subdir, filename):
+    dir_path = os.path.join(BASE_DIR, subdir)
+    file_path = os.path.join(dir_path, filename)
+
+    # 校验目录
+    if not os.path.isdir(dir_path):
+        return None, f"dir not exist: {dir_path}"
+
+    # 校验文件
+    if not os.path.exists(file_path):
+        return None, f"file not exist: {file_path}"
+
+    url = f"{BASE_URL}/{subdir}/{filename}"
+    return url, None
+
+
+def capture_one(subdir, filename):
+    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+    url, err = build_url(subdir, filename)
+    if err:
+        return {
+            "status": "fail",
+            "error": err
+        }
+
+    file_path = os.path.join(SCREENSHOT_DIR, f"{subdir}.png")
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 1280, "height": 2000})
+        page = context.new_page()
+
+        try:
+            print(f"[INFO] {url}")
+            page.goto(url, timeout=60000, wait_until="networkidle")
+            page.screenshot(path=file_path, full_page=True)
+
+            result = {
+                "status": "success",
+                "dir": subdir,
+                "url": url,
+                "file": file_path
+            }
+
+        except Exception as e:
+            result = {
+                "status": "fail",
+                "dir": subdir,
+                "url": url,
+                "error": str(e)
+            }
+
+        browser.close()
+
+    return result
+✅ 四、app.py（Flask）
+Python
+from flask import Flask, send_from_directory, request, jsonify
+from config import BASE_DIR
+from capture import capture_one
+
+app = Flask(__name__)
+
+
+# 👉 提供静态访问
+@app.route('/logs/<path:filepath>')
+def serve_logs(filepath):
+    return send_from_directory(BASE_DIR, filepath)
+
+
+# 👉 截图接口（只处理一个目录）
+@app.route('/capture', methods=['GET'])
+def capture():
+    subdir = request.args.get("dir")
+    filename = request.args.get("file")
+
+    if not subdir or not filename:
+        return jsonify({
+            "error": "dir and file required"
+        }), 400
+
+    result = capture_one(subdir, filename)
+
+    return jsonify(result)
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
+✅ 五、requirements.txt
+Plain text
+flask
+playwright
+安装：
+Bash
+pip install -r requirements.txt
+playwright install chromium
+✅ 六、启动
+Bash
+python app.py
+✅ 七、调用方式
+Bash
+http://127.0.0.1:5000/capture?dir=run_001&file=index.html
+✅ 八、返回示例
+JSON
+{
+  "status": "success",
+  "dir": "run_001",
+  "url": "http://127.0.0.1:5000/logs/run_001/index.html",
+  "file": "screenshots/run_001.png"
+}
+✅ 九、你现在这个版本特点
+✔ 只处理一个目录（简单稳定）
+✔ 自动校验目录/文件
+✔ 自动截图
+✔ API触发
+🚀 可选增强（你之后可能会要）
+1️⃣ 文件名自动加时间（防覆盖）
+Python
+file_path = os.path.join(SCREENSHOT_DIR, f"{subdir}_{int(time.time())}.png")
+2️⃣ 截图前等待元素
+Python
+page.wait_for_selector("body")
+3️⃣ 登录态（你之前问题）
+Python
+context = browser.new_context(storage_state="state.json")
+如果你下一步要做👇
+👉 GitLab pipeline 自动触发这个接口
+👉 自动把截图插入 Word/PDF
+我可以帮你直接把这套升级成一键出测试报告系统
