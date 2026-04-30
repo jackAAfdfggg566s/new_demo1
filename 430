@@ -1,0 +1,83 @@
+可以用，但我不建议你长期用 sshpass ——它能解决“临时调试/快速验证”，但在 GitLab CI（尤其是 agent / 自动化环境）里属于不安全且容易出问题的方案。
+我先把结论说清楚👇
+✅ 一、能不能用？
+可以，比如：
+Bash
+sshpass -p "$PASSWORD" ssh user@host "bash /path/remote.sh '$PARAM1'"
+在 .gitlab-ci.yml：
+YAML
+script:
+  - sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no user@host \
+    "bash /path/remote.sh '$PARAM1'"
+👉 这样参数是可以正常传过去的
+❗ 二、但问题很明显（重要）
+1️⃣ 密码会泄露风险
+set -x 会打印命令
+日志可能暴露密码
+GitLab runner 也可能记录
+👉 即使你用 masked variable，也不是 100% 安全
+2️⃣ 很多环境直接禁用
+很多服务器配置：
+Plain text
+PasswordAuthentication no
+👉 sshpass 直接失败
+3️⃣ 不稳定（CI里常见）
+卡住
+超时
+交互异常
+✅ 三、正确推荐方案（你应该用这个）
+👉 用 SSH key（免密登录）
+GitLab 配置：
+YAML
+script:
+  - eval $(ssh-agent -s)
+  - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+  - mkdir -p ~/.ssh
+  - chmod 700 ~/.ssh
+  - ssh-keyscan -H host >> ~/.ssh/known_hosts
+
+  - ssh user@host "bash /path/remote.sh '$PARAM1'"
+👉 优点：
+安全
+稳定
+CI 标准做法
+🔥 四、什么时候可以用 sshpass？
+只在这些情况👇
+✔ 临时调试
+Bash
+sshpass -p "xxx" ssh -vvv user@host
+👉 用来排查：
+网络问题
+用户权限
+是否能连通
+✔ 内网测试环境（不重要机器）
+👉 比如你现在这种：
+agent + ssh + debug阶段
+可以先用 sshpass 跑通流程，然后换 key
+✅ 五、如果你一定要用（给你正确写法）
+避免泄露密码：
+YAML
+script:
+  - set +x   # 关掉 debug，避免打印密码
+  - sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no user@host \
+    "bash /path/remote.sh '$PARAM1'"
+  - set -x
+🧠 六、你这个场景的最佳实践（总结）
+你现在是：
+GitLab agent → SSH → 远端脚本 + 参数
+👉 推荐架构：
+GitLab Variables → PARAM
+SSH key 登录
+参数通过 '...' 传
+脚本用环境变量接收
+👉 如果你愿意
+我可以帮你把你现在这套：
+agent
+ssh
+参数传递
+debug
+👉 整理成一套“稳定+安全+可调试”的完整模板（直接可用）
+你只需要贴：
+.gitlab-ci.yml
+你现在 ssh 调用方式
+我帮你一次性改好。
