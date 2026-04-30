@@ -1,0 +1,110 @@
+可以，这种场景很常见，本质是两步：
+GitLab 传入参数 A → SSH 到远端 → 在远端根据 A 计算出 B → 脚本使用 A 和 B
+关键点：B 必须在远端计算，不要在 GitLab 本地算。
+✅ 一、推荐写法（最清晰）
+GitLab .gitlab-ci.yml
+YAML
+run_remote:
+  script:
+    - |
+      ssh user@host "
+        A='$A'
+        echo 'A='$A
+
+        # 根据 A 计算 B
+        B=\$(your_command \"\$A\")
+        echo 'B='$B
+
+        # 调用脚本
+        bash /path/remote.sh \"\$A\" \"\$B\"
+      "
+远端脚本 /path/remote.sh
+Bash
+#!/bin/bash
+set -x
+
+A=$1
+B=$2
+
+echo "A=$A"
+echo "B=$B"
+✅ 二、举个实际例子
+比如你：
+👉 GitLab 传 FILE_NAME
+👉 远端通过 ls 找完整路径
+YAML
+script:
+  - |
+    ssh user@host "
+      FILE_NAME='$FILE_NAME'
+
+      # 模糊查找文件
+      FULL_PATH=\$(find /data -name \"*\$FILE_NAME*\" | head -n 1)
+
+      echo full_path=\$FULL_PATH
+
+      bash /path/run.sh \"\$FILE_NAME\" \"\$FULL_PATH\"
+    "
+✅ 三、更优雅写法（用环境变量 👍）
+不用 $1 $2，直接环境变量：
+YAML
+script:
+  - |
+    ssh user@host "
+      A='$A'
+      B=\$(your_command \"\$A\")
+
+      A=\"\$A\" B=\"\$B\" bash /path/remote.sh
+    "
+远端：
+Bash
+echo "A=$A"
+echo "B=$B"
+👉 优点：
+不怕参数顺序错
+更容易扩展
+⚠️ 四、最容易踩的坑（重点）
+❌ 错误写法（本地执行了）
+Bash
+B=$(your_command "$A")
+ssh user@host "echo $B"
+👉 这样 your_command 是在 GitLab runner 上执行的 ❌
+✅ 正确写法（远端执行）
+Bash
+ssh user@host "B=\$(your_command \"$A\"); echo \$B"
+👉 注意：
+$(...) → 要写成 \$(...)
+$B → 要写成 \$B
+⚠️ 五、引号问题（很关键）
+建议统一用：
+Bash
+ssh user@host "
+  A='$A'
+  B=\$(cmd \"\$A\")
+"
+规则：
+外层 " " → 本地展开变量
+内层 $ → 用 \ 转义给远端
+🔥 六、带 debug 的完整版本（推荐直接用）
+YAML
+script:
+  - set -x
+  - |
+    ssh -vvv user@host "
+      set -x
+
+      A='$A'
+      echo A=\$A
+
+      B=\$(your_command \"\$A\")
+      echo B=\$B
+
+      bash -x /path/remote.sh \"\$A\" \"\$B\"
+    "
+🧠 总结一句话
+👉 A 在本地传 → B 在远端算 → 用 \$(...) 保证在远端执行
+如果你把你现在的：
+your_command
+.gitlab-ci.yml
+远端脚本
+贴出来，我可以帮你改成完全不会踩坑的版本（尤其是引号和转义这块）。
