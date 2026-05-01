@@ -1,0 +1,115 @@
+这个不是“玄学 bug”，而是 GitLab 在处理变量时把你“用户输入的值”当成了结构化数据（类似 YAML / dotenv）解析了，所以才会报：
+duplicate key（重复键）
+👉 重点结论先说：
+你的默认值是“普通字符串”，而用户输入的值里很可能包含了 =、换行、或类似 key=value 的结构，导致被当成 dotenv / YAML 解析 → 冲突报错
+🚨 一、为什么“默认值正常，用户输入就炸”
+✔ 默认值（正常）
+Bash
+testid=abc123
+👉 纯字符串 → 没问题
+❌ 用户输入（典型炸法）
+情况1：包含 =
+Bash
+testid=a=b
+👉 GitLab 在 dotenv / variables 解析时可能变成：
+
+testid=a
+b=???
+👉 直接变成两个 key → duplicate key
+情况2：多行（最常见）
+用户输入：
+
+abc
+def
+👉 解析成：
+
+testid=abc
+def=
+👉 又变成多个变量 → 冲突
+情况3：像 dotenv 格式
+
+a=1
+a=2
+👉 直接 duplicate key
+🔥 二、你现在的调用链问题点
+你说：
+GitLab pipeline → 调用其他 repo → 用 dotenv 传参数
+👉 这里的坑在：
+❗ dotenv 文件必须是严格格式
+
+KEY=VALUE
+👉 不允许：
+多行 value
+多个 =
+重复 key
+✅ 三、解决方案（按推荐程度）
+✅ 方案1：强制转义（最推荐）
+在写 dotenv 之前处理变量：
+Bash
+safe_testid=$(printf '%s' "$testid" | tr '\n' '_' | sed 's/=/_/g')
+然后：
+Bash
+echo "TESTID=$safe_testid" >> output.env
+👉 优点：
+不会破坏 dotenv 格式
+最简单稳定
+✅ 方案2：Base64（企业常用）
+Bash
+encoded=$(echo "$testid" | base64 -w 0)
+echo "TESTID=$encoded" >> output.env
+下游 repo 解码：
+Bash
+echo "$TESTID" | base64 -d
+👉 优点：
+100% 安全（任何字符都不会炸）
+推荐用于复杂参数
+✅ 方案3：不用 dotenv（更干净）
+直接用 trigger variables：
+YAML
+trigger:
+  project: other/repo
+  strategy: depend
+  forward:
+    pipeline_variables: true
+👉 然后直接传：
+Bash
+variables:
+  TESTID: "$testid"
+👉 避开 dotenv 解析问题
+✅ 方案4：限制用户输入（简单粗暴）
+只允许：
+Regex
+^[a-zA-Z0-9_-]+$
+👉 从源头杜绝问题
+🧪 四、快速验证（你可以马上试）
+在 job 里加：
+Bash
+echo "RAW: $testid"
+然后：
+Bash
+cat output.env
+👉 你会看到类似：
+
+TESTID=a
+b
+👉 这就是 duplicate key 的根因
+⚠️ 五、一个隐藏坑（你很可能也踩了）
+如果你这样写：
+Bash
+echo TESTID=$testid >> output.env
+👉 当 $testid 包含空格 / 换行：
+💥 一定炸
+✔ 正确写法必须：
+Bash
+printf "TESTID=%s\n" "$safe_testid" >> output.env
+👍 总结一句话
+👉 不是 GitLab 出错，而是：你的用户输入被当成 dotenv/YAML 解析成多个 key → duplicate key
+🚀 推荐你最终用这个（稳）
+Bash
+encoded=$(printf '%s' "$testid" | base64 -w 0)
+printf "TESTID=%s\n" "$encoded" >> output.env
+下游再 decode。
+如果你愿意，把你 .gitlab-ci.yml 里：
+trigger 那段
+dotenv 生成那段
+贴出来，我可以帮你精确改成不会再炸的版本（一步到位） 👍
