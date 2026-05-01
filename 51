@@ -1,0 +1,121 @@
+明白，你现在核心问题是：GitLab 里的变量作为参数传到远端脚本，一旦用 $(...) 接收返回值就报“文件不存在”。
+我直接说结论：
+👉 99% 是“变量在本地被错误展开 + 引号不对 + SSH 执行环境不一致”
+下面给你一个能稳定工作的标准写法，再解释为什么👇
+✅ 一、正确写法（变量传参 + 返回值）
+Bash
+param="$CI_COMMIT_REF_NAME"   # GitLab变量举例
+
+result=$(ssh user@host "bash -c 'cd /your/dir && ./script.sh \"$param\"'" 2>&1)
+
+echo "$result"
+🔥 二、关键点（你现在的问题就在这里）
+1️⃣ 变量必须“在远端正确接收”
+❌ 错误写法（很常见）：
+Bash
+result=$(ssh user@host sh /your/dir/script.sh $param)
+问题：
+$param 在本地 shell 就展开了
+如果有空格 / 特殊字符 → 命令结构被破坏
+远端变成：
+
+sh /your/dir/script.sh abc def
+👉 直接错路径 → “No such file”
+2️⃣ 一定要用引号包住远端命令
+✔ 正确：
+Bash
+ssh user@host "..."
+否则： 👉 shell 会分段解析（本地执行一部分）
+3️⃣ 参数必须再包一层引号
+Bash
+\"$param\"
+否则：
+空格会炸
+通配符（*）会炸
+特殊字符会炸
+4️⃣ 必须指定目录（你之前踩过这个坑）
+Bash
+cd /your/dir
+因为：
+👉 GitLab Runner 执行 SSH 时
+默认目录 ≠ 你脚本所在目录
+5️⃣ 捕获 stderr（否则误判）
+Bash
+2>&1
+不加的话你看到的错误可能是假的
+🧪 三、你现在这个问题的真实原因（高度还原）
+你很可能是这样写的：
+Bash
+param="$VAR"
+
+result=$(ssh user@host sh /your/dir/script.sh $param)
+👉 当 $param 是变量时：
+比如：
+Bash
+param="test dir"
+远端实际执行：
+Bash
+sh /your/dir/script.sh test dir
+👉 直接炸：
+
+/your/dir/script.sh: No such file or directory
+⚠️ 你以为是文件不存在，其实是命令被拆了
+🧪 四、强力调试版本（建议你先跑这个）
+Bash
+param="$CI_COMMIT_REF_NAME"
+
+result=$(ssh user@host "
+  set -x
+  echo PARAM=$param
+  pwd
+  ls -l /your/dir
+  cd /your/dir
+  ./script.sh \"$param\"
+" 2>&1)
+
+echo "$result"
+👉 能直接看到：
+参数到底传没传对
+当前目录
+文件是否存在
+🧱 五、更稳的方案（避免所有转义问题）
+👉 用环境变量传（企业里常用）
+Bash
+param="$CI_COMMIT_REF_NAME"
+
+result=$(ssh user@host "export PARAM='$param'; cd /your/dir && ./script.sh \"\$PARAM\"" 2>&1)
+优点：
+不怕空格
+不怕特殊字符
+不怕嵌套引号
+⚠️ 六、再补一个隐藏坑（你很可能也遇到）
+如果你是这样：
+Bash
+result=$(ssh user@host "sh script.sh")
+👉 报错：
+
+script.sh: not found
+但明明存在？
+👉 可能是：
+❗ Windows 换行符（CRLF）
+解决：
+Bash
+dos2unix script.sh
+✅ 七、最终推荐模板（生产可用）
+Bash
+param="$CI_COMMIT_REF_NAME"
+
+result=$(ssh user@host "
+  export PARAM='$param'
+  cd /your/dir || exit 1
+  ./script.sh \"\$PARAM\"
+" 2>&1)
+
+echo "RESULT: $result"
+👍 总结一句话
+👉 变量传参 + SSH = 一定要“远端执行 + 正确转义 + 固定目录”
+👉 否则就会出现你这种“明明有文件却说不存在”
+如果你把👇贴出来
+GitLab job 代码
+你传的变量值
+我可以帮你精确定位是哪一行炸了（不是泛泛分析） 👍
