@@ -1,0 +1,96 @@
+那问题已经很清晰了 👍
+👉 不是 shell / jq / 变量问题
+👉 而是：GitLab 里的 AWS CLI 本身就把时间输出成 epoch（时间戳）了
+也就是你现在这个情况：
+本地：
+JSON
+"startTime": "2026-05-05T00:10:10Z"
+GitLab：
+JSON
+"startTime": 1714860610
+🎯 根本原因（关键结论）
+👉 AWS CLI 在这个 runner 环境启用了 timestamp → epoch 转换
+常见原因：
+AWS CLI v2 + 某些 runtime
+环境变量控制了输出格式
+或内部镜像改过默认行为
+✅ 正确解法（3种，按优先级）
+🥇 方案1：强制 ISO8601（最推荐）
+在 GitLab job 里加：
+Bash
+export AWS_CLI_TIMESTAMP_FORMAT=iso8601
+然后再执行：
+Bash
+aws fis get-experiment --id "$EXP_ID" --output json
+👉 会恢复为：
+JSON
+"startTime": "2026-05-05T00:10:10Z"
+🥈 方案2：升级/固定 AWS CLI 版本
+先看版本：
+Bash
+aws --version
+👉 如果是异常版本（比如某些内部镜像）
+建议：
+Bash
+pip install --upgrade awscli
+或使用官方镜像：
+amazon/aws-cli
+🥉 方案3（兜底）：自己转（最稳）
+如果你没法改环境（很多公司是这样），那就直接处理👇
+Bash
+START_RAW=$(aws fis get-experiment \
+  --id "$EXP_ID" \
+  --query "experiment.startTime" \
+  --output text)
+
+# 判断是否为数字
+case "$START_RAW" in
+  ''|*[!0-9]*)
+    START_TIME="$START_RAW"
+    ;;
+  *)
+    START_TIME=$(date -u -d "@$START_RAW" +"%Y-%m-%dT%H:%M:%SZ")
+    ;;
+esac
+
+echo "$START_TIME"
+👉 无论 GitLab / 本地 都能统一输出 ISO 时间
+🔍 推荐你确认一下（很有用）
+在 GitLab job 里加：
+Bash
+echo "=== ENV ==="
+env | grep AWS
+
+echo "=== VERSION ==="
+aws --version
+👉 很可能你会看到：
+AWS_CLI_TIMESTAMP_FORMAT=epoch
+或类似变量
+🚀 最佳实践（你这个场景）
+我建议你直接这样写（生产级）👇
+Bash
+export AWS_CLI_TIMESTAMP_FORMAT=iso8601
+
+EXP_ID=$(aws fis start-experiment \
+  --experiment-template-id xxx \
+  --query "experiment.id" \
+  --output text)
+
+START_TIME=$(aws fis get-experiment \
+  --id "$EXP_ID" \
+  --query "experiment.startTime" \
+  --output text)
+
+END_TIME=$(aws fis get-experiment \
+  --id "$EXP_ID" \
+  --query "experiment.endTime" \
+  --output text)
+
+echo "Start: $START_TIME"
+echo "End: $END_TIME"
+💡 一句话总结
+👉 你 GitLab 环境的 AWS CLI 被配置成输出 epoch 时间戳了
+👉 加 AWS_CLI_TIMESTAMP_FORMAT=iso8601 就能恢复正常
+如果你愿意，我可以帮你进一步👇
+👉 �⁠定位是哪一个 GitLab runner / 镜像导致的（基本能查出来）
+👉 或�⁠帮你做一版 FIS → 时间 → 报告截图 全自动 pipeline（你之前那套我看已经差不多了）
