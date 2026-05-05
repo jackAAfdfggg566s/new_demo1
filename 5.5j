@@ -1,0 +1,108 @@
+好，这里帮你把 21:34:28 → 秒 → 比较 → 输出最终时间 全部整合进你之前的 GitLab pipeline 版本，直接可以用。
+✅ 完整 GitLab Pipeline 示例（已集成时间转换）
+YAML
+collect_time:
+  stage: test
+  script:
+    - |
+      VMS=("vm1" "vm2" "vm3" "vm4")
+
+      # 初始化
+      min_start=999999
+      max_end=0
+
+      # 时间转秒函数
+      time_to_sec() {
+        IFS=: read -r h m s <<< "$1"
+        echo $((10#$h*3600 + 10#$m*60 + 10#$s))
+      }
+
+      # 秒转回 HH:MM:SS
+      sec_to_time() {
+        printf "%02d:%02d:%02d\n" $(($1/3600)) $(($1%3600/60)) $(($1%60))
+      }
+
+      for vm in "${VMS[@]}"; do
+        echo "Connecting to $vm..."
+
+        result=$(ssh user@$vm "bash /path/get_time.sh")
+
+        echo "Raw result: $result"
+
+        # 假设返回 JSON: {"start":"21:34:28","end":"21:40:10"}
+        start_str=$(echo "$result" | jq -r '.start')
+        end_str=$(echo "$result" | jq -r '.end')
+
+        echo "Parsed start=$start_str end=$end_str"
+
+        # 转成秒
+        start_sec=$(time_to_sec "$start_str")
+        end_sec=$(time_to_sec "$end_str")
+
+        echo "Converted start=$start_sec end=$end_sec"
+
+        # 比较最小 start
+        if [ "$start_sec" -lt "$min_start" ]; then
+          min_start=$start_sec
+        fi
+
+        # 比较最大 end
+        if [ "$end_sec" -gt "$max_end" ]; then
+          max_end=$end_sec
+        fi
+      done
+
+      echo "======================"
+      echo "Final result:"
+
+      echo "Earliest start (sec): $min_start"
+      echo "Latest end (sec): $max_end"
+
+      echo "Earliest start (time): $(sec_to_time $min_start)"
+      echo "Latest end (time): $(sec_to_time $max_end)"
+
+      duration=$((max_end - min_start))
+      echo "Total duration: $duration seconds"
+✅ VM 端脚本（返回 HH:MM:SS）
+Bash
+#!/bin/bash
+
+start_time=$(date +"%H:%M:%S")
+
+# 模拟任务
+sleep 2
+
+end_time=$(date +"%H:%M:%S")
+
+echo "{\"start\":\"$start_time\",\"end\":\"$end_time\"}"
+⚠️ 重要提醒（你这个方案的边界）
+❗ 1. 只能用于“同一天”
+如果出现：
+
+start = 23:59:50
+end   = 00:01:10
+👉 会算错 ❌
+❗ 2. 如果有跨天风险（推荐升级方案）
+直接改 VM 输出：
+Bash
+date +%s
+然后 pipeline 完全不用转换（最稳）
+✅ 如果你想更稳（我建议你用这个）
+VM 改成：
+Bash
+echo "{\"start\":$(date +%s),\"end\":$(date +%s)}"
+pipeline 直接：
+Bash
+start=$(jq -r '.start')
+end=$(jq -r '.end')
+👉 不需要 time_to_sec，更干净
+👍 总结一句话
+你现在这个版本已经可以：
+✔ 比较 4 台 VM 时间
+✔ 找最早开始
+✔ 找最晚结束
+✔ 输出可读时间
+✔ 算总耗时
+如果你下一步想做： 👉 并发 SSH（加速 pipeline）
+👉 多 job 汇总（标准 GitLab CI 结构）
+我可以帮你再升级一版。
