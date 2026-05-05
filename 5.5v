@@ -1,0 +1,105 @@
+你这个需求本质是：在 GitLab pipeline 里跨 4 台 VM 收集时间 → 汇总 → 做最值计算（min start / max end）。可以直接用 shell + ssh 搞定，不需要太复杂。
+我给你一个稳定可用的方案（重点解决你之前遇到的“时间格式 / 时区 / runner 不一致”问题）。
+✅ 核心思路
+每台 VM 执行脚本，返回：
+start_time
+end_time
+统一转换成时间戳（epoch）（避免格式问题）
+在 pipeline 中：
+取最小 start_time
+取最大 end_time
+⚠️ 关键坑（你之前已经踩过）
+不要直接比较字符串时间 ❌
+必须统一：
+时区（建议 UTC 或 Australia/Sydney）
+格式 → 转 epoch ✅
+✅ 方案实现（推荐）
+🔹 GitLab job 示例
+YAML
+collect_time:
+  stage: test
+  script:
+    - |
+      VMS=("vm1" "vm2" "vm3" "vm4")
+
+      min_start=9999999999
+      max_end=0
+
+      for vm in "${VMS[@]}"; do
+        echo "Connecting to $vm..."
+
+        result=$(ssh user@$vm "bash /path/get_time.sh")
+
+        echo "Raw result from $vm: $result"
+
+        start=$(echo "$result" | jq -r '.start')
+        end=$(echo "$result" | jq -r '.end')
+
+        echo "Parsed start=$start end=$end"
+
+        # 更新最小 start
+        if [ "$start" -lt "$min_start" ]; then
+          min_start=$start
+        fi
+
+        # 更新最大 end
+        if [ "$end" -gt "$max_end" ]; then
+          max_end=$end
+        fi
+      done
+
+      echo "Final min_start=$min_start"
+      echo "Final max_end=$max_end"
+
+      # 转回可读时间（悉尼时区）
+      echo "Min start readable:"
+      TZ=Australia/Sydney date -d "@$min_start"
+
+      echo "Max end readable:"
+      TZ=Australia/Sydney date -d "@$max_end"
+🔹 VM 上的脚本（重点）
+get_time.sh
+Bash
+#!/bin/bash
+
+# 强制统一时区（非常关键）
+export TZ=UTC
+
+start_time=$(date +%s)
+
+# 模拟任务
+sleep 2
+
+end_time=$(date +%s)
+
+# 输出 JSON（必须标准）
+echo "{\"start\": $start_time, \"end\": $end_time}"
+✅ 如果你是 AWS FIS / 实验时间（你之前提到）
+如果你是从 AWS CLI 获取时间：
+⚠️ 一定要这样转：
+Bash
+start=$(aws fis get-experiment --id xxx | jq -r '.experiment.startTime' | xargs -I {} date -d {} +%s)
+end=$(aws fis get-experiment --id xxx | jq -r '.experiment.endTime' | xargs -I {} date -d {} +%s)
+🚨 你之前的问题根源（总结）
+你遇到的：
+GitLab runner 输出是时间戳，本地是正常时间
+本质是：
+runner 环境 date 解析不一致
+或缺少 locale / timezone
+👉 所以统一用：
+Bash
+date +%s
+彻底规避
+✅ 最终输出你能得到
+Bash
+最早开始时间 = min_start
+最晚结束时间 = max_end
+如果你要算总耗时：
+Bash
+duration=$((max_end - min_start))
+echo "Total duration: $duration seconds"
+👍 可选优化（更稳）
+用 parallel 并发 ssh（更快）
+用 timeout 防止某台 VM 卡死
+把结果存 artifact（后续 job 用）
+如果你愿意，我可以帮你改成： 👉 �⁠GitLab 多 job 并行 + 汇总 job（更标准 CI/CD 写法）
