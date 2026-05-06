@@ -1,0 +1,102 @@
+明白了，你说的是：
+👉 在模板（extends 的 job）里 script 生成了变量，子 job 想用
+先直接说结论：
+❗ 不行（不能直接用）
+因为：
+extends 时，子 job 的 script 会覆盖模板的 script
+即使不覆盖，script 里的变量只在当前 shell 有效
+🔴 为什么你现在拿不到变量
+例如你这样：
+YAML
+.default_job:
+  script:
+    - MY_VAR=$(date +%s)
+    - echo "generated $MY_VAR"
+
+job_a:
+  extends: .default_job
+  script:
+    - echo "$MY_VAR"
+👉 结果：
+
+(empty)
+原因：
+job_a.script 覆盖了 .default_job.script
+就算不覆盖，变量也不会“传出来”
+✅ 正确做法（按你这个场景推荐）
+✅ 方案1：改成 before_script（最简单 👍）
+👉 如果你是 同一个 job 里用
+YAML
+.default_job:
+  before_script:
+    - export MY_VAR=$(date +%s)
+
+job_a:
+  extends: .default_job
+  script:
+    - echo "value is $MY_VAR"
+👉 ✔ 可以正常用
+👉 ✔ 因为 before_script + script 在同一个 shell 生命周期
+✅ 方案2：抽成函数（更清晰，推荐）
+YAML
+.default_job:
+  before_script:
+    - |
+      gen_var() {
+        export MY_VAR=$(date +%s)
+      }
+
+job_a:
+  extends: .default_job
+  script:
+    - gen_var
+    - echo "$MY_VAR"
+👉 ✔ 灵活控制什么时候生成
+✅ 方案3：写入文件再 source（通用）
+YAML
+.default_job:
+  before_script:
+    - echo "export MY_VAR=$(date +%s)" > var.sh
+
+job_a:
+  extends: .default_job
+  script:
+    - source var.sh
+    - echo "$MY_VAR"
+🚀 方案4（你多 job 场景推荐）：dotenv
+如果变量要跨 job：
+YAML
+generate:
+  script:
+    - echo "MY_VAR=$(date +%s)" > var.env
+  artifacts:
+    reports:
+      dotenv: var.env
+
+job_a:
+  needs: [generate]
+  script:
+    - echo "$MY_VAR"
+⚠️ 关键原则（你记住这个就不会踩坑）
+👉 script 里的变量 = 只在当前 shell 有效
+👉 想复用必须：
+同 job → before_script / function
+跨 job → artifact (dotenv)
+🎯 针对你当前情况的最优解
+你是：
+extends 模板
+只是想在 job 里用
+👉 直接改成：
+YAML
+.default_job:
+  before_script:
+    - export START_TIME=$(date +%s)
+子 job：
+YAML
+job_a:
+  extends: .default_job
+  script:
+    - echo "$START_TIME"
+🏁 一句话总结
+👉 不要在模板 script 里定义变量，要放到 before_script 或文件里
+如果你把你现在的 YAML 贴出来，我可以帮你： 👉 改成一版“变量可用 + 不重复代码 + 结构最清晰”的版本（顺便把你之前 VM 时间统计一起整合）。
