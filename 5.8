@@ -1,0 +1,123 @@
+如果你是 GitLab Pipeline 通过 SSH 调用远端机器上的 .sh 脚本里的某个函数，并且想把函数返回值保存到变量，最稳的是：
+远端脚本
+例如远端 /tmp/test.sh
+Bash
+#!/bin/bash
+
+get_value() {
+    local input=$1
+    result="value_${input}"
+    echo "$result"
+}
+注意：
+shell 函数不能像其他语言那样 return 字符串
+return 只能返回 0-255 数字状态码
+真正要“返回字符串”，必须 echo
+GitLab Pipeline 调用
+YAML
+job1:
+  script:
+    - |
+      RESULT=$(ssh user@remote '
+        source /tmp/test.sh
+        get_value "abc"
+      ')
+
+      echo "RESULT=$RESULT"
+输出：
+Plain text
+RESULT=value_abc
+如果远端脚本还有很多日志
+例如：
+Bash
+get_value() {
+    echo "start..."
+    echo "处理中"
+    echo "abc123"
+}
+这样 RESULT 会包含全部输出。
+这时推荐：
+方案1：最后一行才是真正结果
+YAML
+RESULT=$(ssh user@remote '
+  source /tmp/test.sh
+  get_value "abc" | tail -n 1
+')
+方案2：stderr 打日志，只 stdout 返回值（推荐）
+远端：
+Bash
+get_value() {
+    echo "start..." >&2
+    echo "处理中" >&2
+
+    echo "abc123"
+}
+Pipeline：
+YAML
+RESULT=$(ssh user@remote '
+  source /tmp/test.sh
+  get_value "abc"
+')
+这样：
+GitLab log 还能看到日志
+RESULT 只有 abc123
+这是最干净的方式。
+如果是 sshpass
+也一样：
+YAML
+RESULT=$(sshpass -p "$PASS" ssh -o StrictHostKeyChecking=no user@host '
+  source /tmp/test.sh
+  get_value "abc"
+')
+如果函数返回 JSON
+远端：
+Bash
+get_json() {
+    echo '{"status":"ok","id":"123"}'
+}
+本地：
+YAML
+JSON_RESULT=$(ssh user@remote '
+  source /tmp/test.sh
+  get_json
+')
+
+echo "$JSON_RESULT"
+最容易踩坑的问题
+1. source 不到脚本
+必须：
+Bash
+source /path/xx.sh
+不要：
+Bash
+./xx.sh
+因为执行脚本不会把函数带进当前 shell。
+2. ssh 默认是 /bin/sh
+有些机器：
+Bash
+source
+不支持。
+改：
+YAML
+RESULT=$(ssh user@remote 'bash -lc "
+  source /tmp/test.sh
+  get_value abc
+"')
+这个最稳。
+推荐最终写法：
+YAML
+script:
+  - |
+    RESULT=$(ssh user@remote 'bash -lc "
+      source /tmp/test.sh
+      get_value abc
+    "')
+
+    echo "RESULT=$RESULT"
+适合：
+GitLab Runner
+sshpass
+跨机器
+调用函数
+返回字符串
+返回 JSON
