@@ -1,0 +1,114 @@
+这是 GitLab trigger / multi-project pipeline 很常见的问题。
+核心原因一般是：
+Repo1 的 trigger job 已经“成功创建过一次” downstream pipeline
+你在 UI 点 retry 的时候
+GitLab 认为 downstream pipeline 已存在，不会重新创建
+尤其是：
+trigger: 方式
+strategy: depend
+或 dotenv/needs 链路
+都会出现。
+最稳方案（推荐）
+不要用 retry，而是：
+用 when: manual + “Run again”
+或者：
+在 trigger job 里加唯一变量
+例如：
+YAML
+trigger_repo2:
+  stage: test
+  variables:
+    RUN_ID: "${CI_PIPELINE_ID}_${CI_JOB_ID}_${CI_JOB_STARTED_AT}"
+  trigger:
+    project: group/repo2
+    branch: main
+    strategy: depend
+这样每次 retry 时：
+变量不同
+GitLab 会认为是新的 downstream pipeline
+repo2 会重新触发
+更根本原因
+GitLab 对 downstream pipeline 有“去重”行为。
+如果：
+branch 一样
+variables 一样
+trigger source 一样
+retry 时可能直接复用旧 downstream 状态。
+所以：
+必须让 trigger 内容变化
+最简单：
+YAML
+RETRY_TS: "$(date +%s)"
+但 GitLab yaml 里不能直接 shell。
+所以通常：
+YAML
+variables:
+  RETRY_ID: "${CI_JOB_ID}"
+即可。
+因为 retry 后：
+CI_JOB_ID 会变化
+推荐完整写法
+Repo1:
+YAML
+trigger_repo2:
+  stage: trigger
+
+  trigger:
+    project: group/repo2
+    branch: main
+    strategy: depend
+
+  variables:
+    UPSTREAM_PIPELINE: $CI_PIPELINE_ID
+    RETRY_JOB_ID: $CI_JOB_ID
+Repo2:
+YAML
+echo $RETRY_JOB_ID
+这样 retry 一定会重新触发。
+如果你现在是 curl API 触发
+比如：
+Bash
+curl -X POST ...
+那么 retry 不触发通常因为：
+trigger token
+ref
+variables
+完全一样。
+解决：
+Bash
+variables[RETRY_ID]=$CI_JOB_ID
+或者：
+Bash
+variables[TIMESTAMP]=$(date +%s)
+还有一个坑（很重要）
+如果 repo1 用：
+YAML
+needs:
+依赖 trigger job，
+而 trigger job retry 后：
+old downstream pipeline 还存在
+GitLab graph 缓存
+有时 UI 看起来没触发。
+实际可：
+去 repo2 看是否产生新 pipeline
+或看 trigger job log
+最推荐的企业稳定方案
+很多团队会：
+repo1 不直接 trigger
+而是：
+Bash
+curl GitLab API
+手工触发 repo2 pipeline。
+优点：
+retry 100%重新触发
+更容易传变量
+不受 trigger job 限制
+可以控制 branch/tag/env
+例如：
+Bash
+curl --request POST \
+  --form token=$TOKEN \
+  --form ref=main \
+  --form "variables[RETRY_ID]=$CI_JOB_ID" \
+  https://gitlab.example.com/api/v4/projects/123/trigger/pipeline
+这种最稳定。
