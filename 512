@@ -1,0 +1,209 @@
+那你这个场景，就必须继续用 GitLab 原生：
+YAML
+trigger:
+但要解决：
+retry / rerun 不重新触发 repo2
+核心是：
+必须让 trigger job 内容发生变化
+GitLab 对 retry bridge job 有缓存/复用逻辑。
+你需要：
+strategy: depend
+每次生成唯一 variable
+trigger job 使用这个 variable
+repo2 接收这个 variable
+repo1 完整代码（不用 API）
+.gitlab-ci.yml
+YAML
+stages:
+  - prepare
+  - trigger
+
+variables:
+  TEST_ID:
+    value: "default_test"
+    description: "User input test id"
+
+prepare_vars:
+  stage: prepare
+  script:
+    - |
+      # 生成唯一值
+      RETRY_ID="$(date +%s)"
+
+      echo "RETRY_ID=${RETRY_ID}" > result.env
+
+      cat result.env
+  artifacts:
+    reports:
+      dotenv: result.env
+
+trigger_repo2:
+  stage: trigger
+
+  needs:
+    - prepare_vars
+
+  variables:
+    TEST_ID: $TEST_ID
+    RETRY_ID: $RETRY_ID
+
+  trigger:
+    project: group/repo2
+    branch: main
+    strategy: depend
+
+    forward:
+      pipeline_variables: true
+
+  rules:
+    - when: always
+repo2 完整代码
+.gitlab-ci.yml
+YAML
+stages:
+  - test
+
+show_vars:
+  stage: test
+  script:
+    - echo "TEST_ID=$TEST_ID"
+    - echo "RETRY_ID=$RETRY_ID"
+
+run_test:
+  stage: test
+  script:
+    - |
+      echo "running..."
+
+      ./run_test.sh "$TEST_ID"
+关键点（非常重要）
+1. 不要再写：
+错误：
+Bash
+echo "TEST_ID=xxx" >> result.env
+因为：
+YAML
+variables:
+  TEST_ID:
+已经存在。
+否则：
+Plain text
+duplicate key
+2. dotenv 只放新增变量
+这里只放：
+Bash
+echo "RETRY_ID=$(date +%s)" > result.env
+3. 必须：
+YAML
+forward:
+  pipeline_variables: true
+否则 repo2 收不到。
+4. 必须：
+YAML
+strategy: depend
+否则 retry 行为很怪。
+5. 为什么这个方案能解决 retry
+关键：
+YAML
+variables:
+  RETRY_ID: $RETRY_ID
+每次 retry：
+Bash
+date +%s
+不同。
+GitLab 会认为：
+Plain text
+这是新的 downstream pipeline
+而不是复用旧的。
+如果 retry 还是不触发（GitLab 某些版本有 bug）
+加这个：
+YAML
+resource_group: "repo2-${RETRY_ID}"
+完整：
+YAML
+trigger_repo2:
+  stage: trigger
+
+  resource_group: "repo2-${RETRY_ID}"
+
+  needs:
+    - prepare_vars
+
+  variables:
+    TEST_ID: $TEST_ID
+    RETRY_ID: $RETRY_ID
+
+  trigger:
+    project: group/repo2
+    branch: main
+    strategy: depend
+
+    forward:
+      pipeline_variables: true
+你昨天没成功的真正原因
+大概率是：
+情况1
+你写了：
+YAML
+variables:
+  RETRY_ID: $(date +%s)
+这是错的。
+GitLab variables 不执行 shell。
+正确：
+必须：
+Bash
+echo "RETRY_ID=$(date +%s)" > result.env
+然后 dotenv 导入。
+情况2
+trigger job 没有引用 RETRY_ID：
+错误：
+YAML
+trigger:
+  project: xxx
+GitLab 看起来没变化。
+正确：
+YAML
+variables:
+  RETRY_ID: $RETRY_ID
+最终稳定版（推荐直接复制）
+repo1：
+YAML
+stages:
+  - prepare
+  - trigger
+
+prepare_vars:
+  stage: prepare
+  script:
+    - echo "RETRY_ID=$(date +%s)" > result.env
+  artifacts:
+    reports:
+      dotenv: result.env
+
+trigger_repo2:
+  stage: trigger
+
+  needs:
+    - prepare_vars
+
+  variables:
+    TEST_ID: $TEST_ID
+    RETRY_ID: $RETRY_ID
+
+  trigger:
+    project: group/repo2
+    branch: main
+    strategy: depend
+
+    forward:
+      pipeline_variables: true
+repo2：
+YAML
+stages:
+  - test
+
+test:
+  stage: test
+  script:
+    - echo "$TEST_ID"
+    - echo "$RETRY_ID"
