@@ -1,0 +1,136 @@
+是的，很多时候问题其实在 repo2。
+尤其 repo2 有：
+workflow: rules
+rules:
+only/except
+或 branch 限制
+会导致：
+第一次能跑
+但 retry 的 downstream pipeline 被 GitLab 判定不满足条件。
+下面给你一个“100%能 rerun 重新触发”的完整双 repo 配置。
+Repo1 完整代码
+.gitlab-ci.yml
+YAML
+stages:
+  - trigger
+
+trigger_repo2:
+  stage: trigger
+
+  trigger:
+    project: group/repo2
+    branch: main
+    strategy: depend
+
+  variables:
+    RETRY_ID: "$CI_JOB_ID"
+    PARENT_PIPELINE_ID: "$CI_PIPELINE_ID"
+    PARENT_JOB_ID: "$CI_JOB_ID"
+
+  rules:
+    - when: always
+Repo2 完整代码（重点）
+很多人漏了 workflow。
+YAML
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "pipeline"'
+      when: always
+
+    - if: '$CI_PIPELINE_SOURCE == "trigger"'
+      when: always
+
+    - when: always
+
+stages:
+  - test
+
+show_trigger:
+  stage: test
+
+  script:
+    - echo "PIPELINE SOURCE = $CI_PIPELINE_SOURCE"
+    - echo "RETRY_ID = $RETRY_ID"
+    - echo "PARENT_PIPELINE_ID = $PARENT_PIPELINE_ID"
+    - echo "PARENT_JOB_ID = $PARENT_JOB_ID"
+
+    - echo "repo2 triggered successfully"
+
+  rules:
+    - when: always
+为什么 repo2 必须改
+因为：
+trigger pipeline 的 source 是：
+Bash
+pipeline
+不是：
+Bash
+push
+如果你 repo2 有：
+YAML
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+那么：
+第一次可能因为缓存成功
+retry 时不会创建新 pipeline
+GitLab UI 看起来就是：
+“没触发”。
+如何确认是不是这个问题
+看 repo2：
+CI/CD → Pipelines
+如果 retry 后：
+完全没新 pipeline
+就是 workflow/rules 拦截。
+如果：
+有 pipeline
+但 job skipped
+就是 job rules 拦截。
+最稳定方案（推荐）
+其实 GitLab 原生 trigger retry 有 bug/缓存问题。
+企业里更稳定的是：
+Repo1 用 API 触发 Repo2
+不要用：
+YAML
+trigger:
+改成：
+YAML
+script:
+  - curl ...
+这样：
+rerun 100%重新触发
+不受 trigger 缓存影响
+variables 可控
+更稳定
+API 触发完整版（推荐你改这个）
+Repo1
+YAML
+stages:
+  - trigger
+
+trigger_repo2:
+  stage: trigger
+
+  script:
+    - |
+      curl --request POST \
+        --form token=$REPO2_TRIGGER_TOKEN \
+        --form ref=main \
+        --form "variables[RETRY_ID]=$CI_JOB_ID" \
+        --form "variables[PARENT_PIPELINE]=$CI_PIPELINE_ID" \
+        https://gitlab.example.com/api/v4/projects/123/trigger/pipeline
+Repo2
+YAML
+workflow:
+  rules:
+    - when: always
+
+stages:
+  - test
+
+test:
+  stage: test
+
+  script:
+    - echo "RETRY_ID=$RETRY_ID"
+这个 retry 永远重新触发。
