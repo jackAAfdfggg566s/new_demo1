@@ -1,0 +1,117 @@
+你这个现象，通常是因为：
+YAML
+variables:
+  RETRY_ID: $CI_JOB_ID
+放的位置不对。
+在 trigger: 类型 job 里，variables 必须放在 trigger job 下，不是 trigger 内部，也不能 shell 动态生成。
+下面给你一个可直接工作的完整例子。
+Repo1 .gitlab-ci.yml
+YAML
+stages:
+  - trigger
+
+trigger_repo2:
+  stage: trigger
+
+  trigger:
+    project: group/repo2
+    branch: main
+    strategy: depend
+
+  variables:
+    UPSTREAM_PIPELINE_ID: $CI_PIPELINE_ID
+    RETRY_ID: $CI_JOB_ID
+
+  rules:
+    - when: always
+注意：
+variables: 和 trigger: 同级
+不是写到 trigger 里面
+不是 script 里面
+Repo2 .gitlab-ci.yml
+YAML
+stages:
+  - test
+
+show_vars:
+  stage: test
+  script:
+    - echo "UPSTREAM_PIPELINE_ID=$UPSTREAM_PIPELINE_ID"
+    - echo "RETRY_ID=$RETRY_ID"
+为什么这样 retry 能重新触发
+因为：
+YAML
+RETRY_ID: $CI_JOB_ID
+每次 retry：
+新 job
+新 CI_JOB_ID
+GitLab 会认为：
+downstream variables 变了
+是新的 pipeline
+于是重新触发 repo2。
+如果还是不触发（重点）
+说明你用了：
+YAML
+interruptible: true
+或者：
+YAML
+resource_group:
+或者 repo2 有：
+YAML
+workflow:
+把 pipeline 拦截了。
+最常见是：
+YAML
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+这样 trigger pipeline 会被拒绝。
+Repo2 必须允许 trigger pipeline
+加：
+YAML
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "pipeline"
+    - if: $CI_PIPELINE_SOURCE == "trigger"
+    - when: always
+否则：
+第一次可能缓存成功
+retry 时被 workflow 拦截
+表现为“不触发”
+这个是最容易踩坑的。
+建议你最终用这个完整版
+Repo1
+YAML
+stages:
+  - trigger
+
+trigger_repo2:
+  stage: trigger
+
+  trigger:
+    project: group/repo2
+    branch: main
+    strategy: depend
+
+  variables:
+    RETRY_ID: $CI_JOB_ID
+    PARENT_PIPELINE: $CI_PIPELINE_ID
+
+  rules:
+    - when: always
+Repo2
+YAML
+workflow:
+  rules:
+    - when: always
+
+stages:
+  - test
+
+test_job:
+  stage: test
+
+  script:
+    - echo "RETRY_ID=$RETRY_ID"
+    - echo "PARENT_PIPELINE=$PARENT_PIPELINE"
+这个一定能 retry 后重新触发。
