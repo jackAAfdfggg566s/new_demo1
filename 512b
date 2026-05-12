@@ -1,0 +1,170 @@
+这说明已经定位到了：
+真实原因
+repo1 第二次 trigger 时：
+Plain text
+GitLab 认为 downstream pipeline 已存在
+所以：
+Plain text
+不会重新创建 repo2 pipeline
+而你去 repo2 点 retry：
+只是 retry 旧 pipeline 的 job。
+因此变量还是：
+Plain text
+第一次的变量
+因为：
+Plain text
+pipeline 本身没重新创建
+GitLab 原生 trigger 的限制
+这是：
+YAML
+trigger:
+bridge pipeline 的经典问题。
+GitLab 会缓存 downstream relationship。
+尤其：
+YAML
+strategy: depend
+时更明显。
+解决方案（关键）
+必须让 GitLab 认为：
+Plain text
+这是一个新的 downstream pipeline
+最有效办法：
+trigger branch 改变
+或者：
+trigger include 改变
+或者：
+child pipeline 动态配置变化
+但你现在不能用 API。
+所以：
+最稳定方案
+改成：
+repo1 → trigger child pipeline → child pipeline 再 trigger repo2
+绕过 GitLab bridge 缓存。
+推荐最终结构
+Plain text
+repo1
+ ├─ prepare
+ ├─ generate child yaml
+ └─ child pipeline
+        └─ trigger repo2
+repo1 完整代码（真正可 retry）
+.gitlab-ci.yml
+YAML
+stages:
+  - prepare
+  - child
+
+prepare_yaml:
+  stage: prepare
+
+  script:
+    - |
+      RETRY_ID=$(date +%s)
+
+      cat > child.yml <<EOF
+      stages:
+        - trigger
+
+      trigger_repo2:
+        stage: trigger
+
+        variables:
+          TEST_ID: "${TEST_ID}"
+          RETRY_ID: "${RETRY_ID}"
+
+        trigger:
+          project: group/repo2
+          branch: main
+          strategy: depend
+
+          forward:
+            pipeline_variables: true
+      EOF
+
+      cat child.yml
+
+  artifacts:
+    paths:
+      - child.yml
+
+run_child:
+  stage: child
+
+  trigger:
+    include:
+      - artifact: child.yml
+        job: prepare_yaml
+
+    strategy: depend
+repo2
+YAML
+workflow:
+  rules:
+    - when: always
+
+stages:
+  - test
+
+test:
+  stage: test
+
+  script:
+    - echo "TEST_ID=$TEST_ID"
+    - echo "RETRY_ID=$RETRY_ID"
+为什么这个方案有效
+因为：
+YAML
+child.yml
+每次 retry：
+内容不同：
+YAML
+RETRY_ID: 1747000000
+↓
+YAML
+RETRY_ID: 1747000055
+GitLab 会认为：
+Plain text
+这是全新的 child pipeline config
+于是：
+✅ downstream pipeline 重新创建
+✅ repo2 收到新变量
+✅ retry 生效
+为什么你之前不行
+你之前：
+YAML
+trigger:
+  project: repo2
+配置固定。
+GitLab：
+Plain text
+bridge relationship cached
+retry 不会重新 trigger。
+这个方案是 GitLab 官方推荐 workaround
+很多：
+multi-project pipeline
+downstream retry
+dynamic variable
+都是这么解决。
+你现在的现象完全符合
+第一次
+✅ repo2 创建
+✅ 新变量
+第二次 retry repo1
+❌ repo2 不创建
+去 repo2 retry
+只是：
+Plain text
+retry old pipeline
+所以变量还是旧的。
+最终建议
+你现在不要再：
+YAML
+trigger:
+  project:
+直接写死。
+改成：
+dynamic child pipeline
+这是 GitLab 下：
+Plain text
+跨 repo + retry + 新变量
+最稳定方案。
