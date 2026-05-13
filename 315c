@@ -1,0 +1,122 @@
+你可以用 Amazon Web Services 的 AWS CLI 调用 Amazon CloudWatch Logs Insights 的：
+start-query
+get-query-results
+来执行 Log Insights query。
+基本流程：
+1. 准备 query 文件
+例如：
+SQL
+fields @timestamp, @message
+| filter level = "ERROR"
+| sort @timestamp desc
+| limit 20
+保存：
+Bash
+query.sql
+2. 用 AWS CLI 启动查询
+Bash
+QUERY_ID=$(aws logs start-query \
+  --log-group-name "/aws/lambda/test" \
+  --start-time $(date -d '1 hour ago' +%s) \
+  --end-time $(date +%s) \
+  --query-string file://query.sql \
+  --query 'queryId' \
+  --output text)
+Mac 澳洲环境可能没有 date -d：
+macOS 用：
+Bash
+START=$(date -v-1H +%s)
+END=$(date +%s)
+然后：
+Bash
+QUERY_ID=$(aws logs start-query \
+  --log-group-name "/aws/lambda/test" \
+  --start-time $START \
+  --end-time $END \
+  --query-string file://query.sql \
+  --query 'queryId' \
+  --output text)
+3. 获取结果
+CloudWatch Logs Insights 是异步的。
+需要轮询：
+Bash
+aws logs get-query-results \
+  --query-id "$QUERY_ID"
+完整可用脚本（Linux/macOS）
+Bash
+#!/bin/bash
+
+START=$(date -v-1H +%s)
+END=$(date +%s)
+
+QUERY_ID=$(aws logs start-query \
+  --log-group-name "/aws/lambda/test" \
+  --start-time $START \
+  --end-time $END \
+  --query-string file://query.sql \
+  --query 'queryId' \
+  --output text)
+
+echo "Query ID: $QUERY_ID"
+
+while true; do
+    STATUS=$(aws logs get-query-results \
+        --query-id "$QUERY_ID" \
+        --query 'status' \
+        --output text)
+
+    echo "Status: $STATUS"
+
+    if [[ "$STATUS" == "Complete" ]]; then
+        break
+    fi
+
+    sleep 2
+done
+
+aws logs get-query-results \
+  --query-id "$QUERY_ID"
+如果你是 JSON 文件
+很多人保存的是：
+JSON
+{
+  "queryString": "fields @timestamp ..."
+}
+AWS CLI 不能直接读取这种格式。
+需要：
+方法1（推荐）
+只保存纯 query 文本。
+方法2
+用 jq 提取：
+Bash
+QUERY=$(jq -r '.queryString' query.json)
+
+aws logs start-query \
+  ...
+  --query-string "$QUERY"
+多 log group
+Bash
+--log-group-names group1 group2
+例如：
+Bash
+aws logs start-query \
+  --log-group-names "/aws/a" "/aws/b" \
+  ...
+输出转 JSON
+Bash
+aws logs get-query-results \
+  --query-id "$QUERY_ID" \
+  --output json
+GitLab pipeline 常见写法
+你之前经常在 GitLab 用 AWS CLI。
+通常会：
+Bash
+RESULT=$(aws logs get-query-results \
+  --query-id "$QUERY_ID" \
+  --output json)
+
+echo "$RESULT" > result.json
+然后：
+转 html
+playwright 截图
+artifact 保存。
