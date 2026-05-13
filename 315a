@@ -1,0 +1,106 @@
+如果你是：
+YAML
+trigger:
+  project: group/repo2
+这种 multi-project pipeline，
+那你现在的问题基本可以确定是：
+GitLab retry bridge job 时，不会重新创建 downstream pipeline。
+即使：
+retry_id 不同
+variables 变化了
+trigger job 重新跑了
+也可能：
+downstream pipeline 不会新建。
+这是 GitLab 很常见的坑。
+你这个场景里：
+retry 的其实只是 bridge job 状态
+不是：
+“重新发送 trigger 请求”
+GitLab 内部会认为：
+downstream pipeline 已关联
+retry 只是重跑当前 bridge
+所以 repo2 不会再次收到新的 pipeline event。
+为什么 new pipeline 正常
+因为：
+Plain text
+New Pipeline
+→ 创建新的 pipeline graph
+→ 创建新的 bridge
+→ 创建新的 downstream pipeline
+而：
+Plain text
+Retry Job
+→ 只 retry 当前 bridge job
+→ 不重新 create downstream
+你之前改 retry_id 为什么没用
+因为：
+变量是在：
+trigger 创建 downstream 时
+才会传。
+但现在问题是：
+downstream 根本没重新创建。
+所以：
+retry_id 有没有变化
+GitLab 根本不关心。
+最稳定解决方案（推荐）
+不要 retry trigger job
+而是 retry trigger 前一个普通 job。
+例如：
+YAML
+stages:
+  - prepare
+  - trigger
+
+prepare:
+  stage: prepare
+  script:
+    - echo "prepare"
+
+trigger_repo2:
+  stage: trigger
+  trigger:
+    project: group/repo2
+    branch: main
+以后：
+不要 retry trigger_repo2
+retry prepare
+这样 GitLab 会：
+重新走 pipeline DAG
+创建新的 bridge
+repo2 会重新触发。
+如果你必须点 retry
+那只能：
+改成 API 触发
+因为 API：
+Bash
+curl --request POST \
+  --form token=xxx \
+  --form ref=main \
+  ...
+每次都是：
+全新 pipeline。
+不会复用 bridge 状态。
+还有一种 workaround
+trigger job 用 when:manual
+YAML
+trigger_repo2:
+  when: manual
+  trigger:
+    project: group/repo2
+失败后：
+不点 retry
+点 play
+通常会重新创建 downstream pipeline。
+很多团队最后都这么做。
+还有一个关键检查
+看看你有没有：
+YAML
+strategy: depend
+如果有：
+retry 问题会更明显。
+因为 parent 会缓存：
+downstream pipeline id
+downstream status
+导致 retry 更不会重新创建。
+如果有这个：
+先删掉测试。
