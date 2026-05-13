@@ -1,0 +1,125 @@
+如果你已经确认：
+retry_id 每次都不同
+trigger job 重新运行了
+用了 child.yaml
+但 retry 后还是没触发 downstream pipeline
+那问题通常不是变量，而是 GitLab 对 retry 的 pipeline graph 行为。
+你这个场景，本质大概率是：
+retry 的只是 job，不是重新创建 bridge/child pipeline。
+所以：
+job rerun 了
+script rerun 了
+但 trigger bridge 没重新创建
+downstream 不会再次生成。
+你现在需要先确认：
+你是哪种 trigger？
+情况1：trigger:
+YAML
+trigger:
+  include: child.yaml
+还是：
+YAML
+trigger:
+  project: xxx/repo2
+这两个 retry 行为不一样。
+最关键原因（你现在大概率中了）
+retry 不会重新创建 downstream pipeline
+GitLab 已知行为：
+retry job ≠
+recreate child pipeline
+尤其：
+bridge job
+child pipeline
+multi-project pipeline
+经常这样。
+所以你看到：
+retry_id 不同
+变量也变了
+但 downstream 没新 pipeline。
+因为：
+GitLab 认为 child pipeline 已经存在。
+为什么 child.yaml 也没用
+因为：
+YAML
+trigger:
+  include:
+    - local: child.yaml
+本质仍然是：
+bridge job
+retry 的仍然是：
+bridge execution
+不是：
+pipeline creation event。
+正确解决方案
+方案1（推荐）
+不要 retry trigger job。
+而是：
+retry 前面的普通 job
+让 pipeline 重新流到 trigger。
+这是最稳定方案。
+例如：
+YAML
+stages:
+  - prepare
+  - trigger
+
+prepare:
+  script:
+    - echo "new"
+
+trigger_child:
+  stage: trigger
+  trigger:
+    include: child.yaml
+不要 retry trigger_child
+而是 retry：
+prepare
+这样 GitLab 会：
+重新执行 DAG
+重新创建 child pipeline。
+方案2（最稳定）
+不用 trigger keyword。
+改成：
+YAML
+script:
+  - curl ...
+调用：
+pipeline trigger token API
+因为 API 每次都是：
+new pipeline
+不会复用。
+你之前说网络限制不能 API。
+那就很可能：
+你已经碰到 GitLab trigger keyword 的设计限制了。
+方案3（很多人最终用这个）
+加一个 manual 中间层：
+repo1:
+YAML
+create_child:
+  when: manual
+  trigger:
+    include: child.yaml
+每次：
+手动点 play
+而不是 retry
+GitLab 会重新创建 downstream。
+还有一个隐藏坑
+如果你用了：
+YAML
+strategy: depend
+retry 行为会更怪。
+因为 parent pipeline 会缓存 child 状态。
+尤其：
+failed
+canceled
+skipped
+后 retry 经常不再创建 child。
+最后你可以这样判断是不是这个问题
+如果：
+New pipeline 可以触发
+Retry 不触发
+retry_id 已变化
+script 已执行
+那 90% 不是变量问题。
+而是：
+GitLab retry bridge job 不会重新创建 downstream pipeline。
