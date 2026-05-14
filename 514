@@ -1,0 +1,70 @@
+可以用 shell 变量 + envsubst 或 sed 动态替换 SQL 文件里的占位符，再传给 AWS CLI。
+例如你有一个 query.sql：
+SQL
+fields @timestamp, @message
+| filter testId = '${TEST_ID}'
+| sort @timestamp desc
+| limit 20
+Shell：
+Bash
+#!/bin/bash
+
+TEST_ID="20260514_123456"
+
+QUERY_STRING=$(envsubst < query.sql)
+
+aws logs start-query \
+  --log-group-name "/aws/lambda/test" \
+  --start-time 1715600000 \
+  --end-time 1715686400 \
+  --query-string "$QUERY_STRING"
+这里：
+${TEST_ID} 会被替换
+envsubst 来自 gettext
+Ubuntu/Linux 如果没有：
+Bash
+sudo apt install gettext
+如果你不想装 envsubst，直接用 sed：
+query.sql
+SQL
+fields @timestamp, @message
+| filter testId = '__TEST_ID__'
+| sort @timestamp desc
+shell
+Bash
+TEST_ID="20260514_123456"
+
+QUERY_STRING=$(sed "s/__TEST_ID__/$TEST_ID/g" query.sql)
+
+aws logs start-query \
+  --log-group-name "/aws/lambda/test" \
+  --start-time 1715600000 \
+  --end-time 1715686400 \
+  --query-string "$QUERY_STRING"
+如果你是在 GitLab CI 里，通常这样写最稳：
+YAML
+script:
+  - export TEST_ID="$testid"
+  - QUERY_STRING=$(envsubst < query.sql)
+
+  - |
+    aws logs start-query \
+      --log-group-name "/aws/eks/app" \
+      --start-time "$START" \
+      --end-time "$END" \
+      --query-string "$QUERY_STRING"
+还有一种更安全的方式是 heredoc，不需要单独 sql 文件：
+Bash
+QUERY_STRING=$(cat <<EOF
+fields @timestamp, @message
+| filter testId = '$TEST_ID'
+| sort @timestamp desc
+EOF
+)
+
+aws logs start-query \
+  --log-group-name "/aws/test" \
+  --start-time "$START" \
+  --end-time "$END" \
+  --query-string "$QUERY_STRING"
+这个方式在 GitLab Pipeline 里通常最不容易踩转义坑。
