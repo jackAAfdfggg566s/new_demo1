@@ -1,0 +1,22 @@
+可以这样写，偏正式、适合测试工程师年终总结里的“计划与报告 / 测试治理 / 质量提升”方向。下面是英文版本，可以直接放到 review 里。
+Test Planning & Reporting
+Developed comprehensive test plans with high scenario coverage to reduce potential system risks and hidden issues before production release.
+Designed and executed end-to-end validation strategies across multiple project phases, including pre-release, failover testing, regression testing, and production readiness verification.
+Identified and tracked xx defects/issues during testing activities, improving overall system stability and release quality.
+Provided detailed test reports throughout all critical project stages, ensuring clear visibility of testing progress, risks, coverage, and validation results for stakeholders and audit requirements.
+Improved report quality and consistency by developing automated reporting tools and standardized report generation workflows.
+Built automated pipeline integrations to trigger test execution, collect logs/screenshots, perform result comparison and data analysis, and automatically generate testing reports.
+Enhanced testing efficiency through automation of:
+Screenshot collection
+Result comparison
+Data analysis
+Coverage tracking
+Report generation
+Designed multiple failover and disaster recovery test scenarios based on power outage simulations and AZ failover strategies to validate system resiliency and high availability capabilities.
+Continuously optimized testing processes and reporting workflows to improve execution efficiency, increase coverage, and reduce manual effort.
+如果你想，我还可以帮你继续扩展成：
+�⁠更“高级/升职风格”（偏 leadership）
+�⁠更“量化 KPI 风格”
+�⁠更“DevOps / SRE / Cloud Testing”风格
+�⁠更适合 Amazon / 澳洲公司 performance review 风格
+�⁠加入 AWS、GitLab pipeline、自动化框架等关键词版本。
