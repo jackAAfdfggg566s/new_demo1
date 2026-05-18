@@ -1,0 +1,23 @@
+可以这样写，偏“创新 + 自动化 + 提效 + 测试平台建设”方向，适合年终总结或者 performance review。
+Test Tools & Automation Innovation
+Enhanced and modified existing testing frameworks to support both NFT01 and NFT02 environments, improving framework flexibility and reducing environment-specific configuration effort.
+Extended automation framework capabilities to support multiple testing scenarios and use cases, including AFI, Chess, and Messenger related test validations.
+Improved framework scalability and reusability by optimizing test execution workflows and supporting diverse test case requirements across different projects.
+Developed automated database query pipelines to quickly validate data consistency and identify potential data loss issues, significantly reducing manual verification effort and troubleshooting time.
+Built and optimized AWS CloudWatch related monitoring and analysis workflows to improve log validation efficiency and system issue investigation capability.
+Designed and implemented AZ power outage and failover related testing workflows to validate high availability, resiliency, and disaster recovery scenarios.
+Automated testing report generation processes, including:
+Test result collection
+Screenshot generation
+Data comparison and analysis
+Coverage tracking
+Pipeline execution summary
+Improved overall testing efficiency and reporting quality through pipeline automation and integration of automated analysis and reporting tools.
+Reduced manual operational effort by implementing automated pipeline triggering and framework orchestration for recurring validation and regression activities.
+Continuously optimized testing tools and automation processes to improve execution efficiency, increase test coverage, and reduce potential system risks.
+如果你想，我还能帮你改成：
+�⁠更像 Amazon leadership principle 风格
+�⁠更偏 Senior / Lead QA 风格
+�⁠更偏 SDET / DevOps automation 风格
+�⁠加入量化指标（节省 xx% 时间）
+�⁠更正式适合升职材料版本。
