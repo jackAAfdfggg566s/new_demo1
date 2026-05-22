@@ -1,0 +1,159 @@
+可以，这个设计是可行的。
+你本质是在：
+Plain text
+.base job
+    └─ assume role B
+    └─ 获取cluster B状态
+    └─ 保存结果到文件
+
+主job
+    └─ before_script重新assume role A
+    └─ 恢复/追加文件
+    └─ 继续实验
+这样能避免：
+一个 shell 里来回切换 AWS credentials 混乱
+kubeconfig context 被污染
+extends 后 before_script 覆盖问题
+这个方向是对的。
+你这里最关键的是：
+不要依赖 export 的环境变量跨 job
+因为：
+Plain text
+job A -> job B
+环境变量不会自动保留。
+所以：
+推荐保存：
+文件
+dotenv artifact
+artifacts
+而不是 export。
+推荐结构（非常稳）
+base template
+YAML
+.base_precheck:
+  before_script:
+    - chmod +x scripts/*.sh
+
+    - ./scripts/assume_b.sh
+
+    - kubectl get pods -A > cluster_b_status.txt
+
+    - echo "PRECHECK_DONE=true" >> shared.env
+
+  artifacts:
+    paths:
+      - cluster_b_status.txt
+      - shared.env
+
+    reports:
+      dotenv: shared.env
+主 job
+YAML
+main_test:
+  extends: .base_precheck
+
+  before_script:
+    - source shared.env
+
+    - ./scripts/assume_a.sh
+
+    - cat cluster_b_status.txt >> final_report.txt
+
+    - echo "" >> final_report.txt
+    - echo "===== Experiment Result =====" >> final_report.txt
+
+  script:
+    - run experiment
+重点：extends 后 before_script 是覆盖
+所以：
+YAML
+extends: .base_precheck
+后：
+YAML
+before_script:
+会覆盖 base 的 before_script。
+因此你需要：
+推荐方案
+用 !reference
+YAML
+main_test:
+  extends: .base_precheck
+
+  before_script:
+    - !reference [.base_precheck, before_script]
+
+    - ./scripts/assume_a.sh
+
+    - cat cluster_b_status.txt >> final_report.txt
+这样：
+Plain text
+base before_script
++
+主job before_script
+都会执行。
+你说的“加回文件”
+推荐不要：
+Bash
+echo xxx > file
+再恢复。
+更稳：
+用 append
+Bash
+cat cluster_b_status.txt >> final_report.txt
+账号切换最佳实践
+推荐不要：
+Bash
+export AWS_ACCESS_KEY_ID=...
+一直覆盖。
+而是：
+每次 assume role 单独函数
+例如：
+Bash
+assume_role() {
+  ROLE_ARN=$1
+
+  CREDS=$(aws sts assume-role \
+    --role-arn "$ROLE_ARN" \
+    --role-session-name gitlab)
+
+  export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.Credentials.AccessKeyId')
+  export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.Credentials.SecretAccessKey')
+  export AWS_SESSION_TOKEN=$(echo "$CREDS" | jq -r '.Credentials.SessionToken')
+}
+更推荐：不要共用 ~/.kube/config
+因为：
+Plain text
+aws eks update-kubeconfig
+会污染当前 context。
+推荐：
+Bash
+export KUBECONFIG=$PWD/kubeconfig_b
+然后：
+Bash
+aws eks update-kubeconfig \
+  --name cluster-b \
+  --kubeconfig $KUBECONFIG
+切回 A：
+Bash
+export KUBECONFIG=$PWD/kubeconfig_a
+这样两个 cluster 完全隔离。
+你这个场景最终推荐结构
+Plain text
+.base_precheck
+    assume role B
+    kubeconfig_b
+    collect status
+    artifact保存
+
+main job
+    引用base before_script
+    assume role A
+    kubeconfig_a
+    append报告
+    start fis
+这个结构非常适合：
+chaos engineering
+EKS precheck
+FIS automation
+multi-account pipeline
+cross-account observability
