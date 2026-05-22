@@ -1,0 +1,65 @@
+可以。extends 之后，子 job 依然可以定义自己的 before_script。
+但要注意：默认是覆盖，不是追加。
+例如：
+YAML
+.base_job:
+  before_script:
+    - echo "base before"
+
+test_job:
+  extends: .base_job
+  before_script:
+    - echo "child before"
+  script:
+    - echo "run test"
+最终只会执行：
+Bash
+echo "child before"
+不会执行 base before。
+如果你想“继承 + 追加”，常见有几种方法：
+方法1：用 !reference（推荐）
+YAML
+.base_job:
+  before_script:
+    - echo "base before"
+
+test_job:
+  extends: .base_job
+  before_script:
+    - !reference [.base_job, before_script]
+    - echo "child before"
+  script:
+    - echo "run test"
+这样会执行：
+Bash
+echo "base before"
+echo "child before"
+方法2：把公共逻辑放进 script/function
+比如：
+YAML
+.base_job:
+  script:
+    - common_setup
+子 job 再额外执行。
+方法3：用 YAML anchor
+YAML
+.base_before: &base_before
+  - echo "base before"
+
+.base_job:
+  before_script: *base_before
+
+test_job:
+  extends: .base_job
+  before_script:
+    - *base_before
+    - echo "child before"
+不过这种容易出现嵌套数组问题，GitLab 版本不同兼容性一般，不如 !reference 稳定。
+另外几个关键点：
+script、before_script、after_script 在 extends 里默认都是“覆盖”
+variables 会 merge
+tags 通常覆盖
+多个 extends 后面的优先级更高
+官方文档：
+docs.gitlab.com⁠�
+docs.gitlab.com⁠�
