@@ -1,0 +1,55 @@
+Linux Shell 可以用循环加 sleep 30，记录开始时间，2小时（7200秒）后自动结束。
+Bash
+#!/bin/bash
+
+DURATION=$((2 * 60 * 60))  # 2小时
+INTERVAL=30                # 30秒
+
+START_TIME=$(date +%s)
+
+while true; do
+    CURRENT_TIME=$(date +%s)
+    ELAPSED=$((CURRENT_TIME - START_TIME))
+
+    if [ "$ELAPSED" -ge "$DURATION" ]; then
+        echo "Monitoring completed after 2 hours."
+        break
+    fi
+
+    echo "=== $(date) ==="
+    kubectl get pods -A
+
+    sleep "$INTERVAL"
+done
+如果你只想检查某个 Pod：
+Bash
+#!/bin/bash
+
+DURATION=7200
+INTERVAL=30
+
+START_TIME=$(date +%s)
+
+while [ $(( $(date +%s) - START_TIME )) -lt $DURATION ]; do
+    kubectl get pod my-pod -n my-namespace
+    sleep $INTERVAL
+done
+
+echo "Finished."
+如果是在 GitLab Pipeline 里，通常会把结果保存到文件：
+Bash
+#!/bin/bash
+
+LOG_FILE="pod_status.log"
+DURATION=7200
+INTERVAL=30
+
+START_TIME=$(date +%s)
+
+while [ $(( $(date +%s) - START_TIME )) -lt $DURATION ]; do
+    echo "=== $(date) ===" >> "$LOG_FILE"
+    kubectl get pods -A >> "$LOG_FILE" 2>&1
+    echo "" >> "$LOG_FILE"
+    sleep $INTERVAL
+done
+这样 2 小时后脚本会自动退出，GitLab Job 也不会因为后台进程没结束而一直卡住。
