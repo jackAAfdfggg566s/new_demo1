@@ -1,0 +1,18 @@
+如果是年终总结或绩效评估，重点不要只写“生成报告”，而要突出节省时间、提高准确性、标准化流程、支持决策。
+简短版（一句话）
+写作
+Developed an automated test reporting solution that collects test results, generates standardized reports, and reduces manual effort while improving reporting accuracy and efficiency.
+强调价值
+写作
+Designed and implemented automated test report generation, consolidating results from multiple test executions into standardized reports. This reduced manual reporting effort, improved data consistency, and enabled faster analysis of test outcomes and defects.
+结合测试工程师工作
+写作
+Enhanced the test framework to automatically collect execution results, logs, and key metrics, generating comprehensive test reports with minimal manual intervention. This improved reporting efficiency, increased traceability, and provided stakeholders with timely and accurate test status visibility.
+如果你的实际情况是：
+GitLab Pipeline自动跑测试
+自动收集日志
+自动统计Pass/Fail
+自动生成HTML/PDF/Excel报告
+自动关联Defect
+那么年终总结里最有分量的表达通常是：
+Developed automated test reporting capabilities within the test framework, enabling end-to-end report generation from test execution, result aggregation, log collection, and defect summary, significantly reducing manual effort and improving reporting quality and turnaround time.
