@@ -1,0 +1,95 @@
+如果 Repo2 已经有 5 个独立 Job，而你只是想让它们按顺序执行，不想改成一个大 Job，那么只需要在 Repo2 改动即可，Repo1 基本不用动。
+例如现在 Repo2 可能是：
+YAML
+stages:
+  - db
+
+query1:
+  stage: db
+  script:
+    - ./query1.sh
+
+query2:
+  stage: db
+  script:
+    - ./query2.sh
+
+query3:
+  stage: db
+  script:
+    - ./query3.sh
+
+query4:
+  stage: db
+  script:
+    - ./query4.sh
+
+query5:
+  stage: db
+  script:
+    - ./query5.sh
+这会 5个同时跑。
+改成：
+YAML
+stages:
+  - db
+
+query1:
+  stage: db
+  script:
+    - ./query1.sh
+
+query2:
+  stage: db
+  needs:
+    - query1
+  script:
+    - ./query2.sh
+
+query3:
+  stage: db
+  needs:
+    - query2
+  script:
+    - ./query3.sh
+
+query4:
+  stage: db
+  needs:
+    - query3
+  script:
+    - ./query4.sh
+
+query5:
+  stage: db
+  needs:
+    - query4
+  script:
+    - ./query5.sh
+执行顺序变成：
+Plain text
+query1
+  ↓
+query2
+  ↓
+query3
+  ↓
+query4
+  ↓
+query5
+这样：
+Repo1 完全不用改
+仍然只触发一次 Repo2
+Repo2 仍然保留 5 个 Job
+GitLab UI 还能看到每个查询单独的日志
+改动最小
+如果这 5 个 Job 目前已经在不同 stage，例如：
+YAML
+stages:
+  - db1
+  - db2
+  - db3
+  - db4
+  - db5
+那其实已经天然串行，不需要加 needs。
+如果你贴一下 Repo2 当前的 5 个 Job 配置（哪怕删掉敏感信息），我可以告诉你是直接加 needs，还是有更简单的方法（例如 resource_group、stage 调整等）。
