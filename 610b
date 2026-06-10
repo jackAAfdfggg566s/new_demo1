@@ -1,0 +1,53 @@
+如果是 GitLab Runner 能访问 EKS，但远端机器只能存文件，那么可以用下面这个脚本。
+它会：
+每 30 秒获取一次 Pod 状态
+持续 2 小时
+直接追加到远端机器文件
+记录时间戳
+SSH 失败不会导致脚本退出
+写作
+#!/bin/bash
+INTERVAL=30 DURATION=7200
+REMOTE_USER="user" REMOTE_HOST="remote-host" REMOTE_FILE="/data/pod_status.log"
+START_TIME=$(date +%s) END_TIME=$((START_TIME + DURATION))
+echo "Monitoring started at $(date)"
+while [ "$(date +%s)" -lt "$END_TIME" ] do TMP_FILE=$(mktemp)
+{
+    echo ""
+    echo "=================================================="
+    echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "=================================================="
+
+    kubectl get pods -A -o wide
+
+    echo ""
+    echo "---------------- Events ----------------"
+    kubectl get events -A --sort-by=.metadata.creationTimestamp | tail -20
+
+} > "$TMP_FILE" 2>&1
+
+cat "$TMP_FILE" | ssh ${REMOTE_USER}@${REMOTE_HOST} \
+    "cat >> ${REMOTE_FILE}"
+
+rm -f "$TMP_FILE"
+
+sleep "$INTERVAL"
+done
+echo "Monitoring completed at $(date)"
+GitLab Job 调用：
+YAML
+monitor_pod_status:
+  script:
+    - chmod +x monitor_pod_status.sh
+    - ./monitor_pod_status.sh
+如果是做你之前提到的 PT/Failover 实验，我建议再增加：
+Bash
+kubectl get nodes
+kubectl top pod -A
+kubectl top node
+这样后面自动生成测试报告时，可以同时分析：
+Pod 重启次数
+Pod 状态变化
+Node 状态变化
+Resource 使用率
+比单纯记录 kubectl get pods 更有价值。
