@@ -1,0 +1,89 @@
+那你的架构应该是：
+Plain text
+GitLab Runner
+    ↓
+AWS / EKS
+(kubectl 可用)
+    ↓
+获取 Pod 状态
+    ↓
+SSH
+    ↓
+远端机器文件
+而不是让远端机器执行 kubectl。
+例如：
+YAML
+monitor_pods:
+  script:
+    - |
+      END=$(( $(date +%s) + 7200 ))
+
+      while [ $(date +%s) -lt $END ]
+      do
+          echo "===== $(date) =====" > pod_status.tmp
+
+          kubectl get pods -A -o wide >> pod_status.tmp
+
+          scp pod_status.tmp user@remote-host:/data/pod_status.log
+
+          sleep 30
+      done
+但这样有个问题：
+每次会覆盖文件。
+通常应该追加：
+YAML
+monitor_pods:
+  script:
+    - |
+      END=$(( $(date +%s) + 7200 ))
+
+      while [ $(date +%s) -lt $END ]
+      do
+          {
+            echo ""
+            echo "===== $(date) ====="
+            kubectl get pods -A -o wide
+          } > pod_status.tmp
+
+          cat pod_status.tmp | \
+          ssh user@remote-host \
+          "cat >> /data/pod_status.log"
+
+          sleep 30
+      done
+这样远端文件会变成：
+Plain text
+===== 2026-06-10 10:00:00 =====
+pod-a Running
+pod-b Running
+
+===== 2026-06-10 10:00:30 =====
+pod-a Running
+pod-b Pending
+如果你已经在 GitLab Agent 上操作 EKS，建议把需要的信息直接先写成本地文件：
+Bash
+kubectl get pods -A -o wide >> pod_report.log
+kubectl top pod -A >> pod_report.log
+kubectl get events -A >> pod_report.log
+最后统一传一次：
+Bash
+scp pod_report.log user@remote-host:/data/
+这样网络压力最小。
+如果你的故障测试需要观察 Pod 在整个实验期间的变化，我更推荐：
+Bash
+kubectl get pods -A -o wide --watch
+或者：
+Bash
+watch -n 30 kubectl get pods -A -o wide
+然后将输出重定向到文件：
+Bash
+while true
+do
+    echo "===== $(date) ====="
+    kubectl get pods -A -o wide
+    sleep 30
+done >> pod_status.log
+最后实验结束再：
+Bash
+scp pod_status.log user@remote-host:/data/
+相比每 30 秒 SSH 一次远端机器，这种方式更稳定，也更适合你之前做的 PT/Failover 自动化测试框架。
