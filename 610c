@@ -1,0 +1,46 @@
+#!/bin/bash
+
+INTERVAL=30
+DURATION=7200
+
+REMOTE_USER="user"
+REMOTE_HOST="10.1.1.100"
+REMOTE_PASS="your_password"
+REMOTE_FILE="/data/pod_status.log"
+
+START_TIME=$(date +%s)
+END_TIME=$((START_TIME + DURATION))
+
+echo "Monitoring started at $(date)"
+
+while [ "$(date +%s)" -lt "$END_TIME" ]
+do
+TMP_FILE=$(mktemp)
+
+{
+    echo ""
+    echo "=================================================="
+    echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "=================================================="
+
+    kubectl get pods -A -o wide
+
+    echo ""
+    echo "---------------- Events ----------------"
+    kubectl get events -A --sort-by=.metadata.creationTimestamp | tail -20
+
+} > "$TMP_FILE" 2>&1
+
+sshpass -p "$REMOTE_PASS" \
+  ssh -o StrictHostKeyChecking=no \
+      -o UserKnownHostsFile=/dev/null \
+      ${REMOTE_USER}@${REMOTE_HOST} \
+      "cat >> ${REMOTE_FILE}" < "$TMP_FILE"
+
+rm -f "$TMP_FILE"
+
+sleep "$INTERVAL"
+
+done
+
+echo "Monitoring completed at $(date)"
