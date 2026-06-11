@@ -1,0 +1,94 @@
+你理解得对，我前面说的方案 2 实际上是：
+在远端机器后台运行，而不是在 GitLab Runner 后台运行。
+例如 GitLab Job 里：
+Bash
+sshpass -p "$PASS" ssh user@$HOST << 'EOF'
+nohup bash -c '
+while true
+do
+    date >> /tmp/pod.log
+    sleep 30
+done
+' >/tmp/monitor.log 2>&1 &
+EOF
+
+echo "remote monitor started"
+执行流程：
+Plain text
+GitLab Runner
+    |
+    +-- ssh 到远端机器
+            |
+            +-- nohup bash ... &
+                    |
+                    +-- 持续运行
+此时：
+GitLab Job 很快结束
+Runner 清理本地进程
+远端机器上的进程不受影响
+继续写文件
+而你现在大概率是：
+Bash
+nohup ./check_pod.sh &
+运行在 GitLab Agent Pod 里面。
+流程变成：
+Plain text
+GitLab Runner
+    |
+    +-- check_pod.sh &
+    |
+Job结束
+    |
+Runner cleanup
+    |
+kill check_pod.sh
+所以文件不再更新。
+如果你的脚本逻辑是：
+Bash
+kubectl get pod
+scp 到远端机器
+那么要注意：
+情况1
+远端机器不能访问 K8S
+这种情况下不能把整个脚本搬过去。
+情况2（你的场景）
+你之前提过：
+GitLab agent 能访问 AWS
+远端机器不能访问 AWS
+那么监控必须在 Agent 侧执行。
+这种情况下有三个选择：
+方案A：增加 Pipeline Timeout（最简单）
+例如：
+YAML
+pod_monitor:
+  timeout: 3h
+然后：
+Bash
+while ...
+do
+    kubectl get pods
+    scp ...
+    sleep 30
+done
+方案B：单独启动一个 Kubernetes Job
+Bash
+kubectl apply -f monitor-job.yaml
+让 Job 自己监控 2 小时。
+方案C：把监控结果写到共享存储
+例如：
+Plain text
+GitLab Agent
+      |
+      +-- EFS
+      |
+远端机器读取
+对于你这个：
+每30秒获取pod状态，持续2小时，写到远端机器文件
+如果远端机器不能访问 K8S，而 GitLab Pipeline 又会超时，
+我会优先用 Kubernetes Job，而不是 GitLab 后台进程。
+因为 GitLab Runner 天生不适合运行“启动后自己退出，后台任务继续跑”的模式。
+你现在的 Runner 是：
+Shell Executor
+Docker Executor
+Kubernetes Executor
+哪一种？这会决定后台进程是否一定被杀掉。
