@@ -1,0 +1,75 @@
+configparser.MissingSectionHeaderError 表示你的 .cfg 文件缺少 section header。
+例如下面这种格式会报错：
+Cfg
+host=localhost
+port=3306
+username=test
+Python：
+Python
+import configparser
+
+config = configparser.ConfigParser()
+config.read("config.cfg")
+报：
+Plain text
+configparser.MissingSectionHeaderError
+因为 configparser 要求配置文件必须有：
+Cfg
+[DEFAULT]
+host=localhost
+port=3306
+username=test
+或者：
+Cfg
+[database]
+host=localhost
+port=3306
+username=test
+读取：
+Python
+config = configparser.ConfigParser()
+config.read("config.cfg")
+
+host = config["database"]["host"]
+如果配置文件不能修改
+例如文件内容是：
+Cfg
+host=localhost
+port=3306
+可以手动补一个 section：
+Python
+import configparser
+
+config = configparser.ConfigParser()
+
+with open("config.cfg") as f:
+    content = "[DEFAULT]\n" + f.read()
+
+config.read_string(content)
+
+print(config["DEFAULT"]["host"])
+如果是 GitLab Pipeline 生成的 cfg
+有时文件实际长这样：
+Cfg
+export DB_HOST=localhost
+export DB_PORT=3306
+或者：
+Cfg
+DB_HOST=localhost
+DB_PORT=3306
+这种根本不是 INI 格式，不应该用 configparser。
+可以直接解析：
+Python
+config = {}
+
+with open("config.cfg") as f:
+    for line in f:
+        if "=" in line:
+            k, v = line.strip().split("=", 1)
+            config[k] = v
+
+print(config["DB_HOST"])
+先看看你的 .cfg 前几行内容长什么样，把前 10 行贴出来，我能直接告诉你应该：
+补 [section]
+用 read_string()
+换成其他解析方式。
