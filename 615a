@@ -1,0 +1,55 @@
+GitLab 的 Scheduled Pipeline 不能直接选择执行某个 Job，它本质上是触发整个 Pipeline。
+常见做法是通过 CI/CD Variables 控制只运行指定 Job。
+例如：
+YAML
+check_pod:
+  script:
+    - kubectl get pod -A
+  rules:
+    - if: '$RUN_CHECK_POD == "true"'
+
+deploy:
+  script:
+    - ./deploy.sh
+  rules:
+    - if: '$RUN_DEPLOY == "true"'
+然后创建 Schedule：
+Cron: */30 * * * *
+Variables:
+RUN_CHECK_POD=true
+这样 Schedule 触发后：
+Plain text
+check_pod   -> 运行
+deploy      -> 跳过
+如果你希望这个采集任务完全独立，建议单独建一个 Stage：
+YAML
+stages:
+  - monitor
+  - test
+
+check_pod:
+  stage: monitor
+  script:
+    - kubectl get pod -A
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+
+normal_test:
+  stage: test
+  script:
+    - ./run_test.sh
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+这样：
+手工触发 / MR / Push → 只跑测试
+Schedule 触发 → 只跑 check_pod
+如果你的需求是：
+在故障测试 Pipeline 开始时启动采集，测试结束自动停止，不想一直创建固定的 Schedule
+那 Scheduled Pipeline 其实不太适合。更适合：
+YAML
+collect_1
+collect_2 (30m delayed)
+collect_3 (60m delayed)
+...
+collect_10 (270m delayed)
+用 when: delayed 实现 10 次采集，不需要 sleep，也不需要额外 Schedule。这样采集和你的测试 Pipeline 是绑定的。
