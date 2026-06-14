@@ -1,0 +1,102 @@
+可以，不需要在一个 Job 里 sleep 30m。
+更好的做法是让 GitLab Pipeline 自己触发下一次 Pipeline，形成链式执行。
+方案1：Pipeline 触发自己（推荐）
+每次执行：
+获取 Pod 状态
+写入文件
+触发下一次 Pipeline
+当前 Job 结束
+通过变量记录执行次数。
+stages:
+  - check
+
+check_pod:
+  stage: check
+  script:
+    - COUNT=${COUNT:-1}
+
+    - echo "Run $COUNT"
+
+    - kubectl get pod -A > pod_status_${COUNT}.txt
+
+    - |
+      if [ "$COUNT" -lt 10 ]; then
+        NEXT_COUNT=$((COUNT+1))
+
+        curl --request POST \
+          --form token=$TRIGGER_TOKEN \
+          --form ref=main \
+          --form "variables[COUNT]=$NEXT_COUNT" \
+          https://gitlab.example.com/api/v4/projects/${CI_PROJECT_ID}/trigger/pipeline
+      fi
+例如：
+YAML
+缺点：
+无法保证严格 30 分钟后执行
+会立即触发下一次 Pipeline
+方案2：利用 GitLab Scheduled Pipeline（最简单）
+创建一个 Schedule：
+
+*/30 * * * *
+即每 30 分钟执行一次。
+Job：
+YAML
+check_pod:
+  script:
+    - kubectl get pod -A
+然后用文件或变量记录执行次数。
+例如远端机器保存：
+Bash
+count=$(cat count.txt)
+
+if [ "$count" -ge 10 ]; then
+    exit 0
+fi
+
+kubectl get pod -A > pod_$count.txt
+
+echo $((count+1)) > count.txt
+达到 10 次后直接退出。
+方案3：动态创建延迟 Job（GitLab 最优雅）
+GitLab 支持：
+YAML
+check_pod:
+  script:
+    - kubectl get pod -A
+
+next_check:
+  when: delayed
+  start_in: 30 minutes
+  script:
+    - echo "trigger next"
+或者：
+YAML
+check_1:
+  script:
+    - kubectl get pod -A
+
+check_2:
+  when: delayed
+  start_in: 30 minutes
+  script:
+    - kubectl get pod -A
+
+check_3:
+  when: delayed
+  start_in: 60 minutes
+  script:
+    - kubectl get pod -A
+如果固定就是 10 次，每隔 30 分钟，可以直接生成：
+YAML
+check_1
+check_2 (30m)
+check_3 (60m)
+...
+check_10 (270m)
+整个 Pipeline 持续约 5 小时，但 Runner 不会一直占用资源等待，只有到时间才启动 Job。
+如果你的目的是：
+故障测试开始后，连续 5 小时，每 30 分钟采集一次 Pod 状态并写到远端机器
+那么最合适的是：
+GitLab Schedule + 单次执行 Job（最简单）
+或者
+when: delayed 链式 Job（与测试 Pipeline 绑定，最符合实验场景）。
