@@ -1,0 +1,81 @@
+如果你是在动态生成的 monitor-pipeline.yml 里用了：
+YAML
+<<: *ssh_key_setup_minusr
+或者：
+YAML
+extends: .ssh_key_setup_minusr
+然后报：
+Plain text
+an alias referenced an unknown anchor
+说明 Child Pipeline 里没有这个定义。
+例如你主 .gitlab-ci.yml 有：
+YAML
+.ssh_key_setup_minusr: &ssh_key_setup_minusr
+  before_script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+但是生成出来的 monitor-pipeline.yml 只有：
+YAML
+collect_1:
+  <<: *ssh_key_setup_minusr
+  script:
+    - kubectl get pod -A
+GitLab 解析 Child Pipeline 时看不到：
+YAML
+&ssh_key_setup_minusr
+所以直接报错。
+如果你用的是 Anchor
+必须在生成文件最前面也生成：
+YAML
+.ssh_key_setup_minusr: &ssh_key_setup_minusr
+  before_script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+然后后面才能：
+YAML
+collect_1:
+  <<: *ssh_key_setup_minusr
+  script:
+    - echo test
+如果你用的是 extends（更常见）
+例如：
+YAML
+collect_1:
+  extends:
+    - .ssh_key_setup_minusr
+那 Child Pipeline 里也必须有：
+YAML
+.ssh_key_setup_minusr:
+  before_script:
+    - ...
+或者：
+YAML
+include:
+  - local: xxx.yml
+把这个模板包含进来。
+结合你的场景
+你之前说只是想：
+ssh 到远端机器
+用 sshpass/scp 写文件
+那我建议在生成的 Job 里直接写：
+YAML
+collect_1:
+  script:
+    - mkdir -p ~/.ssh
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - chmod 600 ~/.ssh/id_rsa
+    - ssh user@$SSH_HOST "hostname"
+先不要用：
+YAML
+*ssh_key_setup_minusr
+或者：
+YAML
+extends: .ssh_key_setup_minusr
+等动态 Child Pipeline 跑通后再抽公共模板。
+如果你把生成脚本里这一段贴出来：
+Bash
+cat >> monitor-pipeline.yml <<EOF
+...
+EOF
+以及引用 ssh_key_setup_minusr 的那几行，我可以直接改成正确的 Child Pipeline 写法。
