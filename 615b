@@ -1,0 +1,151 @@
+方案 C 是 GitLab 很常见的 Dynamic Child Pipeline 用法：
+主 Pipeline 先读取配置文件，生成一个新的 .gitlab-ci.yml，然后触发 Child Pipeline。
+假设配置文件：
+YAML
+duration: 180
+interval: 30
+1. 主 Pipeline
+YAML
+stages:
+  - generate
+  - trigger
+
+generate-monitor-pipeline:
+  stage: generate
+  script:
+    - chmod +x generate_monitor_yaml.sh
+    - ./generate_monitor_yaml.sh
+  artifacts:
+    paths:
+      - monitor-pipeline.yml
+
+trigger-monitor:
+  stage: trigger
+  trigger:
+    include:
+      - artifact: monitor-pipeline.yml
+        job: generate-monitor-pipeline
+    strategy: depend
+#!/bin/bash
+
+duration=180
+interval=30
+
+count=$((duration / interval + 1))
+
+cat > monitor-pipeline.yml <<EOF
+stages:
+  - monitor
+EOF
+
+for ((i=1;i<=count;i++))
+do
+
+  delay=$(((i-1)*interval))
+
+  cat >> monitor-pipeline.yml <<EOF
+
+collect_${i}:
+  stage: monitor
+  script:
+    - echo "Collect ${i}"
+    - kubectl get pod -A
+
+EOF
+
+  if [ "$i" -gt 1 ]; then
+
+      cat >> monitor-pipeline.yml <<EOF
+  when: delayed
+  start_in: ${delay} minutes
+
+EOF
+
+  fi
+
+done
+2. 生成 Child Pipeline YAML
+例如：
+Bash
+生成结果类似：
+stages:
+  - monitor
+
+collect_1:
+  stage: monitor
+  script:
+    - kubectl get pod -A
+
+collect_2:
+  stage: monitor
+  script:
+    - kubectl get pod -A
+  when: delayed
+  start_in: 30 minutes
+
+collect_3:
+  stage: monitor
+  script:
+    - kubectl get pod -A
+  when: delayed
+  start_in: 60 minutes
+
+...
+YAML
+3. 从配置文件读取
+如果配置：
+YAML
+experiment:
+  duration: 240
+  interval: 15
+读取：
+Bash
+duration=$(yq '.experiment.duration' config.yaml)
+interval=$(yq '.experiment.interval' config.yaml)
+
+count=$((duration / interval + 1))
+自动生成：
+Plain text
+240min / 15min = 16
+
+生成：
+
+collect_1
+collect_2 (15m)
+collect_3 (30m)
+...
+collect_17 (240m)
+4. 更适合你的场景
+你之前说：
+GitLab Agent 能访问 EKS
+需要持续获取 Pod 状态
+写到远端机器
+测试框架本身有配置文件
+duration 每次不同
+那么脚本里直接生成：
+YAML
+collect_7:
+  script:
+    - kubectl get pod -A > pod.txt
+
+    - |
+      sshpass -p "$SSH_PASSWORD" ssh \
+      $SSH_USER@$SSH_HOST \
+      "cat >> /tmp/pod_history.log" < pod.txt
+即可。
+这样：
+Plain text
+配置 duration=90m
+↓
+自动生成4个采集Job
+
+0m
+30m
+60m
+90m
+下次：
+Plain text
+配置 duration=6h
+↓
+自动生成13个采集Job
+完全不需要修改 .gitlab-ci.yml。这是 GitLab 里处理“运行时才能知道要创建多少个 Job”的标准做法。
