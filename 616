@@ -1,0 +1,101 @@
+你昨天那个场景，核心问题应该是：
+GitLab Pipeline 里有 AWS 凭据、SSH 密码等变量
+你用脚本动态生成另一个 shell 文件
+shell 文件里需要执行 sshpass
+但如果生成时直接写：
+Bash
+cat > monitor.sh <<EOF
+sshpass -p "$SSH_PASSWORD" ssh user@host ...
+EOF
+那么 $SSH_PASSWORD 会在生成阶段被展开，密码直接写进 monitor.sh。
+最终生成出来：
+Bash
+sshpass -p "myRealPassword" ssh user@host ...
+这就有问题了。
+方案1：生成时转义（推荐）
+让变量在运行 monitor.sh 时再展开。
+Bash
+cat > monitor.sh <<EOF
+sshpass -p "\$SSH_PASSWORD" ssh user@host ...
+EOF
+注意多了一个 \
+生成后：
+Bash
+sshpass -p "$SSH_PASSWORD" ssh user@host ...
+真正执行 monitor.sh 时：
+Bash
+export SSH_PASSWORD=xxx
+./monitor.sh
+才会读取 GitLab Variable。
+方案2：使用单引号 EOF
+更简单。
+Bash
+cat > monitor.sh <<'EOF'
+#!/bin/bash
+
+sshpass -p "$SSH_PASSWORD" ssh user@host ...
+EOF
+这里：
+Bash
+<<'EOF'
+不是
+Bash
+<<EOF
+带引号后，所有变量都不会展开。
+生成结果：
+Bash
+sshpass -p "$SSH_PASSWORD" ssh user@host ...
+运行时再取值。
+方案3：直接传环境变量（最好）
+monitor.sh：
+Bash
+#!/bin/bash
+
+sshpass -p "$SSH_PASSWORD" \
+ssh "$SSH_USER@$SSH_HOST"
+Pipeline：
+YAML
+variables:
+  SSH_USER: test
+  SSH_HOST: 1.1.1.1
+
+script:
+  - export SSH_PASSWORD="$SSH_PASSWORD"
+  - ./monitor.sh
+这样生成代码里根本没有密码。
+如果你是昨天那个场景
+你说的是：
+动态生成监控 pod 状态脚本，然后后台运行，里面需要 sshpass 把结果写到远程机器。
+推荐写法：
+Bash
+cat > monitor.sh <<'EOF'
+#!/bin/bash
+
+while true
+do
+    kubectl get pods >> pod.log
+
+    sshpass -p "$SSH_PASSWORD" \
+      scp pod.log \
+      "$SSH_USER@$SSH_HOST:/tmp/"
+
+    sleep 30
+done
+EOF
+GitLab CI：
+YAML
+variables:
+  SSH_USER: xxx
+  SSH_HOST: xxx
+
+script:
+  - chmod +x monitor.sh
+  - ./monitor.sh &
+然后在 GitLab Settings → CI/CD → Variables 里配置：
+Plain text
+SSH_PASSWORD
+这样：
+密码不会出现在生成的脚本里
+不会出现在 Git 仓库
+monitor.sh 可以正常使用 sshpass
+GitLab Runner 会自动注入变量供脚本运行时读取。
