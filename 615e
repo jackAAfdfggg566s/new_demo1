@@ -1,0 +1,165 @@
+你发现得对，我上面拆得太碎了。
+实际上只需要两个文件：
+Plain text
+.gitlab-ci.yml
+generate_monitor_yaml.sh
+Step 1：创建配置文件
+# generate_monitor_yaml.sh
+
+#!/bin/bash
+
+duration=$(grep duration config.yaml | awk '{print $2}')
+interval=$(grep interval config.yaml | awk '{print $2}')
+
+count=$((duration / interval + 1))
+
+cat > monitor-pipeline.yml <<EOF
+stages:
+  - monitor
+EOF
+
+for ((i=1;i<=count;i++))
+do
+
+    delay=$(((i-1)*interval))
+
+    cat >> monitor-pipeline.yml <<EOF
+
+collect_${i}:
+  stage: monitor
+  script:
+    - date
+    - echo "collect ${i}"
+EOF
+
+    if [ "$i" -gt 1 ]; then
+cat >> monitor-pipeline.yml <<EOF
+  when: delayed
+  start_in: ${delay} minutes
+EOF
+    fi
+
+done
+
+cat monitor-pipeline.yml
+YAML
+# config.yaml
+
+duration: 90
+interval: 30
+Step 2：创建生成脚本
+Bash
+Step 3：完整 .gitlab-ci.yml
+这里不是空的。
+stages:
+  - generate
+  - trigger
+
+generate-monitor:
+  stage: generate
+
+  script:
+    - chmod +x generate_monitor_yaml.sh
+    - ./generate_monitor_yaml.sh
+
+  artifacts:
+    paths:
+      - monitor-pipeline.yml
+
+trigger-monitor:
+  stage: trigger
+
+  trigger:
+    include:
+      - artifact: monitor-pipeline.yml
+        job: generate-monitor
+
+    strategy: depend
+YAML
+运行流程
+当你 Push 后：
+Job 1
+Plain text
+generate-monitor
+执行：
+stages:
+  - monitor
+
+collect_1:
+  stage: monitor
+  script:
+    - date
+    - echo "collect 1"
+
+collect_2:
+  stage: monitor
+  script:
+    - date
+    - echo "collect 2"
+  when: delayed
+  start_in: 30 minutes
+
+collect_3:
+  stage: monitor
+  script:
+    - date
+    - echo "collect 3"
+  when: delayed
+  start_in: 60 minutes
+
+collect_4:
+  stage: monitor
+  script:
+    - date
+    - echo "collect 4"
+  when: delayed
+  start_in: 90 minutes
+Bash
+./generate_monitor_yaml.sh
+生成：
+YAML
+保存为：
+Plain text
+monitor-pipeline.yml
+Job 2
+Plain text
+trigger-monitor
+读取：
+Plain text
+monitor-pipeline.yml
+启动 Child Pipeline。
+Child Pipeline
+自动出现：
+Plain text
+collect_1
+collect_2
+collect_3
+collect_4
+执行时间：
+Plain text
+collect_1   立即
+
+collect_2   30分钟后
+
+collect_3   60分钟后
+
+collect_4   90分钟后
+不过结合你之前的需求（故障测试 Pipeline 里采集 Pod 状态），我觉得还有一个问题：
+你的测试 Pipeline 本身已经在运行，例如：
+Plain text
+prepare
+inject_failure
+run_test
+collect_result
+如果再开一个 Child Pipeline 做监控，监控和测试是两条 Pipeline。
+如果你的目标是：
+测试开始时启动监控，测试结束时停止监控
+那更适合用 动态生成同一个 Pipeline 的后续 Job 或 触发一个独立 monitor Pipeline 并传 duration 参数。
+你现在的测试 Pipeline 大概长什么样？例如：
+YAML
+stages:
+  - setup
+  - experiment
+  - report
+还是通过一个 shell 脚本执行整个实验？
+如果把现有 .gitlab-ci.yml 结构贴出来，我可以直接按你的框架改，而不是给一个全新的例子。
