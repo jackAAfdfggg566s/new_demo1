@@ -1,0 +1,177 @@
+我按你的场景一步一步说，先实现最小可运行版本。
+目标：
+Plain text
+config.yaml
+  duration: 180   # 测试持续180分钟
+
+↓
+
+GitLab自动计算
+
+180 / 30 + 1 = 7次
+
+↓
+
+自动生成
+
+collect_1  (立即)
+collect_2  (30分钟后)
+collect_3  (60分钟后)
+...
+collect_7  (180分钟后)
+Step 1 创建配置文件
+例如：
+YAML
+duration: 180
+interval: 30
+放到 repo：
+Plain text
+config.yaml
+#!/bin/bash
+
+duration=$(grep duration config.yaml | awk '{print $2}')
+interval=$(grep interval config.yaml | awk '{print $2}')
+
+count=$((duration / interval + 1))
+
+cat > monitor-pipeline.yml <<EOF
+stages:
+  - monitor
+EOF
+
+for ((i=1;i<=count;i++))
+do
+
+    delay=$(((i-1)*interval))
+
+    cat >> monitor-pipeline.yml <<EOF
+
+collect_${i}:
+  stage: monitor
+  script:
+    - echo "collect pod status"
+    - kubectl get pod -A
+EOF
+
+    if [ "$i" -gt 1 ]; then
+
+cat >> monitor-pipeline.yml <<EOF
+  when: delayed
+  start_in: ${delay} minutes
+EOF
+
+    fi
+
+done
+
+echo "Generated:"
+cat monitor-pipeline.yml
+Step 2 创建生成脚本
+新增：
+Plain text
+generate_monitor_yaml.sh
+内容：
+Bash
+Step 3 主 Pipeline
+.gitlab-ci.yml
+YAML
+stages:
+  - generate
+  - trigger
+Step 4 生成 Child Pipeline 文件
+YAML
+generate-monitor:
+  stage: generate
+
+  script:
+    - chmod +x generate_monitor_yaml.sh
+    - ./generate_monitor_yaml.sh
+
+  artifacts:
+    paths:
+      - monitor-pipeline.yml
+执行后会产生：
+Plain text
+monitor-pipeline.yml
+Step 5 触发 Child Pipeline
+继续加：
+YAML
+trigger-monitor:
+  stage: trigger
+
+  trigger:
+    include:
+      - artifact: monitor-pipeline.yml
+        job: generate-monitor
+
+    strategy: depend
+Step 6 Push后验证
+假设：
+YAML
+duration: 90
+interval: 30
+生成：
+YAML
+collect_1
+collect_2
+collect_3
+collect_4
+其中：
+Plain text
+collect_1 立即执行
+
+collect_2 30分钟后
+
+collect_3 60分钟后
+
+collect_4 90分钟后
+Step 7 改成你的 Pod 采集
+把生成脚本里的：
+YAML
+script:
+  - kubectl get pod -A
+改成：
+YAML
+script:
+  - TIMESTAMP=$(date)
+
+  - |
+      {
+        echo "========"
+        echo "$TIMESTAMP"
+        kubectl get pod -A
+      } > pod_status.txt
+
+  - |
+      sshpass -p "$SSH_PASSWORD" ssh \
+      -o StrictHostKeyChecking=no \
+      ${SSH_USER}@${SSH_HOST} \
+      "cat >> /tmp/pod_history.log" \
+      < pod_status.txt
+这样每个 delayed job 都会：
+Plain text
+0m   采集一次
+30m  采集一次
+60m  采集一次
+90m  采集一次
+...
+最终全部写入：
+Plain text
+/tmp/pod_history.log
+先做验证版
+第一次建议不要接 kubectl。
+先把 generate_monitor_yaml.sh 里的 job 改成：
+YAML
+script:
+  - date
+  - echo "collect_${i}"
+然后设置：
+YAML
+duration: 60
+interval: 30
+应该能看到 Child Pipeline 自动生成：
+Plain text
+collect_1
+collect_2
+collect_3
+确认 delayed Job 工作正常后，再替换成你的 Pod 采集逻辑。这样最容易排查问题。
