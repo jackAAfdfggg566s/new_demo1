@@ -1,0 +1,87 @@
+默认不能认为 GitLab Duo Planner Agent 能直接读取 Jira Issue 内容。
+要分两层理解：
+1. GitLab 已配置 Jira Issues Integration：GitLab 能读取并展示 Jira Issue
+如果 GitLab 项目配置了 Jira issues integration，并且开启了 View Jira issues in GitLab，GitLab 可以通过 Jira API 读取指定 Jira project 的 Issue，在 GitLab 中的：
+Plain text
+Plan → Jira issues
+查看标题、描述、状态、标签、负责人等信息，也可以按描述文本搜索。GitLab 使用的是配置在 Integration 中的 Jira API token / service account 的权限，而不是 Duo 自动拥有你个人 Jira 权限。�
+GitLab Docs
+配置路径通常是：
+Plain text
+GitLab Project
+→ Settings
+→ Integrations
+→ Jira issues
+→ Active
+→ 填 Jira URL / API token
+→ 勾选 View Jira issues in GitLab
+→ 填允许显示的 Jira project key，例如 ABC、PLATFORM
+→ Test settings
+→ Save changes
+若 Jira token 对 ABC-123 没有 Browse Project / View Issue 权限，GitLab 和 Duo 都无法读到它。并且 GitLab 官方特别说明：填写 Jira project key 只是过滤 GitLab 的显示列表，不等于限制 API token 的实际读取范围；应使用一个仅有必要 Jira 项目权限的 service account。�
+GitLab Docs +1
+2. GitLab Duo Planner：能否把 Jira Issue 当作它的“可规划 Issue”？
+这里要谨慎：Jira Integration 让 GitLab UI 可以展示 Jira Issue，不等于 Duo Planner 一定能把 Jira Issue 当成 GitLab Work Item 完整分析、拆分和修改。
+Planner Agent 官方主要能力是搜索和操作 GitLab project/group 内的 GitLab Issues、Epics、Work Items。例如它能搜索项目 Issue、按条件过滤、分析某个 issue #123 并创建 child items。�
+GitLab Docs
+因此实际效果通常是：
+场景
+Duo 是否可用 Jira 内容
+Jira Issue key 写在 MR / commit 中，如 ABC-123
+GitLab 会建立链接、回写关联信息；可以作为关联上下文，但不要假设 Duo 会完整读取并推理 Issue 全文。�
+GitLab Docs
+GitLab 已启用 Jira Issues Integration，且 GitLab UI 能打开该 Jira Issue
+GitLab 能读取和显示；Duo 是否在当前 Agent / Flow 中自动取到完整描述，要看具体功能、版本和权限，不能把它当成保证。
+让 Planner “根据 Jira ABC-123 创建 GitLab Epic / 子 Issue”
+最稳妥是把 Jira 描述贴入 Chat，或在 GitLab 建一个对应的 GitLab Issue，再让 Planner 操作。
+让 Developer Flow “修 Jira ABC-123 的 bug 并创建 MR”
+最稳妥是把 Jira key、完整描述、验收标准、日志和复现步骤放进 GitLab Issue 或 MR 描述中，再触发 Flow。
+推荐的团队流程
+如果 Jira 是需求和任务的唯一来源、GitLab 主要用于代码，建议这样做：
+Plain text
+Jira ABC-123
+  ↓
+GitLab MR / commit 引用 ABC-123
+  ↓
+GitLab 自动关联、可回写 Jira comment / 状态
+  ↓
+在 GitLab Issue 或 MR 中补充技术实施上下文
+  ↓
+Duo Planner / Developer Agent 分析、拆分、生成代码或 MR
+MR 标题或描述写：
+Markdown
+Implements ABC-123
+
+Jira context:
+- Problem: ...
+- Acceptance criteria: ...
+- Reproduction / logs: ...
+
+Technical implementation notes:
+- Relevant files: ...
+- Test plan: ...
+如果 Jira Issue 内容很完整，也可以在 GitLab 建一个轻量的“AI execution Issue”：
+Markdown
+Title: Implement ABC-123 - Pod collector does not persist remote output
+
+Source Jira: ABC-123
+
+## Jira requirement
+[复制 Jira 描述]
+
+## Technical context
+...
+
+## Acceptance criteria
+...
+之后让 Planner Agent：
+Plain text
+Analyze GitLab issue #456.
+Create implementation subtasks, dependencies, and acceptance criteria.
+再让 Developer Agent：
+Plain text
+Implement GitLab issue #456.
+Create a draft merge request.
+Do not merge automatically.
+这样 Duo 读取的上下文最稳定，权限边界也清楚。GitLab 与 Jira 的标准集成本身支持在 commit、MR 中引用 Jira key、向 Jira 回写链接/评论，并可按配置在合并后推进 Jira 状态。�
+GitLab Docs +1
