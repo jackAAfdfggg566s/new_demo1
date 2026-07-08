@@ -1,0 +1,52 @@
+如果只是一个最简单的文件上传接口，用 Flask 很方便：
+from flask import Flask, request, jsonify
+import os
+
+app = Flask(__name__)
+
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+@app.route("/upload", methods=["POST"])
+def upload_file():
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+
+    if file.filename == "":
+        return jsonify({"error": "Empty filename"}), 400
+
+    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    file.save(filepath)
+
+    return jsonify({
+        "message": "Upload successful",
+        "filename": file.filename,
+        "path": filepath
+    })
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+启动：
+pip install flask
+python app.py
+上传测试：
+curl -X POST \
+  -F "file=@test.txt" \
+  http://localhost:5000/upload
+返回：
+{
+  "message": "Upload successful",
+  "filename": "test.txt",
+  "path": "uploads/test.txt"
+}
+如果你是在 AWS、GitLab Pipeline 场景里，通常会加一个文件大小限制：
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
+或者生成唯一文件名避免覆盖：
+import uuid
+
+filename = f"{uuid.uuid4()}_{file.filename}"
+filepath = os.path.join(UPLOAD_FOLDER, filename)
+file.save(filepath)
+如果你需要前端页面上传（浏览器直接选文件），�⁠我也可以给你一个完整的 Flask + HTML 上传页面示例。
