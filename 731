@@ -1,0 +1,51 @@
+如果 .sh 脚本就在 同一个 GitLab 仓库中，GitLab Runner 在执行 Pipeline 时会自动把仓库代码检出（checkout），因此直接运行即可。
+
+例如仓库结构：
+
+repo/
+├── .gitlab-ci.yml
+├── scripts/
+│   └── deploy.sh
+└── src/
+
+.gitlab-ci.yml：
+
+stages:
+  - test
+
+run_script:
+  stage: test
+  script:
+    - chmod +x scripts/deploy.sh
+    - ./scripts/deploy.sh
+
+或者直接用 bash 执行（不需要 chmod）：
+
+run_script:
+  script:
+    - bash scripts/deploy.sh
+
+如果脚本需要参数：
+
+run_script:
+  script:
+    - bash scripts/deploy.sh arg1 arg2
+
+如果脚本需要 GitLab CI 变量：
+
+variables:
+  ENV: dev
+
+run_script:
+  script:
+    - bash scripts/deploy.sh "$ENV"
+
+脚本 deploy.sh：
+
+#!/bin/bash
+
+echo "Environment: $1"
+echo "Project: $CI_PROJECT_NAME"
+echo "Pipeline: $CI_PIPELINE_ID"
+
+如果你的脚本在另一个 GitLab 仓库，或者是通过 GitLab Agent 到远程服务器执行，写法会不同。结合你之前的环境（GitLab Agent、跨仓库 Pipeline），告诉我是哪一种，我可以给你对应的示例。
